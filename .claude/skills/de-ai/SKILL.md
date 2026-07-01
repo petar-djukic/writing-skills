@@ -1,0 +1,179 @@
+---
+name: de-ai
+description: 'Detect and fix AI writing patterns recursively. Use when: reviewing text for AI tells, cleaning AI-generated drafts, checking for CoT leakage, measuring text perplexity and burstiness, making text sound human, fixing opening diversity. Triggers: de-ai, ai detection, ai writing, perplexity, burstiness, CoT leakage, humanize text, opening diversity, sentence starts.'
+argument-hint: 'Path to markdown file to analyze and fix'
+---
+
+# De-AI: Recursive AI Writing Detection and Correction
+
+Detects AI writing patterns at three layers (lexical, structural, semantic) and recursively rewrites flagged passages until they pass all checks.
+
+## Standing Warning: Scripts Are Blind to Rhetorical Patterns
+
+The two scripts (`detect-lexical.sh`, `detect-structural.py`) measure surface metrics only — banned words, opening diversity, sentence length variance, dash density. They **cannot** detect the rhetorical patterns that constitute most of the AI signal in real prose:
+
+- Declarative pairs ("X is Y. Z is W.")
+- Definition-by-enumeration ("X extends in two ways")
+- Meta-narrative bridges ("The analogy breaks in one place")
+- Triple parallels ("clearer instructions, tighter constraints, fewer ambiguous cases")
+- Comprehensive enumerated sweeps in parentheses
+
+Partial exception: `detect-structural.py` now has a `detect_antithesis` check that catches the lexically-marked subset of negation-then-affirmation ("X is not Y. It is Z.", "The meter was.") and clipped antithesis fragments. It does not catch the purely semantic reversal ("Same quality out. Different bill." used without a negation word). Prompt 6 in Step 3 covers that remainder. Treat the regex as a recall aid, not full coverage of the pattern.
+
+A `clean` or `minor-issues` verdict from the structural script means the surface checks passed. It does **not** mean the prose is in voice. Step 3 (semantic analysis by Opus) is the only layer that catches the rhetorical AI tells the scripts still miss. Skipping Step 3 produces false-negative reports.
+
+**Do not infer voice quality from the structural script's verdict label.** Voice is a judgment, not a statistic.
+
+## When to Use
+
+- Before publishing any document drafted or edited by AI
+- When reviewing a file for AI writing tells
+- When a document "feels" AI-written but you can't pinpoint why
+- After AI-assisted writing sessions to clean the output
+- To check for CoT (chain-of-thought) leakage in final text
+
+## Prerequisites
+
+- Python 3.8+ available
+- The target file is a markdown file
+- The writing-style-guide.md is present in `templates/`
+
+## Procedure
+
+### Step 1: Run Lexical Scan (No Model Required)
+
+Run the lexical detection script to find banned words, AI clichés, false emphasis, and mechanical transitions:
+
+```bash
+bash .claude/skills/de-ai/scripts/detect-lexical.sh <file-or-dir> [file-or-dir ...]
+```
+
+Accepts a single file, multiple files, or directories (scans `*.md` recursively).
+
+This produces line-numbered matches grouped by category. Zero-cost, instant results.
+
+The script also outputs **CoT candidates**, broad patterns that *may* be CoT scaffolding but also appear in legitimate prose. These include:
+- "This/These/That ... is/are" (property announcements)
+- "What X is/does/means is Y" (wh-cleft constructions)
+- "Consider X" (imperative example introductions)
+- "not only X but Y" (correlative conjunctions)
+- "Two distinct X define..." (enumeration announcements)
+
+Candidates do not fail the scan. Instead, carry them forward to Step 3 (semantic analysis) for LLM verification. For each candidate, the LLM applies the removal test: delete the sentence, re-read the paragraph. If no information is lost, it was scaffolding; if information is lost, it is genuine content and should be kept. Wh-clefts and "Consider" imperatives should usually be reworded even when they carry real content, because they read as AI regardless of intent.
+
+### Step 2: Run Structural Analysis (No Model Required)
+
+Run the structural detection script to measure burstiness, parallelism, paragraph uniformity, and density metrics:
+
+```bash
+python3 .claude/skills/de-ai/scripts/detect-structural.py <file-or-dir> [file-or-dir ...]
+```
+
+Accepts a single file, multiple files, or directories (scans `*.md` recursively).
+Default threshold is `strict`. Use `--threshold=medium` for drafts, `--threshold=relaxed` for early notes.
+
+Review the metrics output. Key signals:
+- `sentence_length_std < 4.0` = unnaturally uniform (AI)
+- `opening_diversity < 0.6` = repetitive sentence starts (AI), typically "The" dominance
+- `dash_density > 3.0` = em-dash overuse (AI)
+- `verdict: likely-ai` or `suspicious` = proceed to Pass 3
+
+If `opening_diversity` is flagged, load [opening-diversity-fixes.md](./references/opening-diversity-fixes.md) for six rewrite techniques (prepositional shift, gerund lead, infinitive purpose, subordinating conjunction, front-weighting, referential lead). This is the hardest issue to fix because it requires rewriting many sentences across the document.
+
+### Step 3: Semantic Analysis (Requires Opus) — MANDATORY
+
+If Pass 1 or Pass 2 found *any* issue, Step 3 is required, not optional. The scripts are blind to rhetorical patterns. Reporting a verdict without Step 3 is a procedural error and produces false negatives.
+
+Step 3 may be skipped only when Pass 1 and Pass 2 both return zero matches and zero issues.
+
+Load the prompts from [perplexity-prompts.md](./references/perplexity-prompts.md) and run against the target text:
+
+1. **Vocabulary Predictability** (Prompt 1) — Score each sentence 1-5 for how "obvious" the word choices are
+2. **Burstiness Assessment** (Prompt 2) — Confirm structural findings with semantic judgment
+3. **Cross-Sentence Surprise** (Prompt 3) — Detect absence of genuine thought progression
+4. **CoT Leakage Detection** (Prompt 4) — Find reasoning scaffolding that regex missed, including bridge sentences at paragraph boundaries. For each candidate, Prompt 4 applies the removal test: delete the sentence, check whether the paragraph loses information. True leaks are flagged for deletion; CoT-style wording on real content is flagged for rewording.
+5. **Antithesis / Negation-Flip Enumeration** (Prompt 6) — Enumerate every adjacent-sentence antithesis pair and rule each ANCHOR or REFLEX. Catches the purely semantic reversals the `detect_antithesis` regex cannot. Honor the caller's tolerance: under zero tolerance, rewrite every pair.
+
+Run Prompts 1-3 in parallel. Run Prompt 4 after reviewing lexical results (it needs that context). Run Prompt 6 after the structural scan (it extends `detect_antithesis`).
+
+Finally, run **Prompt 5** (Overall Assessment) with all collected evidence to get an integrated judgment and rewrite priority list.
+
+#### Required output of Step 3
+
+The final report from Step 3 must follow [`assets/report-template.md`](./assets/report-template.md) and must include:
+
+1. The rewrite priority list from Prompt 5's output, structured by issue with line references.
+2. Explicit confirmation that Step 3 was run (which prompts were applied, summary findings from each).
+3. An honest plain-language verdict. Options: "in voice — no rewrite needed", "isolated issues — spot edits only", "pervasive rhetorical patterns — section rewrite needed", "heavy AI fingerprints — paragraph-by-paragraph rewrite needed".
+
+Freeform summaries without these elements are not a valid Step 3 output.
+
+### Step 4: Targeted Rewrite
+
+For each flagged passage (in priority order from Prompt 5):
+
+1. Load the [rewrite instructions](./references/rewrite-instructions.md)
+2. Load the project's voice reference for this document type, if one exists — for example a `.claude/rules/<voice>.md` file the project provides (per-format voice guides are common: one for articles, one for long-form, etc.). If the project defines none, infer the target voice from existing published work in the same venue. Do not assume any specific file name.
+3. For CoT leaks: remove the flagged sentence and re-read the paragraph. If no information is lost, the sentence is a true CoT leak — delete it. If information is lost, the sentence uses CoT-style wording on real content — reword to remove the scaffolding phrase while preserving the content.
+4. Rewrite ONLY the flagged passage using the rewrite prompt template
+5. Constraints: preserve meaning, match author voice, don't introduce new AI patterns
+
+### Step 5: Recursive Validation
+
+After each rewrite:
+
+1. Re-run `detect-lexical.sh` on the rewritten section
+2. Re-run `detect-structural.py` on the rewritten section
+3. If issues remain AND count decreased: iterate (max 3 total passes)
+4. If issues remain AND count same or increased: STOP, flag for human review
+5. If clean on both scripts: accept the rewrite
+
+### Step 6: Final Semantic Verification
+
+After all passages are rewritten, run the full semantic analysis one more time on the complete document to check for:
+- New patterns introduced by rewrites
+- Consistency issues between rewritten and preserved sections
+- Overall document flow after modifications
+
+## Convergence Rules
+
+- Maximum 3 rewrite iterations per passage
+- If iteration N finds >= issues as iteration N-1, stop immediately
+- Never rewrite direct quotations
+- Never rewrite formal specifications or requirement statements
+- When in doubt, flag for human rather than risk meaning loss
+
+## Verdict Validity Rules
+
+- A "clean" or "in voice" verdict requires Step 3 to have been run and to have returned no high-priority issues. Verdicts issued without Step 3 are invalid.
+- A `clean` or `minor-issues` label from the structural script is not a substitute for Step 3. The label is a surface-metric summary, not a voice assessment.
+- "Looks mostly fine" / "largely in voice" / similar freeform softening language is not a valid verdict. Use one of the four plain-language options from Step 3's required output.
+- If you anchor on the structural script's verdict and skip Step 3, the report is a procedural failure regardless of how the prose actually reads.
+
+## Model Selection
+
+**Use Opus for ALL passes.** Rationale:
+- Detection requires deep model self-awareness (simpler models can't recognize their own patterns)
+- Rewriting requires preserving technical meaning while transforming style
+- Validation must be strict enough to achieve convergence
+- Cost per document is low (sections are small, 3 iterations max)
+
+## Reference Documents
+
+- [Banned patterns database](./references/banned-patterns.md)
+- [CoT leakage patterns](./references/cot-leakage-patterns.md)
+- [Opening diversity fixes](./references/opening-diversity-fixes.md)
+- [Perplexity proxy prompts](./references/perplexity-prompts.md)
+- [Rewrite instructions](./references/rewrite-instructions.md)
+- [Report template](./assets/report-template.md)
+
+## Quick Mode (Lexical + Structural Only)
+
+For in-progress drafts where you want a fast surface-pass without burning model calls:
+
+```bash
+bash .claude/skills/de-ai/scripts/detect-lexical.sh <file-or-dir>
+python3 .claude/skills/de-ai/scripts/detect-structural.py <file-or-dir> --json
+```
+
+Quick Mode is for working drafts. It is **not** valid for a publication verdict. Quick Mode catches the surface-detectable patterns. The rhetorical patterns that account for most of the AI signal are invisible to the scripts and require Step 3. Do not report a verdict based on Quick Mode output alone.
