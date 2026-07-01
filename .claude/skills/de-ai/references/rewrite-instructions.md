@@ -1,0 +1,137 @@
+# Rewrite Instructions
+
+Guidelines for the Opus rewrite pass. The goal is to fix detected AI patterns WITHOUT introducing new ones.
+
+## Core Principle
+
+The rewrite is TARGETED, not wholesale. Only touch flagged passages. Preserve everything that scanned clean.
+
+## Rewrite Rules
+
+### 1. Preserve Meaning Exactly
+
+Every rewrite must convey identical technical content. If you can't rewrite without losing meaning, flag for human review rather than attempting a lossy fix.
+
+### 2. Match the Author's Voice
+
+Reference the writing-style-guide.md and any sample files from the author's corpus. The rewrite should sound like the author wrote it, not like a different AI wrote it.
+
+Key voice characteristics to target:
+- Declarative, direct sentences
+- Active voice preferred
+- Concrete specifics over abstract claims
+- Willingness to take positions (no hedging)
+- Varied sentence rhythm
+- Occasional short sentences for emphasis
+- Technical precision without jargon inflation
+
+### 3. Anti-Patterns to Avoid in Rewrites
+
+The rewrite itself must not introduce:
+
+- New banned words (check against banned-patterns.md)
+- New parallelism (don't replace one pattern with another pattern)
+- Uniform sentence length (deliberately vary)
+- Mechanical transitions (don't replace "moreover" with "furthermore")
+- CoT leakage (don't explain what you're about to say)
+- Hedging language (take positions)
+- Em-dashes (the author's style avoids them)
+
+### 4. Specific Fix Strategies
+
+| Detected Issue | Fix Strategy |
+|---|---|
+| Banned word | Replace with specific, concrete language. "Robust" → describe what makes it resilient. "Leverage" → "use". |
+| AI cliché phrase | Delete entirely or restructure the sentence. Most clichés carry zero information. |
+| False emphasis adverb | Delete. If the point needs emphasis, restructure to put it at sentence end. |
+| Mechanical transition | Delete or replace with a content-bearing connection. Instead of "Furthermore, X" → just state X, or connect via shared concept. |
+| Low burstiness | Vary sentence length deliberately. Split long sentences. Combine short ones. Add one punchy short sentence per paragraph. |
+| Uniform paragraphs | Vary paragraph length. Some paragraphs can be 2 sentences. Some can be 6. |
+| Parallelism | Restructure openings. Use different syntactic patterns: questions, conditional, relative clause, participial phrase. |
+| Low opening diversity | Apply front-loading and grammatical inversion. See [opening-diversity-fixes.md](./opening-diversity-fixes.md) for the six techniques. Target: < 15% "The"-initial sentences. Mix prepositional shifts, gerund leads, infinitive purpose, subordinating conjunctions, front-weighting, and referential leads. Do NOT apply one technique uniformly. |
+| CoT leakage (any category) | True CoT leak (exists only for the model's benefit): delete. CoT-style wording on real content: reword to remove the scaffolding phrase while preserving the content. See decision rule below. |
+| CoT leakage (balanced hedging) | Take a position. State your view, then acknowledge limitations specifically. |
+| CoT leakage (enumeration) | Fold into prose paragraphs unless genuinely procedural. |
+| High predictability | Replace obvious word choices with more specific alternatives. Use the author's vocabulary. |
+| Low cross-sentence surprise | Add one unexpected connection, analogy, or perspective shift per paragraph. |
+
+### CoT Leakage Decision Rule
+
+A CoT leak is text that exists only to help the model generate subsequent text. It serves the model, not the reader. By definition it is superfluous.
+
+When a CoT-pattern phrase is detected, apply this test:
+
+1. **Remove the sentence entirely.** Read the surrounding paragraph without it.
+2. **If the paragraph still makes sense and loses no information:** the sentence was a true CoT leak. Delete it.
+3. **If information is lost:** the sentence carries real content but uses CoT-style wording. Reword the sentence to remove the scaffolding phrase while keeping the content.
+
+Examples:
+
+| Flagged Sentence | Leak or Wording? | Action |
+|---|---|---|
+| "It is worth noting what the framework is and what it is not." | Leak — the next sentence says what it is. | Delete. |
+| "In other words, agents are software factories." | Leak — the prior sentence already states this. | Delete. |
+| "In other words, intent must be translated into software artifacts." | CoT-style wording — "artifacts" adds specificity the prior sentence lacks. | Reword: "Intent must therefore be translated into..." or fold "artifacts" into the prior sentence. |
+| "One might argue that all such software could be written in advance." | CoT-style wording — it introduces a counterargument the paragraph then refutes. | Reword: "Could all such software simply be written in advance?" |
+
+The default action is deletion. Most flagged phrases are true leaks with no informational payload.
+
+### 5. Convergence Requirements
+
+A rewrite is DONE when:
+- Zero Tier 1 banned words remain
+- Sentence length std > 5.0
+- No parallelism runs > 2 sentences
+- Opening diversity > 0.6 (or "The"-initial sentences < 15%)
+- CoT leakage density < 1 per 1000 words
+- Vocabulary predictability score < 3.5 average
+- Cross-sentence surprise mean < 3.5
+
+### 6. When to Stop and Flag for Human
+
+Stop rewriting and flag for human review when:
+- Third iteration still produces new issues
+- Meaning preservation becomes uncertain
+- Technical accuracy might be compromised
+- The passage is a direct quotation (never rewrite quotes)
+- The passage is a formal specification or requirement statement
+
+## Rewrite Prompt Template
+
+```
+You are rewriting a passage to remove AI writing patterns while preserving exact meaning and matching the author's voice.
+
+DETECTED ISSUES IN THIS PASSAGE:
+{issue_report}
+
+AUTHOR'S STYLE (from writing-style-guide.md):
+- Concise, active voice, Strunk & White style
+- Specific and concrete, no vague qualifiers
+- Takes positions, avoids hedging
+- Varied sentence rhythm
+- No dashes, no bold, no colons unless introducing a list
+- Technical precision without jargon inflation
+
+PASSAGE TO REWRITE:
+{passage}
+
+CONSTRAINTS:
+1. Fix ONLY the flagged issues
+2. Preserve all technical meaning
+3. Do NOT introduce any patterns from the banned list
+4. Vary sentence length (target std > 5)
+5. Do NOT use mechanical transitions
+6. Do NOT hedge or both-sides
+7. Sound like a human expert wrote this in one draft
+
+OUTPUT: The rewritten passage only. No commentary.
+```
+
+## Recursive Pass Protocol
+
+1. Rewrite the flagged passage
+2. Run detect-lexical.sh on the rewrite
+3. Run detect-structural.py on the rewrite
+4. If new issues found AND issue count decreased: iterate (max 3 times)
+5. If new issues found AND issue count same or increased: stop, flag for human
+6. If clean: accept rewrite
