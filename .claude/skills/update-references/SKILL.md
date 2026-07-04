@@ -1,25 +1,22 @@
 ---
 name: update-references
 description: >-
-  Find, download, read, and summarize arXiv papers related to the work in the
-  current directory, with a focus on LLMs, AI agents, finite state machines,
-  and declarative agent patterns (as in the spindle state-machine engine).
-  Maintains a YAML reference database so the same paper is never downloaded
-  twice and newer versions are picked up automatically. Use this whenever the
-  user wants to update references, research the literature, find related/recent
-  papers, do a lit review, build a bibliography, catch up on a topic, or check
-  what's new on arXiv — even if they don't say "arXiv" explicitly. Triggers:
+  Find, download, read, and summarize research papers related to the work in the
+  current directory. Searches arXiv and Google Scholar. Maintains a CSL-YAML
+  reference database (references.yaml) compatible with pandoc's --bibliography
+  flag, so the same file serves both the skill and document builds. Triggers:
   update references, refresh the bibliography, find papers, related work,
   literature review, what's been published on, recent papers, cite sources for,
-  background reading, summarize this paper.
+  background reading, summarize this paper, search scholar.
 ---
 
-# Update references (arXiv research)
+# Update references (research paper search)
 
 This skill turns "find me what's been written about this" into a small,
-repeatable pipeline: read what the user is working on, search arXiv for related
-papers, download the relevant ones, read them, write a summary per paper, and
-keep a YAML database so work is never repeated and versions stay current.
+repeatable pipeline: read what the user is working on, search arXiv (and
+optionally Google Scholar) for related papers, download the relevant ones, read
+them, write a summary per paper, and keep a CSL-YAML database so work is never
+repeated and versions stay current.
 
 The standing interests are LLMs, AI agents, finite state machines, and
 declarative agent patterns — the territory of spindle
@@ -33,10 +30,11 @@ This skill is context-aware. It runs from the directory the user is working in,
 and it stores its outputs there — not in a fixed global location. Resolve paths
 like this:
 
-- **Database:** `arxiv/papers.yaml` under the current working directory, unless
-  an existing one is already nearby (look for a `papers.yaml`, `references.yaml`,
-  or an `arxiv/` directory at or above the CWD and reuse it). Pass the chosen
-  path as `--db` to every script call so search, fetch, and record all agree.
+- **Database:** `references.yaml` under the current working directory, unless
+  an existing one is already nearby (look for a `references.yaml` at or above
+  the CWD and reuse it). Pass the chosen path as `--db` to every script call so
+  search, fetch, and record all agree. If only a legacy `arxiv/papers.yaml`
+  exists, the scripts read it transparently and convert on next write.
 - **PDFs:** `<db-dir>/pdfs/` (transient — they exist to be read; they don't need
   to be committed). The script resolves this **relative to the database**, not
   the current directory, so PDFs land next to the db even when run from
@@ -51,6 +49,39 @@ If the user names a directory or an existing database, use that instead. Because
 every output path is derived from `--db`, passing an absolute `--db` keeps all
 artifacts together regardless of the working directory.
 
+## The database format
+
+The database is CSL-YAML — a bare YAML list with no root key. Each entry has
+standard CSL fields that pandoc understands (`id`, `type`, `title`, `author`,
+`container-title`, `URL`, `issued`) plus skill-internal fields (`status`,
+`version`, `pdf_path`, `arxiv_id`, etc.) that pandoc ignores. This means the
+file is directly usable as `pandoc --bibliography references.yaml` with no
+conversion step.
+
+An entry looks like:
+
+```yaml
+- id: lee-meta-harness-2026
+  type: article
+  title: "Meta-Harness: End-to-End Optimization of Model Harnesses"
+  author:
+    - family: Lee
+      given: Yoonho
+  container-title: arXiv preprint arXiv:2603.28052
+  URL: https://arxiv.org/abs/2603.28052
+  issued:
+    year: 2026
+  arxiv_id: "2603.28052"
+  version: 1
+  status: downloaded
+  pdf_path: pdfs/2603.28052v1.pdf
+```
+
+The `id` field is a pandoc citation key (used as `@lee-meta-harness-2026` in
+markdown). The script generates it from the first author's family name and the
+publication year. The `arxiv_id` field is the base arXiv identifier used for
+deduplication and version tracking.
+
 ## The workflow
 
 ### 1. Understand the current work first
@@ -62,6 +93,8 @@ standing topic list. If the directory is empty or the intent is unclear, ask the
 user what angle they care about (one question, then proceed).
 
 ### 2. Search and dedupe
+
+#### arXiv search
 
 Run the helper. It queries arXiv and cross-references the database, tagging each
 candidate `new`, `known` (already have this version), or `outdated` (a newer
@@ -80,10 +113,30 @@ python3 <skill>/scripts/arxiv.py --db <db-path> search \
   is better from several sharp searches than one vague one.
 - `--sort recent` surfaces the newest submissions; `relevance` (default) is
   better for an initial lit sweep.
-- Read the returned abstracts and pick the genuinely relevant papers. Don't
-  download everything that matches keywords — relevance to the current work is
-  the bar. Skip `known` papers. Re-fetch `outdated` ones (a new version may
-  change the conclusions).
+
+#### Google Scholar search
+
+For papers not on arXiv (conference proceedings, journals, older work), use
+Google Scholar via SerpAPI:
+
+```bash
+python3 <skill>/scripts/scholar.py --db <db-path> search \
+  --query "declarative agent patterns finite state machines" \
+  --max 10
+```
+
+The Scholar script uses the same `references.yaml` database and the same
+deduplication logic. It requires a SerpAPI key — use the same key as the
+`idea-factory` job-search skill (stored in
+`idea-factory/.claude/skills/job-search/SKILL.md`). Set it via
+`--api-key <key>` or the `SERPAPI_KEY` environment variable.
+
+#### Picking candidates
+
+Read the returned abstracts and pick the genuinely relevant papers. Don't
+download everything that matches keywords — relevance to the current work is
+the bar. Skip `known` papers. Re-fetch `outdated` ones (a new version may
+change the conclusions).
 
 ### 3. Fetch the PDF
 
@@ -93,9 +146,17 @@ For each paper worth reading:
 python3 <skill>/scripts/arxiv.py --db <db-path> fetch --id 2310.12345
 ```
 
-This downloads the latest-version PDF to `arxiv/pdfs/` and writes a database
-entry with `status: downloaded`. On a version bump it preserves any existing
-summary metadata so you know it needs a re-read.
+This downloads the latest-version PDF and writes a database entry with
+`status: downloaded`. On a version bump it preserves any existing summary
+metadata so you know it needs a re-read.
+
+For Scholar results that have a direct PDF link, the scholar script can also
+fetch:
+
+```bash
+python3 <skill>/scripts/scholar.py --db <db-path> fetch \
+  --title "Exact Paper Title" --url "https://example.com/paper.pdf"
+```
 
 ### 4. Read and summarize
 
@@ -110,7 +171,7 @@ and, where it fits, to spindle's state-machine / declarative-agent view. Prefer
 the paper's own numbers over adjectives. An honest "low relevance" beats a
 stretch.
 
-Name the file `arxiv/summaries/<arxiv-id>-<short-slug>.md`.
+Name the file `<db-dir>/summaries/<id>-<short-slug>.md`.
 
 ### 5. Record it
 
@@ -118,7 +179,7 @@ Close the loop so the database reflects reality:
 
 ```bash
 python3 <skill>/scripts/arxiv.py --db <db-path> record --id 2310.12345 \
-  --summary-file arxiv/summaries/2310.12345-short-slug.md \
+  --summary-file summaries/2310.12345-short-slug.md \
   --topics llm agents fsm declarative-agents \
   --relevance "One line on why it matters to this work."
 ```
@@ -133,24 +194,15 @@ Summarize what was found: how many candidates, how many were new vs. already
 known, which were summarized, and a one-line takeaway per paper with a link to
 its summary file. Point out the two or three most relevant to the current work.
 
-## The database
-
-`papers.yaml` is a list under `papers:`. Each entry is keyed by its base arXiv
-id (version-independent), which is how dedup and version tracking work — the id
-is the identity, the version is a property of it. The script owns this file;
-read it freely, but prefer editing it through `fetch`/`record` so the schema
-stays consistent. `list` prints it as JSON for a quick overview:
-
-```bash
-python3 <skill>/scripts/arxiv.py --db <db-path> list
-```
-
 ## Dependencies
 
 PyYAML (`python3 -m pip install --user pyyaml`) is required. `pypdf` (or
 `pdfminer.six`) is optional but recommended — `fetch` uses it to write the
 text sidecar so papers are readable without poppler; if neither is installed,
 fetch still downloads the PDF and just skips the sidecar. Everything else is
-Python stdlib plus the arXiv public API — no key needed. Be a good citizen: the script
-already retries with backoff; don't hammer the API with huge `--max` values in
-a tight loop.
+Python stdlib plus the arXiv public API — no key needed. Be a good citizen: the
+script already retries with backoff; don't hammer the API with huge `--max`
+values in a tight loop.
+
+Google Scholar search requires a SerpAPI key (same key as the idea-factory
+job-search skill).
