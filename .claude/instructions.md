@@ -6,11 +6,11 @@ Issue tracking uses GitHub Issues via the `gh` CLI. The `/do-work` and `/git-iss
 
 ## Pre-Commit Quality Gate
 
-Before committing, run `mage analyze` and fix all reported YAML schema errors. The analyze target checks cross-artifact consistency (PRDs, use cases, test suites, roadmap) and validates YAML fields against Go structs. Unrecognized fields cause data loss in the measure prompt. Do not commit with analyze errors.
+Before committing, run `mage audit` and fix all reported YAML schema errors. The audit target checks cross-artifact consistency (PRDs, use cases, test suites, roadmap) and validates YAML fields against Go structs. Unrecognized fields cause data loss in the measure prompt. Do not commit with audit errors.
 
 ## Commit After Every Edit
 
-After creating or editing any file, run `mage analyze`, fix any errors, then commit. Do not accumulate uncommitted changes across multiple turns. Each round of edits gets its own commit before responding to the user. This applies to all file types: code, docs, rules, config.
+After creating or editing any file, run `mage audit`, fix any errors, then commit. Do not accumulate uncommitted changes across multiple turns. Each round of edits gets its own commit before responding to the user. This applies to all file types: code, docs, rules, config.
 
 ## Code Implementation
 
