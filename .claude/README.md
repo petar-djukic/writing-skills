@@ -20,11 +20,19 @@ This directory contains custom instructions and rules for the Claude Code agent.
 │   ├── vision-format.md
 │   └── architecture-format.md
 └── commands/                 # Command templates for common workflows
+    ├── align-specs.md
     ├── bootstrap.md
     ├── do-work.md
     ├── do-work-docs.md
     ├── do-work-code.md
-    └── make-work.md
+    ├── exp-start.md
+    ├── exp-stop.md
+    ├── gh-issue-pop.md
+    ├── gh-issue-push.md
+    ├── gh-issue-show.md
+    ├── gh-release-push.md
+    ├── make-work.md
+    └── test-clone.md
 ```
 
 ## Files
@@ -50,11 +58,19 @@ Context-specific rules that govern how the agent works:
 ### commands/
 Workflow templates the agent can follow:
 
+- **align-specs.md**: Align specifications across PRDs, use cases, and test suites
 - **bootstrap.md**: Create initial VISION.yaml and ARCHITECTURE.yaml for new projects
 - **do-work.md**: Router command to choose between docs and code workflows
 - **do-work-docs.md**: Workflow for documentation tasks (PRDs, use cases, etc.)
 - **do-work-code.md**: Workflow for implementation tasks
+- **exp-start.md**: Create or join an experiment branch in a worktree
+- **exp-stop.md**: Conclude and delete an experiment branch
+- **gh-issue-pop.md**: Pop a GitHub issue into a worktree, decompose, and open a PR
+- **gh-issue-push.md**: Create a GitHub issue with ripple-effect analysis
+- **gh-issue-show.md**: List or inspect GitHub issues
+- **gh-release-push.md**: Run the full release workflow: audit, test, tag, and push
 - **make-work.md**: Analyze project state and propose new work items
+- **test-clone.md**: Clone and test the repository in an isolated environment
 
 ## How It Works
 
