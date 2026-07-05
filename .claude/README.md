@@ -21,6 +21,9 @@ This directory contains custom instructions and rules for the Claude Code agent.
 │   └── architecture-format.md
 └── commands/                 # Command templates for common workflows
     ├── align-specs.md
+    ├── bd-issue-pop.md
+    ├── bd-issue-push.md
+    ├── bd-issue-show.md
     ├── bootstrap.md
     ├── do-work.md
     ├── do-work-docs.md
@@ -59,6 +62,9 @@ Context-specific rules that govern how the agent works:
 Workflow templates the agent can follow:
 
 - **align-specs.md**: Align specifications across PRDs, use cases, and test suites
+- **bd-issue-pop.md**: Pop a bead into a worktree, work on it, and open a PR (beads workflow)
+- **bd-issue-push.md**: Create a bead with ripple-effect analysis (beads workflow)
+- **bd-issue-show.md**: List or inspect beads in the current repository
 - **bootstrap.md**: Create initial VISION.yaml and ARCHITECTURE.yaml for new projects
 - **do-work.md**: Router command to choose between docs and code workflows
 - **do-work-docs.md**: Workflow for documentation tasks (PRDs, use cases, etc.)
