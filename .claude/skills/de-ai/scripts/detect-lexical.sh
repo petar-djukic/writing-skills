@@ -348,6 +348,28 @@ MECHANICAL_TRANSITIONS=(
   "^to begin with"
 )
 
+# --- Category: Marketing and hype vocabulary (venue-inappropriate jargon) ---
+# Calibration: these are HUMAN-register words — keynote and press-release
+# voice, not AI cadence. They flag as undefined jargon inadmissible in
+# technical prose, not as AI tells; the report labels them accordingly.
+MARKETING_JARGON=(
+  "frontier model"
+  "frontier models"
+  "frontier agent"
+  "frontier agents"
+  "frontier AI"
+  "cutting-edge"
+  "cutting edge"
+  "best-in-class"
+  "industry-leading"
+  "world-class"
+  "next-generation"
+  "next generation of"
+  "revolutionary"
+  "paradigm shift"
+  "SOTA"
+)
+
 # --- Category: Ornate register (overshoot lexicon) ---
 # The vocabulary the maximally-clever "LinkedIn voice" depends on. Fine
 # individually (axis in a plot, residual in regression); the style needs them
@@ -566,6 +588,12 @@ run_on_file() {
     echo "--- CoT Structural Patterns ---"
   fi
   scan_patterns "cot-structural" "${COT_STRUCTURAL[@]}"
+
+  if [[ "$JSON_MODE" != "--json" ]]; then
+    echo ""
+    echo "--- Marketing/Hype Vocabulary (venue-inappropriate jargon, NOT an AI tell) ---"
+  fi
+  scan_patterns "venue-jargon" "${MARKETING_JARGON[@]}"
 
   if [[ "$JSON_MODE" != "--json" ]]; then
     echo ""

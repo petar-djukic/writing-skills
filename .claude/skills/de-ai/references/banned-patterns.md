@@ -185,6 +185,22 @@ These appear specifically in technical/academic LLM output at unnatural rates:
 | under the hood | Describe the mechanism directly |
 | at scale | Quantify |
 
+## Marketing and Hype Vocabulary (undefined in technical prose)
+
+Keynote and press-release register: frontier model/agent/AI, cutting-edge,
+best-in-class, industry-leading, world-class, next-generation, game-chang*,
+revolutionary, paradigm shift, unexpanded "SOTA".
+
+**Calibration:** these are HUMAN-register words — a person wrote most of the
+marketing prose the model learned them from. They are flagged as
+venue-inappropriate undefined jargon, not as AI tells, and the report labels
+the category accordingly (`venue-jargon`). In technical prose each either
+gets a definition, gets replaced by the cited source's own terminology
+(e.g. "state-of-the-art function-calling agents"), or gets deleted. The
+motivating case: "frontier models" in the second sentence of an AAAI
+manuscript whose declared scope was small edge models — undefined,
+inadmissible, and off-thesis, yet invisible to every cadence detector.
+
 ## Ornate Register (Overshoot Lexicon)
 
 The vocabulary the maximally-clever "LinkedIn voice" depends on. This is the
