@@ -76,6 +76,13 @@
 - Density: {cot_density} per 500 words
 - Categories: {cot_categories}
 
+### Definedness and Circularity (Prompt 8)
+- Undefined terms: {undefined_terms}
+- Circular claims: {circular_claims}
+- Quantity mismatches: {quantity_mismatches}
+- Venue-jargon hits (lexical): {venue_jargon_hits}
+- Abstract/intro opener duplication: {opener_duplication}
+
 ### Overshoot Assessment (Prompt 7)
 - Overshoot Score: {overshoot_score}/100
 - Confirmed punches: {confirmed_punches}

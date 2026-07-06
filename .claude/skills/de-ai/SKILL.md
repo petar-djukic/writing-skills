@@ -58,6 +58,8 @@ Accepts a single file, multiple files, or directories (scans `*.md` recursively)
 
 This produces line-numbered matches grouped by category. Zero-cost, instant results.
 
+The script also flags **Marketing/Hype Vocabulary** (`venue-jargon`) — frontier models, cutting-edge, best-in-class, and friends. Calibration matters: these are human-register words, flagged as venue-inappropriate undefined jargon, not as AI tells. Do not flag quoted text or paraphrases of a source's own title.
+
 The script also outputs **CoT candidates**, broad patterns that *may* be CoT scaffolding but also appear in legitimate prose. These include:
 - "This/These/That ... is/are" (property announcements)
 - "What X is/does/means is Y" (wh-cleft constructions)
@@ -86,6 +88,7 @@ Review the metrics output. Key signals:
 - `punch_clustering > 0.3` = paragraphs habitually close on a punch (overshoot)
 - `salad_rate_per_100 > 10` = jargon-dense sentences without function-word joints
 - repeated formulae listed = coined phrases re-emitted across the document
+- `opener_duplication` reported = the abstract and introduction share their first sentence (cross-document check; a reviewer reads the same opener twice)
 - `verdict: likely-ai`, `suspicious`, or `suspicious-overshoot` = proceed to Pass 3
 
 If `opening_diversity` is flagged, load [opening-diversity-fixes.md](./references/opening-diversity-fixes.md) for six rewrite techniques (prepositional shift, gerund lead, infinitive purpose, subordinating conjunction, front-weighting, referential lead). This is the hardest issue to fix because it requires rewriting many sentences across the document.
@@ -103,7 +106,8 @@ Load the prompts from [perplexity-prompts.md](./references/perplexity-prompts.md
 3. **Cross-Sentence Surprise** (Prompt 3) — Detect absence of genuine thought progression
 4. **CoT Leakage Detection** (Prompt 4) — Find reasoning scaffolding that regex missed, including bridge sentences at paragraph boundaries. For each candidate, Prompt 4 applies the removal test: delete the sentence, check whether the paragraph loses information. True leaks are flagged for deletion; CoT-style wording on real content is flagged for rewording.
 5. **Overshoot Assessment** (Prompt 7) — mandatory when the document has prior de-ai history, when Prompt 0 flags register, or when the structural verdict is `suspicious-overshoot`. Seeded with the script's performance/punch/salad/formulae outputs; applies the removal test to punch candidates and the second-read test to salad candidates.
-6. **Antithesis / Negation-Flip Enumeration** (Prompt 6) — Enumerate every adjacent-sentence antithesis pair and rule each ANCHOR or REFLEX. Catches the purely semantic reversals the `detect_antithesis` regex cannot. Honor the caller's tolerance: under zero tolerance, rewrite every pair.
+6. **Antithesis / Negation-Flip Enumeration** (Prompt 6) — run with **Prompt 6b** (rhetorical set pieces).
+7. **Definedness and Circularity** (Prompt 8) — mandatory for publication verdicts. Enumerates undefined substantive terms (marketing jargon like "frontier models" is human register — the cadence detectors cannot see it), circular opening claims (predicate restating premise), and quantity mismatches ("the costs compound" supported only by error-rate data). Runs on the abstract and section openers. — Enumerate every adjacent-sentence antithesis pair and rule each ANCHOR or REFLEX. Catches the purely semantic reversals the `detect_antithesis` regex cannot. Honor the caller's tolerance: under zero tolerance, rewrite every pair.
 
 Run Prompts 1-3 in parallel. Run Prompt 4 after reviewing lexical results (it needs that context). Run Prompt 6 after the structural scan (it extends `detect_antithesis`).
 

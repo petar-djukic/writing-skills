@@ -406,6 +406,51 @@ TEXT:
 {text}
 ```
 
+## Prompt 8: Definedness and Circularity (forced enumeration)
+
+The cadence and register detectors measure HOW the text is written; this
+prompt measures whether the opening claims mean anything. Motivating case:
+a manuscript survived the full pipeline with a circular first sentence
+("an agent that consults a model at every step inherits the model's error
+rate at every step" — predicate restates premise), an unanchored quantity
+("the costs compound", supported only by error-rate data), and undefined
+marketing vocabulary in sentence two. Same forced-enumeration discipline as
+Prompt 6: list every candidate first, then rule on each.
+
+```
+You are auditing the text for DEFINEDNESS and CIRCULARITY. Enumerate, then
+rule.
+
+(a) UNDEFINED TERMS: list every substantive term used before it is defined,
+    anchored to a citation, or standard for the venue. For each: quote the
+    first use, state whether a later definition exists, and if the term
+    paraphrases a cited source, quote the source's own terminology. Do not
+    flag terms inside direct quotations or paraphrases of a source's title.
+
+(b) CIRCULAR CLAIMS: for each claim in the opening paragraphs (abstract +
+    first two paragraphs of each section), test whether the predicate
+    restates the premise ("X that does A at every step does A at every
+    step"). Rule CIRCULAR only when deleting the predicate loses no
+    information beyond the premise.
+
+(c) QUANTITY MISMATCH: flag vague quantity nouns ("costs", "overhead",
+    "burden", "gains") whose supporting evidence names a DIFFERENT quantity
+    (e.g. "the costs compound" supported by error rates and repeated-trial
+    success). For each: the claim's quantity, the evidence's quantity, and
+    whether any cited number actually measures the claimed one.
+
+Output per finding:
+- Category (a/b/c), quoted text, location
+- Ruling and the minimal fix (define, replace with source terminology,
+  de-circularize, or rename the quantity)
+
+UNDEFINED_COUNT / CIRCULAR_COUNT / MISMATCH_COUNT totals.
+
+---
+TEXT:
+{text}
+```
+
 ## Usage Notes
 
 - Process text in sections of 500-1500 words for best results
@@ -415,5 +460,6 @@ TEXT:
 - Prompt 6b runs alongside Prompt 6 (rhetorical set pieces: allegory sweeps, anadiplosis chains, emphatic anchors, imperative runs, metaphor mirrors)
 - Prompt 0 runs FIRST, before any script — its cold-read verdict must not be anchored by metrics
 - Prompt 7 runs after the structural scan, seeded with the performance/punch/salad/formulae outputs; mandatory when the document has prior de-ai history or Prompt 0 flags register
+- Prompt 8 runs on the document's opening material (abstract + section openers); mandatory for publication verdicts — cadence detectors cannot see undefined jargon or circular claims
 - Prompt 5 is the integrator — runs last with all evidence, including Prompt 0 and Prompt 7
 - Cache results: if a section scores clean on all prompts, skip it in recursive passes

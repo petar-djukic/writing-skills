@@ -29,6 +29,7 @@ Exit codes: 0 = clean, 1 = issues found, 2 = usage error
 import sys
 import re
 import json
+import difflib
 import statistics
 from pathlib import Path
 from collections import Counter
@@ -546,6 +547,64 @@ def analyze_salad(sentences_all: list, prose: str, word_count: int) -> dict:
         "salad_candidates": candidates[:20],
         "hyphen_compound_per_500w": round(hyphens / word_count * 500, 1) if word_count else 0,
     }
+
+
+def detect_opener_duplication(file_texts: list, threshold: float = 0.75):
+    """Abstract/introduction first-sentence duplication (cross-document).
+
+    file_texts: list of (filename, RAW text). Finds the first sentence after
+    an Abstract marker (markdown heading, bold, or \\begin{abstract}) and
+    after an Introduction heading — across all files of the invocation —
+    and reports when their similarity exceeds the threshold. Motivating
+    case: a manuscript whose abstract and introduction opened with the
+    identical sentence, invisible to every per-file check.
+    """
+    markers = {
+        "abstract": re.compile(
+            r"(?:^|\n)\s*(?:#{1,4}\s*abstract\b[^\n]*|\*\*abstract\*\*[^\n]*"
+            r"|\\begin\{abstract\})",
+            re.IGNORECASE),
+        "introduction": re.compile(
+            r"(?:^|\n)#{1,4}\s*(?:\d+[.\s]*)?introduction\b[^\n]*",
+            re.IGNORECASE),
+    }
+    openers = {}
+    for fname, text in file_texts:
+        for kind, rx in markers.items():
+            if kind in openers:
+                continue
+            m = rx.search(text)
+            if not m:
+                continue
+            after = text[m.end():]
+            # If the marker sits inside a code fence (e.g. \\begin{abstract}
+            # wrapped in a {=latex} fence), the next ``` line CLOSES that
+            # fence — drop just that line so extract_prose sees balanced
+            # fences and can strip the real blocks (tikz figures) itself.
+            fence_parity = sum(
+                1 for l in text[:m.end()].split("\n")
+                if l.strip().startswith("```")) % 2
+            lines = after.split("\n")
+            if fence_parity == 1:
+                for li, l in enumerate(lines):
+                    if l.strip().startswith("```"):
+                        del lines[li]
+                        break
+            cleaned = "\n".join(
+                l for l in lines if not l.strip().startswith("\\"))
+            sents = split_sentences_all(extract_prose(cleaned)[:2000])
+            if sents:
+                openers[kind] = (fname, " ".join(sents[0].split()))
+    if "abstract" in openers and "introduction" in openers:
+        (fa, sa), (fi, si) = openers["abstract"], openers["introduction"]
+        ratio = difflib.SequenceMatcher(None, sa.lower(), si.lower()).ratio()
+        if ratio >= threshold:
+            return {
+                "similarity": round(ratio, 2),
+                "abstract": {"file": fa, "sentence": sa[:140]},
+                "introduction": {"file": fi, "sentence": si[:140]},
+            }
+    return None
 
 
 def repeated_formulae(file_proses: list, min_count: int = 3) -> list:
@@ -1147,11 +1206,13 @@ def main():
     any_issues = False
     all_results = []
     file_proses = []
+    file_raws = []
 
     for filepath in files:
         text = filepath.read_text(encoding="utf-8")
         result = analyze(text, threshold)
         file_proses.append((str(filepath), extract_prose(text)))
+        file_raws.append((str(filepath), text))
 
         if result["issues"]:
             any_issues = True
@@ -1186,14 +1247,28 @@ def main():
     if formulae:
         any_issues = True
 
+    # --- Abstract/introduction opener duplication (cross-document) ---
+    opener_dup = detect_opener_duplication(file_raws)
+    if opener_dup:
+        any_issues = True
+
     if json_mode:
         payload = all_results if len(all_results) > 1 else all_results[0]
         if len(all_results) > 1:
-            payload = {"files": all_results, "repeated_formulae": formulae}
+            payload = {"files": all_results, "repeated_formulae": formulae,
+                       "opener_duplication": opener_dup}
         else:
             payload["repeated_formulae"] = formulae
+            payload["opener_duplication"] = opener_dup
         print(json.dumps(payload, indent=2))
     else:
+        if opener_dup:
+            print("=== Abstract/Introduction Opener Duplication ===")
+            print(f"  similarity {opener_dup['similarity']}:")
+            print(f"  abstract     ({Path(opener_dup['abstract']['file']).name}): \"{opener_dup['abstract']['sentence']}\"")
+            print(f"  introduction ({Path(opener_dup['introduction']['file']).name}): \"{opener_dup['introduction']['sentence']}\"")
+            print("  A reviewer reads the same opener twice. Rewrite one.")
+            print()
         if formulae:
             print("=== Repeated Formulae (coined phrases, whole invocation) ===")
             for f in formulae:
