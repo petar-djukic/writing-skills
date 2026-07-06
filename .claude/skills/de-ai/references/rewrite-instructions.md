@@ -124,6 +124,28 @@ CONSTRAINTS:
 6. Do NOT hedge or both-sides
 7. Sound like a human expert wrote this in one draft
 
+ANTI-OVERSHOOT CONSTRAINTS (the inverse failure — do not polish past human):
+8. Plain sentences are allowed and required. A fact stated flatly is not a
+   defect. Aim for a plain declarative in most paragraphs.
+9. Do NOT close every paragraph on a flourish. Most paragraphs should end
+   where the content ends.
+10. STARVE LIST: never use the ornate-register words (banned-patterns.md,
+    "Ornate Register" section) — pick the literal verb and the concrete
+    noun. Also forbidden: this document's own repeated formulae as detected
+    by detect-structural.py; each coined phrase keeps exactly one home,
+    every other occurrence is paraphrased.
+11. Prefer the boring accurate sentence over the clever compressed one.
+
+UNPACKING RULES (for flagged word-salad sentences):
+- One idea per sentence; split any sentence carrying two coined compounds.
+- Reintroduce function words — they are the joints of the sentence.
+- Expand hyphen compounds into relative clauses ("count-violating answer" ->
+  "an answer that contradicts the count").
+- Expand nominalizations back into verbs ("the elimination of X" ->
+  "eliminating X" or "X was eliminated").
+- A technical term earns its place only if it is defined or standard in the
+  venue.
+
 OUTPUT: The rewritten passage only. No commentary.
 ```
 
@@ -132,6 +154,9 @@ OUTPUT: The rewritten passage only. No commentary.
 1. Rewrite the flagged passage
 2. Run detect-lexical.sh on the rewrite
 3. Run detect-structural.py on the rewrite
+3b. Re-run Prompt 0 (cold read) on the rewrite — a rewrite that improves the
+    metrics but reads worse to a plain reader is a regression; script metrics
+    alone never validate a rewrite
 4. If new issues found AND issue count decreased: iterate (max 3 times)
 5. If new issues found AND issue count same or increased: stop, flag for human
 6. If clean: accept rewrite

@@ -3,6 +3,30 @@
 Since Claude does not expose token-level log probabilities, we use Opus as a perplexity judge.
 These prompts are used in Pass 3 of the detection pipeline.
 
+## Prompt 0: Cold Read (run BEFORE the scripts)
+
+Run this before any script output exists, so the judgment is not anchored by
+metrics or verdict labels. It is the only pass that reads the document the
+way its audience will.
+
+```
+Read the following document once, as a plain reader — a tired colleague
+seeing it for the first time. Do not count anything. Answer:
+
+1. FOLLOWABLE: Could you follow the argument on a single pass? Where did
+   you have to re-read?
+2. REGISTER: Is the voice appropriate for the stated venue, or does it
+   perform — mannered, oracular, epigrammatic, compressed past clarity?
+3. HARDEST_SENTENCES: Quote the three hardest-to-parse sentences.
+4. COLD_VERDICT: one of "reads naturally", "polished but readable",
+   "mannered — the style calls attention to itself", "opaque — meaning is
+   lost to compression".
+
+---
+TEXT:
+{text}
+```
+
 ## Prompt 1: Vocabulary Predictability Score
 
 Use this to score how "expected" the word choices are at the sentence level.
@@ -27,6 +51,7 @@ S<number>: <score> | <brief reason>
 Then provide:
 OVERALL_SCORE: <weighted average>
 HIGH_PREDICTABILITY_SENTENCES: <list of sentence numbers scoring 4+>
+LOW_SCORE_CAUTION: if the overall score is below 2.5, state whether the surprising vocabulary is bursty (occasional, human) or uniform (every sentence surprising — which is itself a machine signature; see Prompt 7).
 
 ---
 TEXT TO ANALYZE:
@@ -174,7 +199,14 @@ PERPLEXITY PROXY SCORES:
 COT LEAKAGE DETECTION:
 {cot_results}
 
-Now read the text itself and provide your integrated judgment:
+OVERSHOOT ASSESSMENT (Prompt 7):
+{overshoot_results}
+
+Now read the text itself and provide your integrated judgment. AI failure
+has two directions: bland (predictable vocabulary, uniform rhythm) and
+ornate (every sentence performing, epigram density, Goodharted metrics).
+A low predictability score is NOT evidence of human writing when polish
+intensity is uniform. Judge both directions:
 
 1. AI_PROBABILITY: <0-100%>
 2. CONFIDENCE: <low/medium/high>
@@ -248,11 +280,75 @@ TEXT TO ANALYZE:
 {text}
 ```
 
+## Prompt 7: Overshoot / Uniform Maximal Polish (run AFTER the scripts)
+
+Detects the high-perplexity failure direction: text tuned against AI
+detectors until every surface metric looks human while the prose reads as
+mannered and machine-uniform. Any single clever sentence is legitimate; the
+tell is constant intensity. Judge the distribution, not individual
+sentences.
+
+```
+You are assessing a text for OVERSHOOT — the inverse AI failure, where prose
+is uniformly, maximally polished. You have the structural script's metrics:
+
+PERFORMANCE INTENSITY:
+{performance_metrics}   # plain_sentence_rate, intensity_variance, mean score
+
+PUNCH CANDIDATES:
+{punch_candidates}      # short contrast sentences in positions of emphasis
+
+WORD SALAD CANDIDATES:
+{salad_candidates}      # low function-word ratio / long content runs
+
+REPEATED FORMULAE:
+{repeated_formulae}     # coined phrases recurring across the document
+
+ORNATE-REGISTER HITS:
+{ornate_hits}           # overshoot-lexicon words and their density
+
+Assess each dimension:
+
+(a) INTENSITY_VARIANCE: Are there plain declarative sentences that state a
+    fact and stop, or does every sentence perform (pivot, antithesis,
+    fragment, reversal)? Quote three plain sentences if they exist.
+(b) EPIGRAM_RATE: What fraction of paragraphs close on an aphorism — a
+    short, present-tense, abstract claim carrying no data?
+(c) ENGINE_UNIFORMITY: Is there one construction template (claim, colon or
+    dash, qualification) regardless of sentence length?
+(d) COMPRESSION_DAMAGE: Quote sentences requiring a second read — missing
+    subjects, noun pileups, cryptic verb choices.
+(e) FORMULA_REPETITION: For each repeated formula, is it a defined technical
+    term (legitimate) or a coined flourish being re-emitted?
+(f) SALAD_VERIFICATION: For each word-salad candidate, apply the second-read
+    test: can it be parsed in one pass? Mark for unpacking if not. Also list
+    salads the regex missed (center embeddings parse fine by function-word
+    ratio but still force a re-read).
+(g) PUNCH_VERIFICATION: For each punch candidate, apply the removal test:
+    delete the sentence and re-read the paragraph. If nothing is lost, it
+    was rhetoric (confirmed punch). If information is lost, it is a plain
+    short sentence (clear it).
+
+Output:
+OVERSHOOT_SCORE: <0-100>
+CONFIRMED_PUNCHES: <list>
+SENTENCES_TO_UNPACK: <list with reasons>
+FORMULAE_TO_CONSOLIDATE: <phrase -> which single location keeps it>
+VERDICT: one of "no overshoot", "occasional flourish (human range)",
+"uniform polish — overshoot", "opaque — heavy overshoot"
+
+---
+TEXT:
+{text}
+```
+
 ## Usage Notes
 
 - Process text in sections of 500-1500 words for best results
 - Always run Prompts 1-3 in parallel (independent assessments)
 - Prompt 4 runs after lexical scan (needs context of what regex missed)
 - Prompt 6 runs after the structural scan (catches the semantic antithesis pairs the `detect_antithesis` regex cannot)
-- Prompt 5 is the integrator — runs last with all evidence
+- Prompt 0 runs FIRST, before any script — its cold-read verdict must not be anchored by metrics
+- Prompt 7 runs after the structural scan, seeded with the performance/punch/salad/formulae outputs; mandatory when the document has prior de-ai history or Prompt 0 flags register
+- Prompt 5 is the integrator — runs last with all evidence, including Prompt 0 and Prompt 7
 - Cache results: if a section scores clean on all prompts, skip it in recursive passes
