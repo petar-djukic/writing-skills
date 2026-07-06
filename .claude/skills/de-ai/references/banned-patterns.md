@@ -211,6 +211,20 @@ rewrite, each detected formula gets one home; every other occurrence is
 paraphrased. The static list starves the register; the dynamic list starves
 this document's coinages.
 
+## Rhetorical Set Pieces (Step 3 checklist — not regexable)
+
+Named so the semantic pass looks for them explicitly (Prompt 6b). Ruling is
+ANCHOR/REFLEX: one instance can be the article's spine; the tell is density
+and reflexive use.
+
+| Set piece | Shape | Corpus example |
+|---|---|---|
+| Metaphor allegory sweep | every category mapped onto the metaphor, one sentence each | five adopter camps mapped onto the boiling frog, one sentence per camp |
+| Anadiplosis chain | each sentence picks up the previous tail | "Real disagreement requires real claims. Real claims require words that point to things." |
+| Stock emphatic anchor | two-beat self-endorsement | "That's it. That's the only question that matters now." / "That's the test." |
+| Imperative-run closer | closing drumbeat of commands | "Find the cracks. Build in your own time. Document everything. Set your exit timeline." |
+| Metaphor mirror pair | adjacent sentences mapping a pair onto a metaphor pair | "The specification is the source. The generated code is the binary." |
+
 ## Quoted Examples (false-positive handling)
 
 Documents that deliberately quote banned phrases as examples (e.g. an essay

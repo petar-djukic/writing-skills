@@ -820,11 +820,60 @@ def analyze(text: str, threshold_name: str = "medium") -> dict:
         })
 
     # --- Tricolon density ---
-    # AI gravitates toward groups of three (X, Y, and Z). Human writers use pairs
-    # or irregular counts. Density above 3 per 500 words is suspicious.
-    tricolon_count = len(re.findall(r"\w+,\s+\w+,\s+and\s+\w+", prose))
+    # AI gravitates toward groups of three. The habit is phrase-level, not
+    # single words: "no baseline to compare against, no iterative validation
+    # during development, and too much hope". Two shapes:
+    #   1. phrase tricolon: A, B, and C where each part is a phrase
+    #   2. anaphoric comma list: 3+ segments opening with the same word
+    #      ("no X, no Y, no Z" / "doesn't A, doesn't B, doesn't C")
+    tricolon_count = len(re.findall(
+        r"[^,.;:\n]{3,60},\s+[^,.;:\n]{3,60},\s+and\s+[^,.;:\n]{3,60}", prose))
+    anaphoric_lists = 0
+    asyndetic_lists = 0
+    for s in split_sentences_all(prose):
+        segs = [seg.strip() for seg in s.split(",") if seg.strip()]
+        if len(segs) < 3:
+            continue
+        heads = []
+        for seg in segs:
+            w = seg.split()
+            h = w[0].lower() if w else ""
+            # strip a leading "and" so the closing segment compares by content
+            if h == "and" and len(w) > 1:
+                h = w[1].lower()
+            heads.append(h)
+        found_anaphora = False
+        for k in range(len(heads) - 2):
+            h = heads[k]
+            if h and len(h) > 1 and h == heads[k + 1] == heads[k + 2]:
+                found_anaphora = True
+                break
+        if not found_anaphora:
+            # subject-carrying first segment: "It doesn't A, doesn't B,
+            # doesn't C" — repeated head starts at segment 2 but appears
+            # inside segment 1.
+            for k in range(len(heads) - 1):
+                h = heads[k + 1]
+                if (h and len(h) > 1 and k + 2 <= len(heads) - 1
+                        and h == heads[k + 2]
+                        and h in (w.lower() for w in segs[k].split())):
+                    found_anaphora = True
+                    break
+        if found_anaphora:
+            anaphoric_lists += 1
+            continue
+        # Asyndetic verb tricolon: 3+ segments, no "and" joining the last,
+        # continuation segments short and lowercase ("He optimizes the
+        # asset, squeezes the margin, runs it lean.")
+        if (not re.match(r"(?i)and\b", segs[-1])
+                and all(len(seg.split()) <= 8 for seg in segs[1:])
+                and all(seg[0].islower() for seg in segs[1:] if seg)):
+            asyndetic_lists += 1
+    tricolon_count += anaphoric_lists + asyndetic_lists
     tricolon_density = (tricolon_count / word_count) * 500 if word_count > 0 else 0
     metrics["tricolon_density_per_500w"] = round(tricolon_density, 1)
+    metrics["anaphoric_list_count"] = anaphoric_lists
+    metrics["asyndetic_list_count"] = asyndetic_lists
 
     if tricolon_density > thresholds.get("tricolon_density_max", 3.0):
         issues.append({
