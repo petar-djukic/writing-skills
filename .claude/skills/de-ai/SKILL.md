@@ -48,7 +48,7 @@ Run Prompt 0 from [perplexity-prompts.md](./references/perplexity-prompts.md) on
 
 ### Step 1: Run Lexical Scan (No Model Required)
 
-Run the lexical detection script to find banned words, AI clichés, false emphasis, and mechanical transitions:
+Run the lexical detection script to find banned words, AI clichés, false emphasis, narrative-pivot frames, and mechanical transitions:
 
 ```bash
 bash .claude/skills/de-ai/scripts/detect-lexical.sh <file-or-dir> [file-or-dir ...]
@@ -66,6 +66,7 @@ The script also outputs **CoT candidates**, broad patterns that *may* be CoT sca
 - "Consider X" (imperative example introductions)
 - "not only X but Y" (correlative conjunctions)
 - "Two distinct X define..." (enumeration announcements)
+- "This is where...", "That's where...", sentence-initial "Enter X" (bare stage-setting openers, `narrative-pivot-candidate` — the specific completions like "comes into play" and "here's the kicker" are hard flags)
 
 Candidates do not fail the scan. Instead, carry them forward to Step 3 (semantic analysis) for LLM verification. For each candidate, the LLM applies the removal test: delete the sentence, re-read the paragraph. If no information is lost, it was scaffolding; if information is lost, it is genuine content and should be kept. Wh-clefts and "Consider" imperatives should usually be reworded even when they carry real content, because they read as AI regardless of intent.
 

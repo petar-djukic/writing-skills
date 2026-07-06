@@ -348,6 +348,78 @@ MECHANICAL_TRANSITIONS=(
   "^to begin with"
 )
 
+# --- Category: Narrative pivot / stage-setting frames ---
+# The model dramatizing its own exposition: staging a reveal instead of
+# stating the fact ("this is where X comes in", "here's the kicker").
+# These are the specific completions — rarely legitimate. The bare openers
+# ("this is where", "that's where") are candidates below, since they also
+# appear in plain descriptive prose. "." wildcards cover straight and
+# curly apostrophes.
+NARRATIVE_PIVOTS=(
+  # stage-setting
+  "comes into play"
+  "come into play"
+  "where .* comes in"
+  "enters the picture"
+  "enter the picture"
+  "where the magic happens"
+  "cue the"
+  # manufactured reveal
+  "here.s the kicker"
+  "here is the kicker"
+  "here.s the catch"
+  "here is the catch"
+  "here.s the twist"
+  "there.s a catch"
+  "plot twist"
+  # discovery narrative
+  "it turns out"
+  "turns out,"
+  "that.s when I realized"
+  "that.s when it hit me"
+  "little did I know"
+  "fast forward"
+  # reader poke
+  "sound familiar"
+  "let that sink in"
+  "read that again"
+  "you read that right"
+  "we.ve all been there"
+  # translation frame
+  "in plain English"
+  "long story short"
+  "the short answer"
+  "think of it as"
+  "the beauty of"
+  # epochal framing
+  "gone are the days"
+  "in a world where"
+  "we live in a world"
+  # significance narration (the model justifying its own point)
+  "this matters because"
+  "it matters because"
+  "why this matters"
+  "why it matters"
+  "this lands because"
+  "this is important because"
+  "the reason this matters"
+)
+
+# --- Category: Narrative pivot candidates (broad, need LLM verification) ---
+# Bare stage-setting openers. "This is where the function stores its
+# state" is legitimate descriptive prose; "This is where agents come in"
+# is a pivot. Carried to the semantic pass for the removal test.
+NARRATIVE_PIVOT_CANDIDATES=(
+  "this is where"
+  "that.s where"
+  "here.s where"
+  "here.s why"
+  "here.s how"
+  "the best part"
+  "this works because"
+  '[.!?] Enter [A-Z]'
+)
+
 # --- Category: Marketing and hype vocabulary (venue-inappropriate jargon) ---
 # Calibration: these are HUMAN-register words — keynote and press-release
 # voice, not AI cadence. They flag as undefined jargon inadmissible in
@@ -588,6 +660,18 @@ run_on_file() {
     echo "--- CoT Structural Patterns ---"
   fi
   scan_patterns "cot-structural" "${COT_STRUCTURAL[@]}"
+
+  if [[ "$JSON_MODE" != "--json" ]]; then
+    echo ""
+    echo "--- Narrative Pivot / Stage-Setting Frames ---"
+  fi
+  scan_patterns "narrative-pivot" "${NARRATIVE_PIVOTS[@]}"
+
+  if [[ "$JSON_MODE" != "--json" ]]; then
+    echo ""
+    echo "--- Narrative Pivot Candidates (needs LLM verification) ---"
+  fi
+  scan_candidates "narrative-pivot-candidate" "${NARRATIVE_PIVOT_CANDIDATES[@]}"
 
   if [[ "$JSON_MODE" != "--json" ]]; then
     echo ""
