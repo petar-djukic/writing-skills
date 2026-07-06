@@ -9,10 +9,12 @@ tracks versions.
 Subcommands:
   search   Query arXiv and cross-reference against the YAML db. Prints a
            JSON list of candidates, each tagged new / known / outdated.
-  fetch    Download a paper's PDF and create/update its db entry
-           (status: downloaded). Prints the local PDF path + metadata.
+  fetch    Download a paper's PDF, convert to markdown, and create/update
+           its db entry (status: downloaded). Prints the local paths + metadata.
   record   Mark a paper as summarized: attach the summary file path and
            any topics/relevance notes. Call this after writing the summary.
+  repair   Walk the database and re-convert any PDFs whose markdown file is
+           missing. Migrates legacy text_path entries to md_path.
   list     Print the current db as JSON (for a quick overview).
 
 The db is CSL-YAML — a bare YAML list of entries, each with an `id` field.
@@ -24,7 +26,8 @@ A paper's identity is its base arXiv id (e.g. 2310.12345), independent of
 version. That is how we avoid downloading the same paper twice while still
 noticing when a newer version (v2, v3, ...) appears.
 
-Stdlib only except PyYAML (`pip install --user pyyaml`).
+Stdlib only except PyYAML (`pip install --user pyyaml`). pymupdf4llm is
+recommended for PDF-to-markdown conversion; pypdf is the fallback.
 """
 
 import argparse
@@ -231,8 +234,15 @@ def cmd_search(args):
     print(json.dumps(out, indent=2, ensure_ascii=False))
 
 
-def extract_text(pdf_path):
-    """Best-effort PDF -> text. Tries pypdf, then pdfminer."""
+def convert_pdf(pdf_path):
+    """Best-effort PDF -> markdown. Tries pymupdf4llm, falls back to pypdf plain text."""
+    try:
+        import pymupdf4llm
+        return pymupdf4llm.to_markdown(pdf_path)
+    except ImportError:
+        pass
+    except Exception:  # noqa: BLE001
+        pass
     try:
         import pypdf
         reader = pypdf.PdfReader(pdf_path)
@@ -268,14 +278,14 @@ def cmd_fetch(args):
     with urllib.request.urlopen(req, timeout=60) as r, open(pdf_path, "wb") as f:
         f.write(r.read())
 
-    text_path = None
-    text = extract_text(pdf_path)
-    if text and text.strip():
-        text_dir = os.path.join(db_dir, "text")
-        os.makedirs(text_dir, exist_ok=True)
-        text_path = os.path.join(text_dir, f"{safe}v{meta['version']}.txt")
-        with open(text_path, "w") as tf:
-            tf.write(text)
+    md_path = None
+    md_content = convert_pdf(pdf_path)
+    if md_content and md_content.strip():
+        papers_dir = os.path.join(db_dir, "papers")
+        os.makedirs(papers_dir, exist_ok=True)
+        md_path = os.path.join(papers_dir, f"{safe}v{meta['version']}.md")
+        with open(md_path, "w") as mf:
+            mf.write(md_content)
 
     entries = load_db(args.db)
     idx = index_by_id(entries)
@@ -297,7 +307,7 @@ def cmd_fetch(args):
         "primary_category": meta["primary_category"],
         "categories": meta["categories"],
         "pdf_path": os.path.relpath(pdf_path, db_dir),
-        "text_path": os.path.relpath(text_path, db_dir) if text_path else None,
+        "md_path": os.path.relpath(md_path, db_dir) if md_path else None,
         "status": "downloaded",
         "added": str(date.today()),
     }
@@ -311,7 +321,7 @@ def cmd_fetch(args):
     else:
         entries.append(record)
     save_db(args.db, entries)
-    print(json.dumps({"pdf_path": pdf_path, "text_path": text_path, "meta": record},
+    print(json.dumps({"pdf_path": pdf_path, "md_path": md_path, "meta": record},
                      indent=2, ensure_ascii=False))
 
 
@@ -334,6 +344,41 @@ def cmd_record(args):
     entries = [entry if p.get("arxiv_id", p["id"]) == eid else p for p in entries]
     save_db(args.db, entries)
     print(json.dumps(entry, indent=2, ensure_ascii=False))
+
+
+def cmd_repair(args):
+    entries = load_db(args.db)
+    db_dir = os.path.dirname(os.path.abspath(args.db))
+    checked = converted = skipped = 0
+    for entry in entries:
+        checked += 1
+        pdf_rel = entry.get("pdf_path")
+        if not pdf_rel:
+            skipped += 1
+            continue
+        pdf_abs = os.path.join(db_dir, pdf_rel)
+        if not os.path.exists(pdf_abs):
+            skipped += 1
+            continue
+        md_rel = entry.get("md_path")
+        needs_convert = not md_rel or not os.path.exists(os.path.join(db_dir, md_rel))
+        if not needs_convert:
+            continue
+        md_content = convert_pdf(pdf_abs)
+        if not md_content or not md_content.strip():
+            skipped += 1
+            continue
+        papers_dir = os.path.join(db_dir, "papers")
+        os.makedirs(papers_dir, exist_ok=True)
+        stem = os.path.splitext(os.path.basename(pdf_rel))[0]
+        md_abs = os.path.join(papers_dir, f"{stem}.md")
+        with open(md_abs, "w") as mf:
+            mf.write(md_content)
+        entry["md_path"] = os.path.relpath(md_abs, db_dir)
+        converted += 1
+    save_db(args.db, entries)
+    print(json.dumps({"checked": checked, "converted": converted, "skipped": skipped},
+                     indent=2))
 
 
 def cmd_list(args):
@@ -368,6 +413,9 @@ def main():
     r.add_argument("--topics", nargs="*", help="topic tags, e.g. llm agents fsm")
     r.add_argument("--relevance", help="one line on why it matters to the current work")
     r.set_defaults(func=cmd_record)
+
+    rp = sub.add_parser("repair", help="re-convert PDFs missing their markdown file")
+    rp.set_defaults(func=cmd_repair)
 
     l = sub.add_parser("list", help="print the db as JSON")
     l.set_defaults(func=cmd_list)

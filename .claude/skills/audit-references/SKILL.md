@@ -29,8 +29,8 @@ source paper.
 - **Database:** `references.yaml` in the working directory (or at the nearest
   ancestor that has one). This is the CSL-YAML bibliography that pandoc and
   `update-references` both use.
-- **PDFs/text:** `<db-dir>/pdfs/` and `<db-dir>/text/` — the same locations
-  `update-references` uses. If a paper was already fetched, reuse it.
+- **PDFs/papers:** `<db-dir>/pdfs/` and `<db-dir>/papers/` — the same locations
+  `update-references` uses. If a paper was already fetched, reuse its markdown.
 - **Audit report:** `<db-dir>/audits/<document-stem>-audit.md`, using the
   template in `<skill>/references/audit-template.md`.
 
@@ -77,15 +77,17 @@ For resolved citations, note the entry's `arxiv_id` (if present), `URL`,
 
 For each resolved citation, get the paper text:
 
-1. **Already fetched?** Check if `text_path` or `pdf_path` exists in the
-   database entry and the file is on disk. If so, read it directly.
+1. **Already fetched?** Check if `md_path` (or legacy `text_path`) or `pdf_path`
+   exists in the database entry and the file is on disk. If so, read the
+   markdown file directly. If only a PDF exists without markdown, run `repair`
+   first to generate it.
 
 2. **Has arxiv_id?** Fetch via the sibling skill's script:
    ```bash
    python3 .claude/skills/update-references/scripts/arxiv.py \
      --db <db-path> fetch --id <arxiv_id>
    ```
-   Then read the text sidecar it produces.
+   Then read the markdown conversion it produces.
 
 3. **No arxiv_id?** Search Google Scholar for the title:
    ```bash
@@ -136,6 +138,6 @@ Summarize the results:
 
 ## Dependencies
 
-Same as `update-references`: PyYAML is required, pypdf is recommended. The
-extraction script is pure Python stdlib. arXiv and Scholar access use the
-sibling skill's scripts.
+Same as `update-references`: PyYAML is required, `pymupdf4llm` is recommended
+for PDF-to-markdown conversion. The extraction script is pure Python stdlib.
+arXiv and Scholar access use the sibling skill's scripts.
