@@ -588,6 +588,106 @@ def repeated_formulae(file_proses: list, min_count: int = 3) -> list:
     return out[:25]
 
 
+_DET_CLASS = {"the", "a", "an", "this", "that", "these", "those"}
+_PRON_CLASS = {"i", "you", "we", "they", "it", "he", "she"}
+
+
+def _first_word_class(sentence: str) -> str:
+    words = sentence.split()
+    if not words:
+        return ""
+    w = words[0].rstrip(".,;:!?\"'").lower()
+    if w in _DET_CLASS:
+        return "DET"
+    if w in _PRON_CLASS:
+        return "PRON"
+    return w
+
+
+def detect_frame_parallelism(sentences: list) -> list:
+    """Frame-level parallels the identical-first-2-words check misses.
+
+    AI parallelism varies the surface while repeating the syntactic frame:
+    "The methodology is learnable. The discipline is maintainable. The
+    results are real." — same frame, distinct nouns. Two passes:
+
+      1. first-word runs: >= 3 consecutive sentences opening with the same
+         word ("More tools... More specifications... More parallelism...");
+         for the high-frequency openers The/I/It/A the run only counts when
+         every sentence is short (<= 8 words), which is the attribute-triple
+         and anaphora shape.
+      2. skeleton runs: >= 3 consecutive short sentences (<= 10 words)
+         sharing first-word CLASS (determiner or pronoun) with distinct
+         second words — catches mixed-determiner frames pass 1 misses.
+    """
+    issues = []
+    if len(sentences) < 3:
+        return issues
+    firsts = [s.split()[0].rstrip(".,;:!?\"'").lower() if s.split() else ""
+              for s in sentences]
+    seconds = [s.split()[1].rstrip(".,;:!?\"'").lower() if len(s.split()) > 1 else ""
+               for s in sentences]
+    lengths = [len(s.split()) for s in sentences]
+    flagged_ranges = []
+
+    def overlaps(a, b):
+        return not (a[1] <= b[0] or b[1] <= a[0])
+
+    # Pass 1: first-word runs
+    common = {"the", "i", "it", "a"}
+    i = 0
+    while i < len(sentences):
+        j = i
+        while (j + 1 < len(sentences) and firsts[j + 1] == firsts[i]
+               and firsts[i]):
+            j += 1
+        run_len = j - i + 1
+        if run_len >= 3:
+            short_ok = all(lengths[k] <= 8 for k in range(i, j + 1))
+            if firsts[i] not in common or short_ok:
+                # distinct continuations — otherwise the original
+                # identical-first-2-words check already reports it
+                if len({seconds[k] for k in range(i, j + 1)}) >= 2:
+                    snippet = " ".join(sentences[i:j + 1])[:110]
+                    issues.append({
+                        "type": "frame-parallelism",
+                        "detail": (f'{run_len} consecutive sentences open with '
+                                   f'"{sentences[i].split()[0]}" and repeat the frame '
+                                   f'with varied content: "{snippet}..."'),
+                        "severity": "high" if run_len >= 4 else "medium",
+                        "position": f"sentences {i + 1}-{j + 1}",
+                    })
+                    flagged_ranges.append((i, j + 1))
+        i = j + 1
+
+    # Pass 2: skeleton runs (first-word CLASS + short + distinct nouns)
+    classes = [_first_word_class(s) for s in sentences]
+    i = 0
+    while i < len(sentences):
+        j = i
+        while (j + 1 < len(sentences)
+               and classes[j + 1] == classes[i]
+               and classes[i] in ("DET", "PRON")
+               and lengths[j + 1] <= 10):
+            j += 1
+        run_len = j - i + 1
+        if (run_len >= 3 and all(lengths[k] <= 10 for k in range(i, j + 1))
+                and len({seconds[k] for k in range(i, j + 1)}) == run_len
+                and not any(overlaps((i, j + 1), r) for r in flagged_ranges)):
+            snippet = " ".join(sentences[i:j + 1])[:110]
+            issues.append({
+                "type": "frame-parallelism",
+                "detail": (f"{run_len} consecutive short sentences share the "
+                           f"{classes[i]}-opener frame with distinct subjects: "
+                           f'"{snippet}..."'),
+                "severity": "medium",
+                "position": f"sentences {i + 1}-{j + 1}",
+            })
+        i = j + 1
+
+    return issues
+
+
 def analyze(text: str, threshold_name: str = "medium") -> dict:
     """Run all structural checks. Return issues dict."""
     thresholds = THRESHOLDS[threshold_name]
@@ -643,6 +743,11 @@ def analyze(text: str, threshold_name: str = "medium") -> dict:
     openings = get_sentence_openings(sentences)
     parallelism_issues = detect_parallelism(openings, thresholds["parallelism_max_repeats"])
     issues.extend(parallelism_issues)
+
+    # --- Frame-level parallelism (varied surface, repeated frame) ---
+    frame_issues = detect_frame_parallelism(sentences)
+    issues.extend(frame_issues)
+    metrics["frame_parallelism_runs"] = len(frame_issues)
 
     # --- Antithesis / negation-flip pairs (zero tolerance) ---
     # Uses the unfiltered sentence list so clipped second clauses survive, but
