@@ -97,6 +97,7 @@ These have legitimate uses but are AI tells in most contexts.
 | constitutes | Legal/formal definition | "constitutes a significant X" — use "is" |
 | manifests | Medical/physical symptom | "manifests as..." — use "appears as" |
 | affords | — | "affords the ability to" — use "allows" |
+| shape | Geometry, plots, physical form | "keeps the same shape", "the shape of the problem" — metaphor for structure; name what actually recurs (the same failure mode, the same cost curve) |
 
 ## Tier 3: Density Markers (Fine Alone, Bad in Clusters)
 
@@ -243,7 +244,7 @@ epigrams unwritable.
 | Sub-category | Words / frames | Plain alternative |
 |---|---|---|
 | Metaphor verbs (epigram engines) | loads, carries (a claim/cost), buys, hires/hired, manufacture, forfeits, inherits (an error rate), converts (failures), narrates, decides (as in "reliability decides whether"), survives (a prediction), awaits | use the literal verb: causes, requires, produces, loses, describes, determines |
-| Abstract epigram nouns | instrument, concession, axis (non-plot), mass (non-physics), price, floor/ceiling (non-math), dial, menu, engine (non-mechanical), affordance, register (non-CS), the split, the construct | name the concrete thing |
+| Abstract epigram nouns | instrument, concession, axis (non-plot), mass (non-physics), price, floor/ceiling (non-math), dial, menu, engine (non-mechanical), affordance, register (non-CS), the split, the construct, shape (non-geometric: "the shape of the problem") | name the concrete thing |
 | Rhetorical glue | merely, emphatic "itself", sentence-initial "Nor", "the X in question", "to the digit" | delete or use "only" |
 | Borrowed-metaphor adjectives | load-bearing, first-class, orthogonal (non-math), surface (non-API), upstream/downstream (non-pipeline), brittle (non-materials) | describe the actual property |
 | Aphorism frames (phrase-level) | "X is the Y, not the Z", "the price of X is Y", "buys X with Y", "X is not a Y problem but a Z problem", "what X narrates as Y" | state the claim once, plainly |

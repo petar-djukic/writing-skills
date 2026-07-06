@@ -308,6 +308,10 @@ AI_PHRASES=(
   "out of the box"
   "under the hood"
   "at scale"
+  # shape-as-structure metaphor ("keeps the same shape", "has the shape of")
+  "same shape"
+  "has the shape of"
+  "takes the shape of"
 )
 
 # --- Category: False emphasis adverbs ---
@@ -472,6 +476,7 @@ ORNATE_REGISTER=(
   "affordance"
   "the split"
   "the construct"
+  "the shape of"
   # rhetorical glue
   " merely "
   "^nor "
