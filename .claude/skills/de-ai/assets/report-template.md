@@ -83,6 +83,12 @@
 - Venue-jargon hits (lexical): {venue_jargon_hits}
 - Abstract/intro opener duplication: {opener_duplication}
 
+### Paragraph Schema (Prompt 9 + proxies)
+- Mean topic overlap / cohesion / subject churn: {schema_means}
+- Low-topic paragraphs (proxy): {low_topic_paragraphs}
+- MEAL defects (no main idea / evidence-first / link-only): {meal_defects}
+- Incoherent claims (nonsense check): {incoherent_claims}
+
 ### Overshoot Assessment (Prompt 7)
 - Overshoot Score: {overshoot_score}/100
 - Confirmed punches: {confirmed_punches}
