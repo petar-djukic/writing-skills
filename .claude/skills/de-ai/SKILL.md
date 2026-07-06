@@ -22,6 +22,8 @@ Partial exception: `detect-structural.py` now has a `detect_antithesis` check th
 
 A `clean` or `minor-issues` verdict from the structural script means the surface checks passed. It does **not** mean the prose is in voice. Step 3 (semantic analysis by Opus) is the only layer that catches the rhetorical AI tells the scripts still miss. Skipping Step 3 produces false-negative reports.
 
+The blindness runs in **both directions**. The scripts flag the bland AI direction (low burstiness, repetitive openings). Text iteratively rewritten against these very detectors overshoots into the opposite register — uniformly maximal polish, epigram-closing paragraphs, coined formulae, word salads — and passes every surface check while reading as obviously machine-made ("the LinkedIn voice"). The structural script now emits overshoot metrics (`plain_sentence_rate`, `punch_clustering`, `salad_rate`, repeated formulae, `suspicious-overshoot` verdict), but the judgment lives in Prompt 0 (cold read) and Prompt 7 (overshoot assessment). A `minor-issues` verdict on a document with prior de-ai history deserves MORE suspicion, not less.
+
 **Do not infer voice quality from the structural script's verdict label.** Voice is a judgment, not a statistic.
 
 ## When to Use
@@ -39,6 +41,10 @@ A `clean` or `minor-issues` verdict from the structural script means the surface
 - The writing-style-guide.md is present in `templates/`
 
 ## Procedure
+
+### Step 0: Cold Read (Model, BEFORE the scripts)
+
+Run Prompt 0 from [perplexity-prompts.md](./references/perplexity-prompts.md) on the document before looking at any script output. The cold read answers what no metric can: could a plain reader follow this on one pass, and is the register appropriate for the venue? Record the COLD_VERDICT — it anchors nothing and is anchored by nothing.
 
 ### Step 1: Run Lexical Scan (No Model Required)
 
@@ -73,10 +79,14 @@ Accepts a single file, multiple files, or directories (scans `*.md` recursively)
 Default threshold is `strict`. Use `--threshold=medium` for drafts, `--threshold=relaxed` for early notes.
 
 Review the metrics output. Key signals:
-- `sentence_length_std < 4.0` = unnaturally uniform (AI)
+- `sentence_length_std < 4.0` = unnaturally uniform (AI); `> ~40` = overshoot suspicion (tuned against this check)
 - `opening_diversity < 0.6` = repetitive sentence starts (AI), typically "The" dominance
 - `dash_density > 3.0` = em-dash overuse (AI)
-- `verdict: likely-ai` or `suspicious` = proceed to Pass 3
+- `plain_sentence_rate < 0.25` = almost no rest beats; every sentence performs (overshoot)
+- `punch_clustering > 0.3` = paragraphs habitually close on a punch (overshoot)
+- `salad_rate_per_100 > 10` = jargon-dense sentences without function-word joints
+- repeated formulae listed = coined phrases re-emitted across the document
+- `verdict: likely-ai`, `suspicious`, or `suspicious-overshoot` = proceed to Pass 3
 
 If `opening_diversity` is flagged, load [opening-diversity-fixes.md](./references/opening-diversity-fixes.md) for six rewrite techniques (prepositional shift, gerund lead, infinitive purpose, subordinating conjunction, front-weighting, referential lead). This is the hardest issue to fix because it requires rewriting many sentences across the document.
 
@@ -92,7 +102,8 @@ Load the prompts from [perplexity-prompts.md](./references/perplexity-prompts.md
 2. **Burstiness Assessment** (Prompt 2) — Confirm structural findings with semantic judgment
 3. **Cross-Sentence Surprise** (Prompt 3) — Detect absence of genuine thought progression
 4. **CoT Leakage Detection** (Prompt 4) — Find reasoning scaffolding that regex missed, including bridge sentences at paragraph boundaries. For each candidate, Prompt 4 applies the removal test: delete the sentence, check whether the paragraph loses information. True leaks are flagged for deletion; CoT-style wording on real content is flagged for rewording.
-5. **Antithesis / Negation-Flip Enumeration** (Prompt 6) — Enumerate every adjacent-sentence antithesis pair and rule each ANCHOR or REFLEX. Catches the purely semantic reversals the `detect_antithesis` regex cannot. Honor the caller's tolerance: under zero tolerance, rewrite every pair.
+5. **Overshoot Assessment** (Prompt 7) — mandatory when the document has prior de-ai history, when Prompt 0 flags register, or when the structural verdict is `suspicious-overshoot`. Seeded with the script's performance/punch/salad/formulae outputs; applies the removal test to punch candidates and the second-read test to salad candidates.
+6. **Antithesis / Negation-Flip Enumeration** (Prompt 6) — Enumerate every adjacent-sentence antithesis pair and rule each ANCHOR or REFLEX. Catches the purely semantic reversals the `detect_antithesis` regex cannot. Honor the caller's tolerance: under zero tolerance, rewrite every pair.
 
 Run Prompts 1-3 in parallel. Run Prompt 4 after reviewing lexical results (it needs that context). Run Prompt 6 after the structural scan (it extends `detect_antithesis`).
 
@@ -104,7 +115,7 @@ The final report from Step 3 must follow [`assets/report-template.md`](./assets/
 
 1. The rewrite priority list from Prompt 5's output, structured by issue with line references.
 2. Explicit confirmation that Step 3 was run (which prompts were applied, summary findings from each).
-3. An honest plain-language verdict. Options: "in voice — no rewrite needed", "isolated issues — spot edits only", "pervasive rhetorical patterns — section rewrite needed", "heavy AI fingerprints — paragraph-by-paragraph rewrite needed".
+3. An honest plain-language verdict. Options: "in voice — no rewrite needed", "isolated issues — spot edits only", "pervasive rhetorical patterns — section rewrite needed", "heavy AI fingerprints — paragraph-by-paragraph rewrite needed", "over-corrected — needs plain-prose rewrite toward the venue register".
 
 Freeform summaries without these elements are not a valid Step 3 output.
 
@@ -137,6 +148,7 @@ After all passages are rewritten, run the full semantic analysis one more time o
 
 ## Convergence Rules
 
+- Rewrites must never be validated by script metrics alone — that is how overshoot happens. After each rewrite pass, re-run Prompt 0 on the rewritten section; a rewrite that improves the metrics but worsens the cold read is a regression.
 - Maximum 3 rewrite iterations per passage
 - If iteration N finds >= issues as iteration N-1, stop immediately
 - Never rewrite direct quotations

@@ -6,6 +6,15 @@
 
 ---
 
+## Pass 0: Cold Read (Prompt 0, before scripts)
+
+- Followable on one pass: {cold_followable}
+- Register: {cold_register}
+- Hardest sentences: {cold_hardest}
+- COLD_VERDICT: {cold_verdict}
+
+---
+
 ## Pass 1: Lexical Scan
 
 | Line | Category | Pattern | Text |
@@ -28,6 +37,16 @@
 | List ratio | {list_ratio} | < {list_threshold} | {list_status} |
 | Colon density /500w | {colon_d} | < {colon_threshold} | {colon_status} |
 | Dash density /500w | {dash_d} | < {dash_threshold} | {dash_status} |
+| Plain sentence rate | {plain_rate} | > {plain_threshold} | {plain_status} |
+| Punch clustering | {punch_clust} | < {punch_threshold} | {punch_status} |
+| Salad rate /100 | {salad_rate} | < {salad_threshold} | {salad_status} |
+| Ornate register /500w | {ornate_d} | < 4.0 | {ornate_status} |
+
+### Repeated Formulae
+
+| Phrase | Count | Files |
+|--------|-------|-------|
+{formulae_rows}
 
 ### Structural Issues
 
@@ -57,9 +76,22 @@
 - Density: {cot_density} per 500 words
 - Categories: {cot_categories}
 
+### Overshoot Assessment (Prompt 7)
+- Overshoot Score: {overshoot_score}/100
+- Confirmed punches: {confirmed_punches}
+- Sentences to unpack: {salad_to_unpack}
+- Formulae to consolidate: {formulae_consolidation}
+- Overshoot Verdict: {overshoot_verdict}
+
 ---
 
 ## Integrated Assessment
+
+Two-axis verdict — AI failure has a bland direction and an ornate direction;
+state where the document sits on each:
+
+- Bland axis (predictable vocabulary, uniform rhythm): {bland_axis}
+- Ornate axis (uniform polish, epigrams, salads): {ornate_axis}
 
 - **AI Probability: {ai_probability}%**
 - **Confidence: {confidence}**

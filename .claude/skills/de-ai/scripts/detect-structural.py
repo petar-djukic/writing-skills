@@ -3,7 +3,8 @@
 detect-structural.py — Detect structural AI writing patterns in markdown files.
 
 Measures:
-- Sentence length variance (burstiness)
+- Sentence length variance (burstiness) — two-sided: too uniform is AI,
+  extremely high is overshoot (text tuned against this very check)
 - Paragraph length uniformity
 - Parallelism (repeated syntactic openings)
 - Negation-then-affirmation / clipped antithesis pairs
@@ -11,6 +12,12 @@ Measures:
 - Colon density
 - Dash density
 - Sentence opening diversity
+- Performance intensity ("LinkedIn voice"): per-sentence rhetoric markers,
+  plain-sentence rate, intensity variance
+- Punch detection: short contrast sentences in positions of emphasis
+- Word salad: function-word ratio, content-word runs, nominalizations,
+  hyphenated compounds
+- Repeated formulae: coined 4-word phrases recurring within or across files
 
 Usage:
     python3 detect-structural.py <file-or-dir> [file-or-dir ...] [--json] [--threshold=strict]
@@ -30,31 +37,53 @@ from collections import Counter
 THRESHOLDS = {
     "strict": {
         "sentence_length_std_min": 5.0,   # sentences should vary this much
+        "sentence_length_std_max": 35.0,   # above this: overshoot suspicion
         "paragraph_length_std_min": 20.0,  # paragraphs should vary
         "parallelism_max_repeats": 2,      # max consecutive same-opening sentences
         "list_ratio_max": 0.25,            # max fraction of lines that are list items
         "colon_density_max": 3.0,          # max colons per 500 words
         "dash_density_max": 2.0,           # max em-dashes per 500 words
         "opening_diversity_min": 0.7,      # min ratio of unique openings to total sentences
+        "plain_sentence_rate_min": 0.30,   # min fraction of sentences with no rhetoric markers
+        "punch_clustering_max": 0.25,      # max fraction of paragraphs closing on a punch
+        "salad_rate_max": 8.0,             # max salad sentences per 100
+        "hyphen_compound_max": 5.0,        # max coined hyphen compounds per 500 words
     },
     "medium": {
         "sentence_length_std_min": 4.0,
+        "sentence_length_std_max": 40.0,
         "paragraph_length_std_min": 15.0,
         "parallelism_max_repeats": 2,
         "list_ratio_max": 0.30,
         "colon_density_max": 4.0,
         "dash_density_max": 3.0,
         "opening_diversity_min": 0.6,
+        "plain_sentence_rate_min": 0.25,
+        "punch_clustering_max": 0.30,
+        "salad_rate_max": 10.0,
+        "hyphen_compound_max": 6.0,
     },
     "relaxed": {
         "sentence_length_std_min": 3.0,
+        "sentence_length_std_max": 50.0,
         "paragraph_length_std_min": 10.0,
         "parallelism_max_repeats": 3,
         "list_ratio_max": 0.40,
         "colon_density_max": 5.0,
         "dash_density_max": 4.0,
         "opening_diversity_min": 0.5,
+        "plain_sentence_rate_min": 0.20,
+        "punch_clustering_max": 0.40,
+        "salad_rate_max": 15.0,
+        "hyphen_compound_max": 8.0,
     },
+}
+
+# Issue types that indicate the overshoot direction (Goodharted, over-polished
+# prose) rather than the bland-AI direction.
+OVERSHOOT_TYPES = {
+    "overshoot-burstiness", "performing-heavy", "punch-clustered",
+    "word-salad-heavy", "hyphen-compound-heavy", "colon-heavy", "dash-heavy",
 }
 
 
@@ -100,7 +129,11 @@ def extract_prose(text: str) -> str:
 
         prose_lines.append(line)
 
-    return "\n".join(prose_lines)
+    prose = "\n".join(prose_lines)
+    # Strip inline/display math so LaTeX tokens don't pollute word metrics
+    prose = re.sub(r"\$\$.*?\$\$", " ", prose, flags=re.DOTALL)
+    prose = re.sub(r"\$[^$\n]+\$", " ", prose)
+    return prose
 
 
 def split_sentences(text: str) -> list:
@@ -255,6 +288,216 @@ def detect_parallelism(openings: list, max_repeats: int) -> list:
     return issues
 
 
+# --------------------------------------------------------------------------- #
+# Overshoot detectors ("LinkedIn voice", punches, word salad, formulae)
+# --------------------------------------------------------------------------- #
+
+FUNCTION_WORDS = set("""
+a an the this that these those it its they them their he she his her we our
+you your i my me us of in on at by for with from to into onto over under
+between among through during within without across along after before
+against about around near behind beyond up down off out and or but nor so
+yet if then than as because since while when where whether although though
+unless until who whom whose which what is are was were be been being am do
+does did done have has had having will would shall should can could may
+might must not no any some each every all both few more most other such
+only own same too very just there here how why also
+""".split())
+
+_ANTITHESIS_INLINE = [
+    re.compile(r"\bnot\b[^.;:]{0,80}\bbut\b", re.IGNORECASE),          # not X but Y
+    re.compile(r"[,;—]\s*(?:and\s+)?not\s+\w+", re.IGNORECASE),   # appositive ", not Y"
+    re.compile(r"\brather than\b", re.IGNORECASE),
+    re.compile(r",\s*never\b", re.IGNORECASE),
+]
+_REVERSAL_OPENERS = {"but", "yet", "except", "nor"}
+_FINITE_MARKERS = FUNCTION_WORDS & {
+    "is", "are", "was", "were", "be", "been", "am", "do", "does", "did",
+    "have", "has", "had", "will", "would", "shall", "should", "can",
+    "could", "may", "might", "must",
+}
+_DEMONSTRATIVE_SUBJECTS = {"that", "this", "it", "no", "not", "so", "such"}
+_NOMINALIZATION = re.compile(
+    r"\b\w{4,}(?:tion|ment|ance|ence|ity|ness)s?\b", re.IGNORECASE)
+_HYPHEN_COMPOUND = re.compile(r"\b[a-z]{3,}-[a-z]{3,}(?:-[a-z]{3,})?\b")
+_CITE_OR_DATA = re.compile(r"\d|\[@|`|\\ref|\\cite")
+
+
+def _words(sentence: str) -> list:
+    return re.findall(r"[A-Za-z][A-Za-z'-]*", sentence)
+
+
+def _has_finite_verb(words_lower: list) -> bool:
+    if any(w in _FINITE_MARKERS for w in words_lower):
+        return True
+    # Approximate: any -s/-ed verb form beyond the first word
+    return any(re.match(r".{3,}(?:ed|es)$", w) for w in words_lower[1:])
+
+
+def performance_score(sentence: str) -> int:
+    """Count rhetoric markers in one sentence (0 = plain declarative)."""
+    score = 0
+    core = sentence.strip()
+    # pivot: colon or em-dash mid-sentence
+    if re.search(r"\S\s*[:—]\s+\S", core):
+        score += 1
+    if any(rx.search(core) for rx in _ANTITHESIS_INLINE):
+        score += 1
+    # parallelism: 3+ comma-separated short clauses
+    if len(re.findall(r",\s+\w+", core)) >= 3:
+        score += 1
+    wl = [w.lower() for w in _words(core)]
+    if wl and not _has_finite_verb(wl):
+        score += 1  # fragment
+    if wl and wl[0] in _REVERSAL_OPENERS:
+        score += 1
+    return score
+
+
+def analyze_performance(sentences_all: list) -> dict:
+    """Plain-sentence rate and intensity variance over all sentences."""
+    if len(sentences_all) < 5:
+        return {}
+    scores = [performance_score(s) for s in sentences_all]
+    plain = sum(1 for s in scores if s == 0)
+    return {
+        "plain_sentence_rate": round(plain / len(scores), 2),
+        "intensity_variance": round(statistics.pvariance(scores), 2),
+        "mean_performance_score": round(statistics.mean(scores), 2),
+    }
+
+
+def is_punch(sentence: str, other_lengths: list, position_final_or_solo: bool) -> bool:
+    """Punchy = contrast + position of emphasis + rhetorical shape."""
+    words = _words(sentence)
+    n = len(words)
+    if n == 0 or n > 8:
+        return False
+    if not position_final_or_solo:
+        return False
+    if _CITE_OR_DATA.search(sentence):
+        return False  # data sentences are exempt
+    if other_lengths:
+        mean_other = statistics.mean(other_lengths)
+        if not (n < 0.4 * mean_other):
+            return False
+    # else: single-sentence paragraph — position alone qualifies
+    wl = [w.lower() for w in words]
+    copular = any(w in ("is", "are", "was", "were") for w in wl)
+    fragment = not _has_finite_verb(wl)
+    demonstrative = wl[0] in _DEMONSTRATIVE_SUBJECTS
+    return copular or fragment or demonstrative
+
+
+def analyze_punch(paragraphs: list) -> dict:
+    """Punch rate and clustering over paragraphs."""
+    if len(paragraphs) < 3:
+        return {}
+    punches = []
+    total_sentences = 0
+    closing_punches = 0
+    for p_idx, para in enumerate(paragraphs):
+        sents = split_sentences_all(para)
+        if not sents:
+            continue
+        total_sentences += len(sents)
+        lengths = [len(_words(s)) for s in sents]
+        for i, s in enumerate(sents):
+            others = lengths[:i] + lengths[i + 1:]
+            is_edge = (i == 0 or i == len(sents) - 1) or len(sents) == 1
+            if is_punch(s, others, is_edge):
+                punches.append({"paragraph": p_idx + 1, "sentence": s.strip()[:90]})
+                if i == len(sents) - 1:
+                    closing_punches += 1
+    if total_sentences == 0:
+        return {}
+    return {
+        "punch_rate_per_100": round(100 * len(punches) / total_sentences, 1),
+        "punch_clustering": round(closing_punches / len(paragraphs), 2),
+        "punch_candidates": punches[:20],
+    }
+
+
+def salad_components(sentence: str) -> list:
+    """Which word-salad components does this sentence trip?"""
+    words = _words(sentence)
+    if len(words) < 8:
+        return []
+    wl = [w.lower() for w in words]
+    comps = []
+    fw = sum(1 for w in wl if w in FUNCTION_WORDS)
+    if fw / len(wl) < 0.30:
+        comps.append("low-function-word-ratio")
+    run = best = 0
+    for w in wl:
+        run = 0 if w in FUNCTION_WORDS else run + 1
+        best = max(best, run)
+    if best >= 5:
+        comps.append(f"content-run-{best}")
+    if len(_NOMINALIZATION.findall(sentence)) >= 4:
+        comps.append("nominalization-dense")
+    return comps
+
+
+def analyze_salad(sentences_all: list, prose: str, word_count: int) -> dict:
+    """Word-salad metrics: flagged sentences, rate, hyphen-compound density."""
+    if len(sentences_all) < 5:
+        return {}
+    candidates = []
+    for i, s in enumerate(sentences_all):
+        comps = salad_components(s)
+        if len(comps) >= 2:
+            candidates.append({"sentence_index": i + 1,
+                               "components": comps,
+                               "sentence": s.strip()[:110]})
+    hyphens = len(_HYPHEN_COMPOUND.findall(prose.lower()))
+    return {
+        "salad_rate_per_100": round(100 * len(candidates) / len(sentences_all), 1),
+        "salad_candidates": candidates[:20],
+        "hyphen_compound_per_500w": round(hyphens / word_count * 500, 1) if word_count else 0,
+    }
+
+
+def repeated_formulae(file_proses: list, min_count: int = 3) -> list:
+    """Coined 4-word phrases recurring within a document or across files.
+
+    file_proses: list of (filename, prose). Returns phrases with >= min_count
+    total occurrences and at least 2 content words, with per-file counts.
+    """
+    gram_counts = Counter()
+    gram_files = {}
+    for fname, prose in file_proses:
+        tokens = re.findall(r"[a-z][a-z'-]*", prose.lower())
+        seen_here = Counter()
+        for i in range(len(tokens) - 3):
+            gram = tuple(tokens[i:i + 4])
+            content = sum(1 for w in gram if w not in FUNCTION_WORDS)
+            if content < 2:
+                continue
+            seen_here[gram] += 1
+        for gram, c in seen_here.items():
+            gram_counts[gram] += c
+            gram_files.setdefault(gram, {})[fname] = c
+    def trigrams(g):
+        return {g[i:i + 3] for i in range(len(g) - 2)}
+
+    out = []
+    reported_tris = set()
+    for gram, count in gram_counts.most_common():
+        if count < min_count:
+            break
+        # skip grams overlapping an already-reported one (same source phrase)
+        if trigrams(gram) & reported_tris:
+            continue
+        reported_tris |= trigrams(gram)
+        out.append({
+            "phrase": " ".join(gram),
+            "count": count,
+            "files": gram_files[gram],
+        })
+    return out[:25]
+
+
 def analyze(text: str, threshold_name: str = "medium") -> dict:
     """Run all structural checks. Return issues dict."""
     thresholds = THRESHOLDS[threshold_name]
@@ -282,6 +525,13 @@ def analyze(text: str, threshold_name: str = "medium") -> dict:
                 "type": "low-burstiness",
                 "detail": f"Sentence length std={std:.1f} (threshold: >{thresholds['sentence_length_std_min']}). Text is unnaturally uniform.",
                 "severity": "high",
+                "metric": std,
+            })
+        elif std > thresholds["sentence_length_std_max"]:
+            issues.append({
+                "type": "overshoot-burstiness",
+                "detail": f"Sentence length std={std:.1f} (threshold: <{thresholds['sentence_length_std_max']}). Extreme variance suggests text tuned against the burstiness check.",
+                "severity": "medium",
                 "metric": std,
             })
 
@@ -449,6 +699,62 @@ def analyze(text: str, threshold_name: str = "medium") -> dict:
             "metric": both_and_density,
         })
 
+    # --- Performance intensity ("LinkedIn voice") ---
+    perf = analyze_performance(sentences_all)
+    metrics.update(perf)
+    if perf and perf["plain_sentence_rate"] < thresholds["plain_sentence_rate_min"]:
+        issues.append({
+            "type": "performing-heavy",
+            "detail": (f"Only {perf['plain_sentence_rate']:.0%} of sentences are plain "
+                       f"declaratives (threshold: >{thresholds['plain_sentence_rate_min']:.0%}). "
+                       "Nearly every sentence performs (pivot, antithesis, fragment, reversal) — "
+                       "constant rhetorical intensity is an overshoot tell."),
+            "severity": "high",
+            "metric": perf["plain_sentence_rate"],
+        })
+
+    # --- Punch detection ---
+    punch = analyze_punch(paragraphs)
+    if punch:
+        metrics["punch_rate_per_100"] = punch["punch_rate_per_100"]
+        metrics["punch_clustering"] = punch["punch_clustering"]
+        if punch["punch_clustering"] > thresholds["punch_clustering_max"]:
+            issues.append({
+                "type": "punch-clustered",
+                "detail": (f"{punch['punch_clustering']:.0%} of paragraphs close on a punch "
+                           f"(threshold: <{thresholds['punch_clustering_max']:.0%}). "
+                           "A punch every few paragraphs is the LinkedIn voice. "
+                           "Candidates carried to the semantic pass for the removal test."),
+                "severity": "medium",
+                "metric": punch["punch_clustering"],
+                "candidates": punch["punch_candidates"],
+            })
+
+    # --- Word salad ---
+    salad = analyze_salad(sentences_all, prose, word_count)
+    if salad:
+        metrics["salad_rate_per_100"] = salad["salad_rate_per_100"]
+        metrics["hyphen_compound_per_500w"] = salad["hyphen_compound_per_500w"]
+        if salad["salad_rate_per_100"] > thresholds["salad_rate_max"]:
+            issues.append({
+                "type": "word-salad-heavy",
+                "detail": (f"{salad['salad_rate_per_100']:.1f} salad sentences per 100 "
+                           f"(threshold: <{thresholds['salad_rate_max']}). Sentences stack "
+                           "content words without function-word joints; unpack them."),
+                "severity": "high",
+                "metric": salad["salad_rate_per_100"],
+                "candidates": salad["salad_candidates"],
+            })
+        if salad["hyphen_compound_per_500w"] > thresholds["hyphen_compound_max"]:
+            issues.append({
+                "type": "hyphen-compound-heavy",
+                "detail": (f"{salad['hyphen_compound_per_500w']:.1f} hyphenated compounds per 500 words "
+                           f"(threshold: <{thresholds['hyphen_compound_max']}). Each coined compound "
+                           "is a packed relative clause; expand them."),
+                "severity": "medium",
+                "metric": salad["hyphen_compound_per_500w"],
+            })
+
     # --- Verdict ---
     high_count = sum(1 for i in issues if i.get("severity") == "high")
     med_count = sum(1 for i in issues if i.get("severity") == "medium")
@@ -461,6 +767,13 @@ def analyze(text: str, threshold_name: str = "medium") -> dict:
         verdict = "minor-issues"
     else:
         verdict = "clean"
+
+    # Overshoot re-labeling: when the flags point at the over-polished
+    # direction, name it — the fix (plainer prose) is the opposite of the
+    # bland-AI fix, so the verdicts must not be conflated.
+    overshoot_hits = [i for i in issues if i["type"] in OVERSHOOT_TYPES]
+    if len(overshoot_hits) >= 2 and len(overshoot_hits) >= len(issues) / 2:
+        verdict = "suspicious-overshoot"
 
     metrics["word_count"] = word_count
     metrics["sentence_count"] = len(sentences)
@@ -512,10 +825,12 @@ def main():
 
     any_issues = False
     all_results = []
+    file_proses = []
 
     for filepath in files:
         text = filepath.read_text(encoding="utf-8")
         result = analyze(text, threshold)
+        file_proses.append((str(filepath), extract_prose(text)))
 
         if result["issues"]:
             any_issues = True
@@ -545,8 +860,26 @@ def main():
                 print("✓ No structural AI patterns detected.")
                 print()
 
+    # --- Repeated formulae (whole-invocation: within and across files) ---
+    formulae = repeated_formulae(file_proses)
+    if formulae:
+        any_issues = True
+
     if json_mode:
-        print(json.dumps(all_results if len(all_results) > 1 else all_results[0], indent=2))
+        payload = all_results if len(all_results) > 1 else all_results[0]
+        if len(all_results) > 1:
+            payload = {"files": all_results, "repeated_formulae": formulae}
+        else:
+            payload["repeated_formulae"] = formulae
+        print(json.dumps(payload, indent=2))
+    else:
+        if formulae:
+            print("=== Repeated Formulae (coined phrases, whole invocation) ===")
+            for f in formulae:
+                locs = ", ".join(f"{Path(k).name} x{v}" for k, v in f["files"].items())
+                print(f"  [{f['count']}x] \"{f['phrase']}\"  ({locs})")
+            print("  Each coined phrase gets one home; paraphrase the rest.")
+            print()
 
     sys.exit(1 if any_issues else 0)
 

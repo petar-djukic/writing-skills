@@ -291,6 +291,51 @@ MECHANICAL_TRANSITIONS=(
   "^to begin with"
 )
 
+# --- Category: Ornate register (overshoot lexicon) ---
+# The vocabulary the maximally-clever "LinkedIn voice" depends on. Fine
+# individually (axis in a plot, residual in regression); the style needs them
+# in clusters. Advisory in detection (density-scored); hard-forbidden during
+# rewrite passes (see rewrite-instructions.md). Starving these words out
+# forces plainer prose.
+ORNATE_REGISTER=(
+  # metaphor verbs (the epigram engines)
+  " loads "
+  "carries a"
+  "carries the"
+  " buys "
+  "hired to"
+  "manufacture"
+  "forfeits"
+  "inherits the"
+  "narrates"
+  "decides whether"
+  "survives every"
+  "survives a"
+  " awaits"
+  # abstract epigram nouns
+  "the instrument"
+  "a concession"
+  "the price of"
+  "the dial"
+  "the menu"
+  "affordance"
+  "the split"
+  "the construct"
+  # rhetorical glue
+  " merely "
+  "^nor "
+  "to the digit"
+  # borrowed-metaphor adjectives
+  "load-bearing"
+  "first-class"
+  "orthogonal"
+  "brittle"
+  # aphorism frames
+  "is the .* not the"
+  "is not a .* problem but"
+  "buys .* with"
+)
+
 # --- Category: CoT structural patterns (definite) ---
 COT_STRUCTURAL=(
   "is not a monolithic"
@@ -414,6 +459,39 @@ run_on_file() {
     echo "--- CoT Structural Patterns ---"
   fi
   scan_patterns "cot-structural" "${COT_STRUCTURAL[@]}"
+
+  if [[ "$JSON_MODE" != "--json" ]]; then
+    echo ""
+    echo "--- Ornate Register (overshoot lexicon; density-scored) ---"
+  fi
+  scan_candidates "ornate-register" "${ORNATE_REGISTER[@]}"
+
+  # Ornate-register density per 500 words. Above ~4/500w the clever register
+  # is the document's default voice, not an occasional flourish. All
+  # occurrences are listed above either way so a rewrite pass knows what to
+  # starve out.
+  local ornate_total=0
+  for pattern in "${ORNATE_REGISTER[@]}"; do
+    local c
+    c=$(grep -ioc "$pattern" "$FILE" 2>/dev/null || true)
+    [[ -n "$c" ]] && ornate_total=$((ornate_total + c))
+  done
+  local file_words
+  file_words=$(wc -w < "$FILE")
+  if [[ "$file_words" -gt 0 ]]; then
+    local ornate_density
+    ornate_density=$(awk "BEGIN {printf \"%.1f\", $ornate_total / $file_words * 500}")
+    if [[ "$JSON_MODE" != "--json" ]]; then
+      echo ""
+      echo "  Ornate-register density: ${ornate_density}/500w (flag above 4.0)"
+    fi
+    if awk "BEGIN {exit !($ornate_density > 4.0)}"; then
+      ISSUES_FOUND=1
+      if [[ "$JSON_MODE" == "--json" ]]; then
+        RESULTS+=("{\"line\": 0, \"category\": \"ornate-register-density\", \"pattern\": \"density\", \"text\": \"${ornate_density} per 500w exceeds 4.0\"}")
+      fi
+    fi
+  fi
 
   if [[ "$JSON_MODE" != "--json" ]]; then
     echo ""

@@ -164,6 +164,32 @@ These appear specifically in technical/academic LLM output at unnatural rates:
 | under the hood | Describe the mechanism directly |
 | at scale | Quantify |
 
+## Ornate Register (Overshoot Lexicon)
+
+The vocabulary the maximally-clever "LinkedIn voice" depends on. This is the
+inverse failure from the bland tiers above: text tuned against AI detectors
+until every sentence performs. These words are legitimate individually —
+"axis" in a plot, "residual" in a regression, "floor" in a bound — so
+**detection treats them as density markers** (like Tier 3: fine alone, bad in
+clusters; flagged above ~4 per 500 words). **Rewrite passes hard-forbid
+them**: the rewriter can always choose a plainer word, so there is no
+false-positive cost during rewriting. Starving these words out makes most
+epigrams unwritable.
+
+| Sub-category | Words / frames | Plain alternative |
+|---|---|---|
+| Metaphor verbs (epigram engines) | loads, carries (a claim/cost), buys, hires/hired, manufacture, forfeits, inherits (an error rate), converts (failures), narrates, decides (as in "reliability decides whether"), survives (a prediction), awaits | use the literal verb: causes, requires, produces, loses, describes, determines |
+| Abstract epigram nouns | instrument, concession, axis (non-plot), mass (non-physics), price, floor/ceiling (non-math), dial, menu, engine (non-mechanical), affordance, register (non-CS), the split, the construct | name the concrete thing |
+| Rhetorical glue | merely, emphatic "itself", sentence-initial "Nor", "the X in question", "to the digit" | delete or use "only" |
+| Borrowed-metaphor adjectives | load-bearing, first-class, orthogonal (non-math), surface (non-API), upstream/downstream (non-pipeline), brittle (non-materials) | describe the actual property |
+| Aphorism frames (phrase-level) | "X is the Y, not the Z", "the price of X is Y", "buys X with Y", "X is not a Y problem but a Z problem", "what X narrates as Y" | state the claim once, plainly |
+
+**Dynamic extension:** `detect-structural.py` reports the document's own
+coined formulae (verbatim 4-word phrases recurring 3+ times). During a
+rewrite, each detected formula gets one home; every other occurrence is
+paraphrased. The static list starves the register; the dynamic list starves
+this document's coinages.
+
 ## Updating This List
 
 When you encounter a new AI pattern in the wild:
