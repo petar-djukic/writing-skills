@@ -3,6 +3,27 @@
 Extends the writing-style-guide.md with additional AI-detectable patterns.
 These patterns are checked by `detect-lexical.sh`.
 
+## Tier 0: Chat-Turn Residue (Catastrophic — Fails the Scan Outright)
+
+Text from the model's conversational wrapper committed into the document
+body. Not a style pattern — the assistant speaking. Severity above every
+other tier: one hit means the document shipped with the chat frame attached.
+A match in the final 3 lines of the file is near-certain residue (the
+trailing sign-off).
+
+| Pattern | Why |
+|---|---|
+| "Want me to...", "Would you like me...", "Shall I..." | offer-of-more-work sign-off |
+| "Let me know if..." | conversational close |
+| "Hope this helps", "Happy to help", "Feel free to ask" | assistant pleasantries |
+| "Ready for Substack", "here's a suggested" | delivery framing |
+| "I can also create/draft/write/add..." | capability offer |
+| "As an AI..." | self-reference |
+
+Real case: a published article ended with "Ready for Substack. Want me to
+create a suggested author bio or any other supporting materials?" — both
+scripts passed it.
+
 ## Tier 1: Hard Ban (Always Wrong)
 
 These never appear in good technical writing. Instant flag.

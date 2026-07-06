@@ -54,6 +54,29 @@ ISSUES_FOUND=0
 CANDIDATES_FOUND=0
 declare -a RESULTS=()
 
+# --- Category: Chat-turn residue (assistant voice; highest severity) ---
+# Text from the model's conversational wrapper committed into the document
+# body. Not a style pattern — the assistant speaking. Any hit fails the scan;
+# a hit in the last 3 lines of the file is near-certain residue (the classic
+# trailing sign-off: "Want me to create a suggested author bio?").
+CHAT_RESIDUE=(
+  "want me to"
+  "would you like me"
+  "let me know if"
+  "shall I "
+  "hope this helps"
+  "ready for substack"
+  "I can also create"
+  "I can also draft"
+  "I can also write"
+  "I can also add"
+  "here's a suggested"
+  "here is a suggested"
+  "as an AI"
+  "feel free to ask"
+  "happy to help"
+)
+
 # --- Category: Banned adjectives/adverbs (from writing-style-guide.md) ---
 BANNED_WORDS=(
   "critical" "critically"
@@ -431,6 +454,27 @@ run_on_file() {
 
   if [[ "$JSON_MODE" != "--json" ]]; then
     echo "=== Lexical AI Detection: $FILE ==="
+    echo ""
+    echo "--- Chat-Turn Residue (assistant voice — any hit fails the scan) ---"
+  fi
+  scan_patterns "chat-residue" "${CHAT_RESIDUE[@]}"
+
+  # Position weighting: a residue match in the last 3 lines is near-certain
+  # (the trailing assistant sign-off). Flag it CRITICAL explicitly.
+  local tail_text
+  tail_text=$(tail -n 3 "$FILE")
+  for pattern in "${CHAT_RESIDUE[@]}"; do
+    if echo "$tail_text" | grep -iq "$pattern"; then
+      ISSUES_FOUND=1
+      if [[ "$JSON_MODE" == "--json" ]]; then
+        RESULTS+=("{\"line\": -1, \"category\": \"chat-residue-tail\", \"pattern\": \"$(echo "$pattern" | sed 's/"/\\"/g')\", \"text\": \"match within final 3 lines — near-certain assistant sign-off\"}")
+      else
+        printf "  CRITICAL: \"%s\" appears in the FINAL 3 LINES — near-certain assistant sign-off. Delete it.\n" "$pattern"
+      fi
+    fi
+  done
+
+  if [[ "$JSON_MODE" != "--json" ]]; then
     echo ""
     echo "--- Banned Words ---"
   fi
