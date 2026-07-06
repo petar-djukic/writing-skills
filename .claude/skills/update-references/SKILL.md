@@ -39,9 +39,9 @@ like this:
   to be committed). The script resolves this **relative to the database**, not
   the current directory, so PDFs land next to the db even when run from
   elsewhere.
-- **Text:** `<db-dir>/text/<arxiv-id>vN.txt` — `fetch` writes a plain-text
-  sidecar of each PDF automatically (best-effort), so papers are readable even
-  where the Read tool can't render PDFs.
+- **Papers (markdown):** `<db-dir>/papers/<arxiv-id>vN.md` — `fetch` converts
+  each PDF to markdown automatically (best-effort via `pymupdf4llm`), preserving
+  headings, tables, and math. Papers are readable in any editor or tool.
 - **Summaries:** `<db-dir>/summaries/<arxiv-id>-<short-slug>.md`, one file per
   paper.
 
@@ -75,6 +75,7 @@ An entry looks like:
   version: 1
   status: downloaded
   pdf_path: pdfs/2603.28052v1.pdf
+  md_path: papers/2603.28052v1.md
 ```
 
 The `id` field is a pandoc citation key (used as `@lee-meta-harness-2026` in
@@ -160,10 +161,11 @@ python3 <skill>/scripts/scholar.py --db <db-path> fetch \
 
 ### 4. Read and summarize
 
-Read the PDF with the Read tool. If the Read tool cannot render PDFs in this
-environment (it needs poppler/`pdftoppm`), read the plain-text sidecar `fetch`
-wrote instead — its path is in the `text_path` field of the fetch output and the
-db entry (`<db-dir>/text/<arxiv-id>vN.txt`). Then write a summary file following
+Read the markdown conversion that `fetch` produced — its path is in the
+`md_path` field of the fetch output and the db entry
+(`<db-dir>/papers/<arxiv-id>vN.md`). If the markdown file is missing (e.g. an
+older fetch before markdown conversion was available), run `repair` first to
+regenerate it. Then write a summary file following
 `references/summary-template.md` exactly. The summary's job is to let the user
 decide, in two minutes, whether to cite the paper — so the "Relevance to the
 current work" section carries the weight. Tie findings back to the current draft
@@ -194,12 +196,25 @@ Summarize what was found: how many candidates, how many were new vs. already
 known, which were summarized, and a one-line takeaway per paper with a link to
 its summary file. Point out the two or three most relevant to the current work.
 
+### Repair
+
+If papers were fetched before markdown conversion was available, or if markdown
+files are missing for any reason, run `repair` to regenerate them from the PDFs:
+
+```bash
+python3 <skill>/scripts/arxiv.py --db <db-path> repair
+```
+
+This walks every entry in the database, checks for a missing `md_path`, and
+re-converts the PDF if it exists on disk. It also migrates legacy `text_path`
+entries by adding the `md_path` field. Prints a JSON summary of what it did.
+
 ## Dependencies
 
-PyYAML (`python3 -m pip install --user pyyaml`) is required. `pypdf` (or
-`pdfminer.six`) is optional but recommended — `fetch` uses it to write the
-text sidecar so papers are readable without poppler; if neither is installed,
-fetch still downloads the PDF and just skips the sidecar. Everything else is
+PyYAML (`python3 -m pip install --user pyyaml`) is required. `pymupdf4llm` is
+recommended for PDF-to-markdown conversion that preserves headings, tables, and
+math; `pypdf` is the fallback (plain text only). If neither is installed,
+fetch still downloads the PDF and just skips the conversion. Everything else is
 Python stdlib plus the arXiv public API — no key needed. Be a good citizen: the
 script already retries with backoff; don't hammer the API with huge `--max`
 values in a tight loop.

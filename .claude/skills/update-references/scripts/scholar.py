@@ -65,6 +65,29 @@ def normalize_title(title):
     return re.sub(r"\s+", " ", title.lower().strip())
 
 
+def _convert_pdf(pdf_path):
+    """Best-effort PDF -> markdown. Tries pymupdf4llm, falls back to pypdf."""
+    try:
+        import pymupdf4llm
+        return pymupdf4llm.to_markdown(pdf_path)
+    except ImportError:
+        pass
+    except Exception:
+        pass
+    try:
+        import pypdf
+        reader = pypdf.PdfReader(pdf_path)
+        parts = []
+        for page in reader.pages:
+            try:
+                parts.append(page.extract_text() or "")
+            except Exception:
+                parts.append("")
+        return "\n".join(parts)
+    except Exception:
+        return None
+
+
 def parse_author_name(name):
     name = name.strip()
     if "," in name:
@@ -174,7 +197,7 @@ def cmd_fetch(args):
 
     db_dir = os.path.dirname(os.path.abspath(args.db))
     pdf_path = None
-    text_path = None
+    md_path = None
 
     if args.url and (args.url.endswith(".pdf") or "pdf" in args.url.lower()):
         pdf_dir = os.path.join(db_dir, "pdfs")
@@ -190,24 +213,13 @@ def cmd_fetch(args):
             pdf_path = None
 
         if pdf_path:
-            try:
-                import pypdf
-                reader = pypdf.PdfReader(pdf_path)
-                parts = []
-                for page in reader.pages:
-                    try:
-                        parts.append(page.extract_text() or "")
-                    except Exception:
-                        parts.append("")
-                text = "\n".join(parts)
-                if text.strip():
-                    text_dir = os.path.join(db_dir, "text")
-                    os.makedirs(text_dir, exist_ok=True)
-                    text_path = os.path.join(text_dir, f"{safe}.txt")
-                    with open(text_path, "w") as tf:
-                        tf.write(text)
-            except ImportError:
-                pass
+            md_content = _convert_pdf(pdf_path)
+            if md_content and md_content.strip():
+                papers_dir = os.path.join(db_dir, "papers")
+                os.makedirs(papers_dir, exist_ok=True)
+                md_path = os.path.join(papers_dir, f"{safe}.md")
+                with open(md_path, "w") as mf:
+                    mf.write(md_content)
 
     entries = load_db(args.db)
     known = index_by_title(entries)
@@ -229,8 +241,8 @@ def cmd_fetch(args):
     }
     if pdf_path:
         record["pdf_path"] = os.path.relpath(pdf_path, db_dir)
-    if text_path:
-        record["text_path"] = os.path.relpath(text_path, db_dir)
+    if md_path:
+        record["md_path"] = os.path.relpath(md_path, db_dir)
 
     if existing:
         for keep in ("summary_file", "topics", "relevance", "added", "arxiv_id"):
@@ -243,7 +255,7 @@ def cmd_fetch(args):
     else:
         entries.append(record)
     save_db(args.db, entries)
-    print(json.dumps({"pdf_path": pdf_path, "text_path": text_path, "meta": record},
+    print(json.dumps({"pdf_path": pdf_path, "md_path": md_path, "meta": record},
                      indent=2, ensure_ascii=False))
 
 
