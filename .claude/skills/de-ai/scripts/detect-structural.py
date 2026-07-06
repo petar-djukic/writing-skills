@@ -253,6 +253,70 @@ def detect_antithesis(sentences_all: list) -> list:
     return issues
 
 
+def split_with_terminators(text: str) -> list:
+    """Sentence chunks that KEEP their terminator, for interrogative checks.
+
+    split_sentences_all() drops the [.!?] delimiter, so question marks are
+    invisible to it. This split preserves them.
+    """
+    text = re.sub(r"\b(e\.g|i\.e|etc|vs|Dr|Mr|Mrs|Ms|Jr|Sr)\.", r"\1<DOT>", text)
+    chunks = re.findall(r"[^.!?]+[.!?]+", text)
+    return [c.strip().replace("<DOT>", ".") for c in chunks if c.strip()]
+
+
+def detect_question_patterns(paragraphs: list) -> list:
+    """Question volleys and question->short-answer templates, per paragraph.
+
+    Volley: >= 3 consecutive interrogative sentences (the checklist-as-
+    questions move). Template: >= 2 adjacent (question, answer <= 4 words)
+    pairs — the self-interview cadence ("Is it reliable? Not really. Does
+    it work? Absolutely.").
+    """
+    issues = []
+    for p_idx, para in enumerate(paragraphs):
+        chunks = split_with_terminators(para)
+        if len(chunks) < 3:
+            continue
+        is_q = [c.endswith("?") for c in chunks]
+
+        # Volley: runs of consecutive questions
+        run = 0
+        for i, q in enumerate(is_q + [False]):
+            if q:
+                run += 1
+                continue
+            if run >= 3:
+                snippet = " ".join(chunks[i - run:i])[:110]
+                issues.append({
+                    "type": "question-volley",
+                    "detail": (f"{run} consecutive questions in paragraph "
+                               f"{p_idx + 1} — checklist-as-questions cadence: "
+                               f'"{snippet}..."'),
+                    "severity": "high" if run >= 5 else "medium",
+                    "position": f"paragraph {p_idx + 1}",
+                })
+            run = 0
+
+        # Question -> short-answer template
+        qa_pairs = 0
+        example = ""
+        for i in range(len(chunks) - 1):
+            if is_q[i] and not is_q[i + 1] and len(chunks[i + 1].split()) <= 4:
+                qa_pairs += 1
+                if not example:
+                    example = f"{chunks[i]} {chunks[i + 1]}"
+        if qa_pairs >= 2:
+            issues.append({
+                "type": "question-short-answer",
+                "detail": (f"{qa_pairs} question->short-answer pairs in paragraph "
+                           f"{p_idx + 1} — self-interview template: "
+                           f'"{example[:100]}..."'),
+                "severity": "medium",
+                "position": f"paragraph {p_idx + 1}",
+            })
+    return issues
+
+
 def split_paragraphs(text: str) -> list:
     """Split into paragraphs (separated by blank lines)."""
     paragraphs = re.split(r"\n\s*\n", text)
@@ -749,6 +813,11 @@ def analyze(text: str, threshold_name: str = "medium") -> dict:
             "severity": "low",
             "metric": both_and_density,
         })
+
+    # --- Question volleys and self-interview templates ---
+    question_issues = detect_question_patterns(paragraphs)
+    issues.extend(question_issues)
+    metrics["question_pattern_flags"] = len(question_issues)
 
     # --- Ordinal walkthrough template ---
     # "The first was X. ... The second was Y. ... The third was Z." — the
