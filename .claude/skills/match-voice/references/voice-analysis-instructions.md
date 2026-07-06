@@ -80,7 +80,53 @@ Given the draft, the corpus profile, and the quantitative diff from
 - Jargon alignment has two directions: field vocabulary the draft is
   missing, and draft terms the corpus never uses. The second list is where
   idiosyncrasies and AI-tell phrasing show up.
-- Advise, do not rewrite. Each finding gets a direction ("shorten",
-  "add statistical qualification", "adopt the term X"), not edited text.
+- Advise, do not rewrite — unless the user explicitly invoked the rewrite
+  mode, which follows `style-application-instructions.md`. In comparison
+  reports each finding gets a direction ("shorten", "add statistical
+  qualification", "adopt the term X"), not edited text.
 - An honest "the draft already matches the corpus on this dimension" is a
   valid finding. Do not manufacture mismatches.
+
+## Part 3 — Exemplar blueprint extraction
+
+Given one or more exemplar papers the user wants to mimic (e.g. well-written
+papers from the target conference), extract a voice persona blueprint.
+Analyze how each paper is written. **Do not summarize the content; analyze
+how it is written.**
+
+### Stage 1 — per-exemplar mini-blueprint
+
+For each exemplar independently, produce a structured mini-blueprint
+covering:
+
+1. **Sentence mechanics:** average sentence length, structural complexity
+   (subordination, parentheticals), and the balance of active vs passive
+   voice.
+2. **Lexicon and tone:** level of technical abstraction, preferred
+   qualifying words (e.g. "suggests", "delineates"), and degree of
+   assertiveness.
+3. **Signposting and transitions:** how paragraphs are bridged, and how
+   figures and data are introduced.
+4. **Formatting quirks:** structural habits or rhetorical devices unique to
+   this author.
+
+Every claim quotes a short exemplar passage as evidence — an unquoted claim
+is a guess, and the synthesis stage cannot verify it.
+
+### Stage 2 — synthesis (two or more exemplars)
+
+Merge the mini-blueprints into one consensus blueprint with two top-level
+sections:
+
+- **Consensus:** patterns appearing in most exemplars. These are field or
+  venue conventions and are safe to adopt in any rewrite.
+- **Idiosyncrasy:** patterns unique to one exemplar, flagged with their
+  source paper. These are one author's habits; adopt them only when the
+  user deliberately mimics that author (mimic mode).
+
+With a single exemplar, skip synthesis: the mini-blueprint becomes the
+blueprint, with a note that every pattern is single-source and therefore
+potentially idiosyncratic.
+
+Save the blueprint as `voice-blueprint-<slug>.md` next to `references.yaml`,
+with frontmatter recording the exemplar ids and date.

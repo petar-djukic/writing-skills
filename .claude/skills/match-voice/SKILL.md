@@ -7,9 +7,13 @@ description: >-
   metrics (sentence/paragraph distributions, word/phrase/idiom frequencies,
   per-section profiles) and a qualitative voice profile (how intros open,
   methodology and results conventions, terminology). Produces a comparison
-  report for the draft. Triggers: match voice, learn the voice, compare my
-  writing, voice profile, style profile, does my draft sound like the field,
-  analyze methodology section, results conventions, writing style comparison.
+  report for the draft, extracts voice persona blueprints from exemplar
+  papers, and can rewrite a draft to match a voice (opt-in, section by
+  section, with a plagiarism similarity guard). Triggers: match voice, learn
+  the voice, compare my writing, voice profile, style profile, does my draft
+  sound like the field, analyze methodology section, results conventions,
+  writing style comparison, mimic this paper, rewrite in the style of, apply
+  the voice, voice persona, exemplar, plagiarism check, similarity check.
 ---
 
 # Match voice (corpus style analysis)
@@ -38,6 +42,11 @@ field's human writing looks like; do not duplicate de-ai's detectors.
   regeneration rule.
 - **Comparison reports:** `<db-dir>/voice-reports/<draft-stem>-voice.md`,
   following `references/comparison-report-template.md`.
+- **Exemplar blueprints:** `<db-dir>/voice-blueprint-<slug>.md`, extracted
+  from chosen exemplar papers following `voice-analysis-instructions.md`
+  Part 3 (consensus vs idiosyncrasy).
+- **Rewritten drafts:** `<draft-stem>-rewritten.md` next to the draft. The
+  draft itself is never modified.
 
 ## The workflow (interactive)
 
@@ -97,22 +106,71 @@ give directions rather than rewritten text.
 Summarize: the verdict (close match / partial / divergent), the two or
 three highest-impact changes, and the report path.
 
-## Headless mode
+## Exemplar blueprints (mimic a specific paper or venue)
 
-`match_voice.py` runs steps 2-4 end-to-end without an interactive session —
-one Anthropic API call for the qualitative layer:
+When the user wants to mimic specific papers rather than the corpus average
+("mimic these two ICML papers"), extract a voice persona blueprint following
+**Part 3** of `voice-analysis-instructions.md`: one mini-blueprint per
+exemplar (sentence mechanics, lexicon and tone, signposting and transitions,
+formatting quirks — every claim quoted, never summarizing content), then a
+synthesis separating **Consensus** (shared across exemplars — venue
+convention) from **Idiosyncrasy** (one author's habit, flagged per source).
+Save as `voice-blueprint-<slug>.md`. A single exemplar skips synthesis and
+is marked entirely single-source.
+
+## Rewrite mode (opt-in)
+
+The default behavior is to advise. When the user explicitly asks to rewrite
+("apply this voice to my draft", "rewrite my intro in the corpus voice"),
+follow `references/style-application-instructions.md` exactly: section by
+section, few-shot exemplar excerpts of the same section type, consensus
+patterns only unless the user asks to mimic an author, and the critical
+rules — never touch data, equations, numbers, or citations; never copy
+exemplar phrasing; output to `<draft-stem>-rewritten.md`.
+
+After every rewrite run both checks from the instructions file:
+
+1. Content preservation — citations and numbers, per section.
+2. Similarity guard:
 
 ```bash
-python3 <skill>/scripts/match_voice.py <draft.md> --db <db-path>
+python3 <skill>/scripts/style.py similarity <draft-stem>-rewritten.md \
+  --against <exemplar1.md> <exemplar2.md> --baseline <draft.md>
 ```
 
-It refreshes the quantitative profile, excerpts corpus papers (intro,
-methodology, results, conclusion — capped at ~100K tokens), assembles the
-prompt from this skill's own `references/` files (single source of truth),
-and calls `claude-opus-4-8` with adaptive thinking and streaming. The corpus
-block is prompt-cached, so repeated comparisons against the same corpus hit
-the cache. The report lands in `<db-dir>/voice-reports/` and usage stats
-print to stdout.
+Any flagged match is phrasing the rewrite lifted from a source — report it;
+the author must rephrase or quote it. The similarity check is also useful
+standalone when the user asks to "check my draft for plagiarism against the
+corpus" (omit `--baseline`).
+
+## Headless mode
+
+`match_voice.py` runs every mode without an interactive session, assembling
+prompts from this skill's own `references/` files (single source of truth)
+and calling `claude-opus-4-8` with adaptive thinking and streaming. Stable
+content blocks (corpus, blueprint) are prompt-cached.
+
+```bash
+# Compare a draft against the corpus profile (one API call)
+python3 <skill>/scripts/match_voice.py <draft.md> --db <db-path>
+
+# Extract a blueprint from exemplars (one call each + synthesis)
+python3 <skill>/scripts/match_voice.py --db <db-path> \
+  --exemplar lee-meta-harness-2026 --exemplar path/to/other.md --name icml
+
+# Rewrite a draft with the latest blueprint (one call per section)
+python3 <skill>/scripts/match_voice.py <draft.md> --db <db-path> --rewrite
+
+# Extract and rewrite in one run; --mimic also applies idiosyncrasies
+python3 <skill>/scripts/match_voice.py <draft.md> --exemplar <paper> --rewrite --mimic
+```
+
+Exemplars are file paths or citation ids resolved through `references.yaml`.
+After a rewrite the script verifies content preservation (citations,
+numbers, per section) and runs the similarity guard against every source
+paper with the original draft as baseline; flagged passages are listed in
+the JSON summary and a warning is printed. Reports land in
+`<db-dir>/voice-reports/`; usage stats print to stdout.
 
 Requires `ANTHROPIC_API_KEY` (or an active `ant auth login` profile) and
 `pip install anthropic`. Suitable for CI, cron, or a mage target.

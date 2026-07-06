@@ -15,6 +15,10 @@ Subcommands:
   compare  Diff a draft's profile against voice-profile.json. Prints JSON
            deltas: metric deltas, frequency over/under-use, per-section deltas.
   freq     Standalone ranked word / phrase / idiom frequency table.
+  similarity  Plagiarism guard: flag shared word sequences (n-gram shingling,
+           default 8 words) between a file and one or more --against files.
+           --baseline excludes phrasing that already existed in the original
+           draft, so only rewrite-introduced overlap is flagged.
 
 Corpus selection defaults to entries with status: summarized (papers the
 user actually engaged with). --all widens to every entry with an md_path.
@@ -23,6 +27,7 @@ Stdlib only except PyYAML.
 """
 
 import argparse
+import difflib
 import json
 import math
 import os
@@ -418,6 +423,103 @@ def compare_profiles(draft_profile, corpus_profile):
 
 
 # --------------------------------------------------------------------------- #
+# Similarity (plagiarism guard)
+# --------------------------------------------------------------------------- #
+
+def normalize_tokens(text):
+    """Tokenize for similarity: strip markdown and citations, lowercase."""
+    clean = strip_markdown(text)
+    clean = CITATION_RE.sub(" ", clean)
+    return words_of(clean)
+
+
+def shingle_set(tokens, n):
+    return {tuple(tokens[i:i + n]) for i in range(len(tokens) - n + 1)}
+
+
+def find_shared_runs(tokens_a, tokens_b, n):
+    """Maximal shared word runs of length >= n between two token lists."""
+    index = {}
+    for i in range(len(tokens_b) - n + 1):
+        index.setdefault(tuple(tokens_b[i:i + n]), []).append(i)
+    runs = []
+    i = 0
+    while i <= len(tokens_a) - n:
+        gram = tuple(tokens_a[i:i + n])
+        if gram in index:
+            j = index[gram][0]
+            length = n
+            while (i + length < len(tokens_a) and j + length < len(tokens_b)
+                   and tokens_a[i + length] == tokens_b[j + length]):
+                length += 1
+            runs.append({"a_word_index": i, "b_word_index": j,
+                         "words": length,
+                         "text": " ".join(tokens_a[i:i + length])})
+            i += length
+        else:
+            i += 1
+    return runs
+
+
+def is_stock_only(run_text):
+    """True if a run is stock idioms plus glue — not worth flagging."""
+    remaining = run_text
+    for phrase in STOCK_PHRASES:
+        remaining = remaining.replace(phrase, " ")
+    content = [w for w in words_of(remaining) if w not in STOPWORDS]
+    return len(content) < 3
+
+
+def similarity_report(subject_text, against, n=8, baseline_text=None):
+    """Compare subject against each (name, text) in `against`.
+
+    Returns per-source matches (excluding baseline-carried and stock-only
+    runs) plus summary stats.
+    """
+    subject_tokens = normalize_tokens(subject_text)
+    subject_shingles = shingle_set(subject_tokens, n)
+    baseline_shingles = (shingle_set(normalize_tokens(baseline_text), n)
+                         if baseline_text else set())
+
+    sources = []
+    total_flagged = 0
+    for name, text in against:
+        tokens = normalize_tokens(text)
+        runs = find_shared_runs(subject_tokens, tokens, n)
+        flagged = []
+        for run in runs:
+            i = run["a_word_index"]
+            run_shingles = {tuple(subject_tokens[k:k + n])
+                            for k in range(i, i + run["words"] - n + 1)}
+            if baseline_shingles and run_shingles <= baseline_shingles:
+                continue
+            if is_stock_only(run["text"]):
+                continue
+            flagged.append(run)
+        overlap = len(subject_shingles & shingle_set(tokens, n))
+        norm_subject = " ".join(subject_tokens)
+        norm_source = " ".join(tokens)
+        lcm = difflib.SequenceMatcher(None, norm_subject, norm_source,
+                                      autojunk=False).find_longest_match(
+            0, len(norm_subject), 0, len(norm_source))
+        sources.append({
+            "source": name,
+            "matches": flagged,
+            "shingle_overlap_ratio": round(
+                overlap / max(len(subject_shingles), 1), 4),
+            "longest_common_chars": lcm.size,
+        })
+        total_flagged += len(flagged)
+
+    return {
+        "ngram": n,
+        "subject_words": len(subject_tokens),
+        "total_flagged_matches": total_flagged,
+        "sources": sources,
+    }
+
+
+# --------------------------------------------------------------------------- #
 # Subcommands
 # --------------------------------------------------------------------------- #
 
@@ -467,6 +569,24 @@ def cmd_freq(args):
                      indent=2, ensure_ascii=False))
 
 
+def cmd_similarity(args):
+    with open(args.file) as f:
+        subject = f.read()
+    against = []
+    for path in args.against:
+        with open(path) as f:
+            against.append((path, f.read()))
+    baseline = None
+    if args.baseline:
+        with open(args.baseline) as f:
+            baseline = f.read()
+    report = similarity_report(subject, against, n=args.ngram,
+                               baseline_text=baseline)
+    report["file"] = args.file
+    report["baseline"] = args.baseline
+    print(json.dumps(report, indent=2, ensure_ascii=False))
+
+
 def main():
     p = argparse.ArgumentParser(description="Quantitative style analyzer")
     p.add_argument("--db", default="references.yaml",
@@ -493,6 +613,16 @@ def main():
     fr.add_argument("file")
     fr.add_argument("--top", type=int, default=50)
     fr.set_defaults(func=cmd_freq)
+
+    si = sub.add_parser("similarity", help="flag shared word sequences (plagiarism guard)")
+    si.add_argument("file", help="the file to check (e.g. the rewritten draft)")
+    si.add_argument("--against", nargs="+", required=True,
+                    help="source files to compare against (exemplars, corpus papers)")
+    si.add_argument("--baseline", default=None,
+                    help="original draft; phrasing already present there is not flagged")
+    si.add_argument("--ngram", type=int, default=8,
+                    help="minimum shared word-sequence length to flag (default: 8)")
+    si.set_defaults(func=cmd_similarity)
 
     args = p.parse_args()
     args.func(args)
