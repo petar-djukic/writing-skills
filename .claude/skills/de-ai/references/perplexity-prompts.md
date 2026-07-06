@@ -89,6 +89,24 @@ Analyze the following text and report:
 
 4. Identify specific passages (by sentence number) that feel machine-generated and explain why.
 
+5. PARALLEL FRAMES BEYOND SENTENCE RUNS — the structural script catches
+   consecutive-sentence frames; enumerate the shapes it cannot see:
+   a. Cross-paragraph cascades: the same frame escalating across
+      paragraphs ("First, you lose connection to your craft. ... Then you
+      lose connection to meaning. ... Then you lose connection to the
+      organization. ... And then you leave.")
+   b. Cross-section template reuse: sections that each close on the same
+      coined frame ("I was the memory / the coordinator / the shared
+      context / the stop condition" — each section ending "I was the X.
+      Now the Y is.")
+   c. Mirrored contrast paragraph pairs: adjacent paragraphs built as
+      mirror images ("A RAG system is passive. ..." / "The research agent
+      is active. ..."; "The downside is the engineer's. ..." / "The upside
+      is the employer's. ...")
+   For each, quote the frame instances and rule whether the repetition is
+   a deliberate rhetorical structure (rare, one per document at most) or
+   the model re-emitting a template.
+
 ---
 TEXT TO ANALYZE:
 {text}
