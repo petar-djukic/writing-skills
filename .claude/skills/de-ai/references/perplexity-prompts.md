@@ -451,6 +451,50 @@ TEXT:
 {text}
 ```
 
+## Prompt 9: Paragraph Schema and Claim Coherence (forced enumeration)
+
+Grounded in references/paragraph-schema.md (Gopen & Swan, Williams,
+Strunk & White, MEAL). The structural script supplies advisory proxies
+(topic_overlap, cohesion, subject_churn, anaphoric openers); this prompt
+adjudicates them and adds the semantic checks no proxy can make.
+
+```
+You are auditing paragraphs against the schema in paragraph-schema.md.
+The structural proxies for this document are:
+
+PARAGRAPH SCHEMA PROXIES:
+{schema_metrics}      # per-paragraph topic_overlap / cohesion / churn, low-topic list
+
+Part A — MEAL classification, every paragraph:
+- Which sentence carries the Main idea? (sentence number, quoted)
+- Where is the Evidence, and does Analysis connect it to M?
+- Flag: paragraphs with NO assignable main idea; paragraphs where
+  evidence precedes any claim; link-only paragraphs.
+- For each low-topic proxy candidate, rule: genuine mid-argument opener
+  (defect) or legitimate delayed topic (narrative section, essay lead).
+
+Part B — Claim coherence (nonsense check), per claim-sentence in the
+opening material (abstract sentence-by-sentence — it must stand alone —
+plus each section's first two paragraphs):
+- Can a cold reader evaluate the proposition? Every referent defined by
+  this point in the text; predicate not a restatement of the premise
+  (compose with Prompt 8's circularity ruling — do not duplicate it);
+  evidence quantity matches the claim quantity ("the costs compound"
+  supported by error-rate data FAILS).
+- For abstracts: any sentence relying on a term or figure the abstract
+  itself has not introduced (e.g. an unreferenced "74%" or "100%") is
+  incoherent to the cold reader — flag it.
+
+Output per finding: paragraph/sentence, quoted text, MEAL slot map or
+coherence ruling, and the minimal fix.
+
+NO_MAIN_IDEA_COUNT / EVIDENCE_FIRST_COUNT / INCOHERENT_CLAIM_COUNT totals.
+
+---
+TEXT:
+{text}
+```
+
 ## Usage Notes
 
 - Process text in sections of 500-1500 words for best results
@@ -461,5 +505,6 @@ TEXT:
 - Prompt 0 runs FIRST, before any script — its cold-read verdict must not be anchored by metrics
 - Prompt 7 runs after the structural scan, seeded with the performance/punch/salad/formulae outputs; mandatory when the document has prior de-ai history or Prompt 0 flags register
 - Prompt 8 runs on the document's opening material (abstract + section openers); mandatory for publication verdicts — cadence detectors cannot see undefined jargon or circular claims
+- Prompt 9 runs seeded with the structural script's paragraph_schema metrics; its Part B composes with Prompt 8 (circularity lives there)
 - Prompt 5 is the integrator — runs last with all evidence, including Prompt 0 and Prompt 7
 - Cache results: if a section scores clean on all prompts, skip it in recursive passes

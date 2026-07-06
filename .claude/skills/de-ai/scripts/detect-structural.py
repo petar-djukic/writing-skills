@@ -549,6 +549,104 @@ def analyze_salad(sentences_all: list, prose: str, word_count: int) -> dict:
     }
 
 
+def _content_terms(text: str) -> set:
+    """Lowercased content words (stopword-free, lightly stemmed)."""
+    out = set()
+    for w in re.findall(r"[A-Za-z][A-Za-z'-]{2,}", text.lower()):
+        if w in FUNCTION_WORDS:
+            continue
+        out.add(w[:-1] if w.endswith("s") and len(w) > 4 else w)
+    return out
+
+
+_LINK_PRONOUNS = {"it", "this", "that", "these", "those", "they", "such",
+                  "he", "she", "its", "their", "both", "each", "here"}
+
+
+def analyze_paragraph_schema(paragraphs: list) -> dict:
+    """Mechanical proxies for paragraph-schema conformance (Gopen & Swan,
+    Williams, Strunk & White). Advisory scores, not pass/fail — the
+    semantic prompt adjudicates. Three proxies per paragraph:
+
+      topic_overlap: content-term overlap between sentence 1 and the body.
+        Low overlap = the paragraph opens mid-argument (the TOPIC defect).
+      cohesion: fraction of sentences whose opening clause shares a
+        referent (content term or linking pronoun) with the prior sentence
+        (Williams' old-to-new flow).
+      subject_churn: distinct sentence-subject heads / sentences. High
+        churn = topic drift, more than one point per paragraph.
+    """
+    per_para = []
+    for p_idx, para in enumerate(paragraphs):
+        sents = split_sentences_all(para)
+        if len(sents) < 3:
+            continue
+        s1_terms = _content_terms(sents[0])
+        body_terms = _content_terms(" ".join(sents[1:]))
+        topic_overlap = (len(s1_terms & body_terms) / len(s1_terms)
+                         if s1_terms else 0.0)
+
+        linked = 0
+        for i in range(1, len(sents)):
+            opening = " ".join(sents[i].split()[:6]).lower()
+            open_words = set(re.findall(r"[a-z'-]+", opening))
+            prev_terms = _content_terms(sents[i - 1])
+            if (open_words & _LINK_PRONOUNS
+                    or _content_terms(opening) & prev_terms):
+                linked += 1
+        cohesion = linked / (len(sents) - 1)
+
+        heads = set()
+        for s in sents:
+            words = [w.lower().strip(".,;:!?\"'") for w in s.split()]
+            head = ""
+            for w in words[:4]:
+                if w and w not in FUNCTION_WORDS:
+                    head = w
+                    break
+            if not head and words:
+                head = words[0]
+            heads.add(head)
+        subject_churn = len(heads) / len(sents)
+
+        # Anaphoric opener: the paragraph's first sentence starts on a
+        # back-reference ("That axis...", "Both predictions...") — its topic
+        # lives in the previous paragraph. The other face of the TOPIC
+        # defect: overlap can be high while the referent is still distant.
+        first_word = sents[0].split()[0].strip(".,;:!?\"'").lower() if sents[0].split() else ""
+        opens_anaphorically = first_word in _LINK_PRONOUNS
+
+        per_para.append({
+            "paragraph": p_idx + 1,
+            "opening": " ".join(para.split()[:7]),
+            "sentences": len(sents),
+            "topic_overlap": round(topic_overlap, 2),
+            "cohesion": round(cohesion, 2),
+            "subject_churn": round(subject_churn, 2),
+            "opens_anaphorically": opens_anaphorically,
+        })
+
+    if not per_para:
+        return {}
+    lows = [p for p in per_para
+            if p["topic_overlap"] < 0.2 or p["opens_anaphorically"]]
+    return {
+        "paragraphs_scored": len(per_para),
+        "mean_topic_overlap": round(
+            sum(p["topic_overlap"] for p in per_para) / len(per_para), 2),
+        "mean_cohesion": round(
+            sum(p["cohesion"] for p in per_para) / len(per_para), 2),
+        "mean_subject_churn": round(
+            sum(p["subject_churn"] for p in per_para) / len(per_para), 2),
+        "low_topic_paragraphs": [
+            {"paragraph": p["paragraph"], "opening": p["opening"],
+             "topic_overlap": p["topic_overlap"],
+             "reason": ("anaphoric-opener" if p["opens_anaphorically"]
+                        else "low-overlap")} for p in lows][:10],
+        "per_paragraph": per_para[:30],
+    }
+
+
 def detect_opener_duplication(file_texts: list, threshold: float = 0.75):
     """Abstract/introduction first-sentence duplication (cross-document).
 
@@ -1026,6 +1124,25 @@ def analyze(text: str, threshold_name: str = "medium") -> dict:
             "severity": "low",
             "metric": both_and_density,
         })
+
+    # --- Paragraph schema proxies (advisory; semantic prompt adjudicates) ---
+    schema = analyze_paragraph_schema(paragraphs)
+    if schema:
+        metrics["paragraph_schema"] = {
+            k: schema[k] for k in ("paragraphs_scored", "mean_topic_overlap",
+                                   "mean_cohesion", "mean_subject_churn",
+                                   "low_topic_paragraphs")
+        }
+        if len(schema["low_topic_paragraphs"]) >= 3:
+            issues.append({
+                "type": "topic-sentence-weak",
+                "detail": (f"{len(schema['low_topic_paragraphs'])} paragraphs open "
+                           "mid-argument (first-sentence content barely overlaps the "
+                           "body — the TOPIC defect). Advisory: adjudicate in the "
+                           "schema prompt; topic-sentence-first is convention, not law."),
+                "severity": "low",
+                "candidates": schema["low_topic_paragraphs"],
+            })
 
     # --- Question volleys and self-interview templates ---
     question_issues = detect_question_patterns(paragraphs)
