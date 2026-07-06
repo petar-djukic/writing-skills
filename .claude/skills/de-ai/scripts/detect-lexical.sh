@@ -532,6 +532,35 @@ run_on_file() {
   fi
   scan_patterns "mechanical-transition" "${MECHANICAL_TRANSITIONS[@]}"
 
+  # Ordinal walkthrough sequences: "First, ... Second, ..." starting at
+  # sentence boundaries anywhere in a paragraph (markdown paragraphs are
+  # single lines, so the line-anchored ^first, patterns miss nearly all of
+  # them). A single "First," is legitimate; flag a line only when 2+
+  # DISTINCT ordinals open sentences in it.
+  if [[ "$JSON_MODE" != "--json" ]]; then
+    echo ""
+    echo "--- Ordinal Walkthrough Sequences (2+ distinct ordinals per paragraph) ---"
+  fi
+  local lineno=0
+  while IFS= read -r line; do
+    lineno=$((lineno + 1))
+    local distinct
+    # grep exits 1 on no match; under set -euo pipefail every stage needs a
+    # guard, and grep -c always emits exactly one number.
+    distinct=$(printf '%s\n' "$line" \
+      | { grep -oiE '(^|[.!?:] +)(first|second|third|fourth|fifth|finally),' || true; } \
+      | { grep -oiE '(first|second|third|fourth|fifth|finally)' || true; } \
+      | tr '[:upper:]' '[:lower:]' | sort -u | { grep -c . || true; })
+    if [[ "$distinct" -ge 2 ]]; then
+      ISSUES_FOUND=1
+      if [[ "$JSON_MODE" == "--json" ]]; then
+        RESULTS+=("{\"line\": $lineno, \"category\": \"ordinal-sequence\", \"pattern\": \"First,/Second,/...\", \"text\": \"$(echo "$line" | sed 's/"/\\"/g' | head -c 160)\"}")
+      else
+        printf "  L%-4s [%s distinct ordinals] %s\n" "$lineno" "$distinct" "$(echo "$line" | head -c 120)"
+      fi
+    fi
+  done < "$FILE"
+
   if [[ "$JSON_MODE" != "--json" ]]; then
     echo ""
     echo "--- CoT Structural Patterns ---"
