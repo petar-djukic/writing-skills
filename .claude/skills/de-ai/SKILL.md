@@ -152,6 +152,35 @@ After all passages are rewritten, run the full semantic analysis one more time o
 - Consistency issues between rewritten and preserved sections
 - Overall document flow after modifications
 
+## Abstract Mode
+
+Abstracts are read ~100x more than the body and have the most rigid,
+best-documented structure — the easiest text to diagnose and repair.
+Trigger: the user asks to check or fix an abstract, or a publication-verdict
+run encounters one. Standards: `references/abstract-standards.md`.
+
+**Analyze (default):**
+
+1. Mechanical checks:
+   ```bash
+   python3 .claude/skills/de-ai/scripts/abstract-check.py <paper.md> \
+     --body <results.md> <other-chapters.md...> --limit 200
+   ```
+   Locates the abstract (LaTeX environment, front matter, heading, or
+   whole file), counts words against the venue limit (default 200), runs
+   the number-traceability check against the body, and sweeps
+   self-containedness (citations, section/figure references).
+2. Run Prompt 10 (move map: one row per sentence — move, conforming,
+   action), plus Prompt 8 and Prompt 9 Part B on the abstract's sentences.
+3. Report the move map and verdict: conforming | repairable | rebuild.
+
+**Fix (opt-in, only on a failing verdict):** run Prompt 11 — rebuild move
+by move from body excerpts (written-last principle: intro -> moves 1-2,
+results numbers verbatim -> move 3, conclusion -> move 4; never reuse
+failed phrasing). Then verify: abstract-check.py traceability must pass
+(any number absent from the body rejects the rewrite), re-run Prompt 10
+(max 3 passes), and run the standard scans for register regressions.
+
 ## Convergence Rules
 
 - Rewrites must never be validated by script metrics alone — that is how overshoot happens. After each rewrite pass, re-run Prompt 0 on the rewritten section; a rewrite that improves the metrics but worsens the cold read is a regression.
