@@ -211,6 +211,24 @@ rewrite, each detected formula gets one home; every other occurrence is
 paraphrased. The static list starves the register; the dynamic list starves
 this document's coinages.
 
+## Quoted Examples (false-positive handling)
+
+Documents that deliberately quote banned phrases as examples (e.g. an essay
+about AI tells) still flag in detection — the scanner cannot tell mention
+from use, and the reviewer decides. The convergence rules already protect
+direct quotations from rewrite; the report should note flagged lines that
+sit inside quotation marks or code spans so the reviewer can dismiss them
+quickly.
+
+## Keeping the List in Sync
+
+The lexical list must track the house style rules (e.g. idea-factory's
+`.claude/rules/substack-writing.md`). When a rules doc bans a phrase family,
+add it to `AI_PHRASES` in the same change — GH-46 was the drift case: six
+rules-banned families (worth-tics, question-is, here's-the-thing, move the
+needle, here's-what-I-learned, best practices) passed the scan for months.
+Longer term, generate the list from the rules doc at scan time.
+
 ## Updating This List
 
 When you encounter a new AI pattern in the wild:
