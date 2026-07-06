@@ -298,6 +298,52 @@ TEXT TO ANALYZE:
 {text}
 ```
 
+## Prompt 6b: Rhetorical Set-Piece Enumeration (extends Prompt 6)
+
+Run with Prompt 6, same forced-enumeration discipline and the same
+ANCHOR/REFLEX ruling: one instance can be the article's spine (ANCHOR); the
+tell is density and reflexive use (REFLEX). None of these five is regexable
+with useful precision — the semantic pass must look for them by name.
+
+```
+Enumerate every instance of these five rhetorical set pieces, then rule each
+ANCHOR or REFLEX:
+
+1. METAPHOR ALLEGORY SWEEP — every category mapped onto one metaphor, one
+   sentence each. Example: a boiling-frog paragraph mapping all five adopter
+   camps onto the frog, one sentence per camp.
+
+2. ANADIPLOSIS CHAIN — each sentence picks up the previous sentence's tail.
+   Example: "Real disagreement requires real claims. Real claims require
+   words that point to things." / "The architecture is the skeleton. The
+   code is the muscle. Muscle is replaceable. The skeleton has to hold."
+
+3. STOCK EMPHATIC ANCHOR — the two-beat self-endorsement. Examples:
+   "That's it. That's the only question that matters now." / "That's the
+   test." / "This is worth sitting with."
+
+4. IMPERATIVE-RUN CLOSER — a paragraph or section closing on a drumbeat of
+   commands. Example: "Find the cracks. Build in your own time. Document
+   everything. Set your exit timeline."
+
+5. METAPHOR MIRROR PAIR — two adjacent sentences mapping a source/derived
+   pair onto a metaphor pair. Example: "The specification is the source.
+   The generated code is the binary."
+
+Output per instance:
+- Pattern number, quoted text, location
+- Verdict: ANCHOR (deliberate, load-carrying, at most one per document per
+  pattern) or REFLEX (the cadence as default punctuation)
+- If REFLEX: a one-line plain-prose rewrite
+
+SETPIECE_TOTAL: <count>
+REFLEX_COUNT: <count>
+
+---
+TEXT:
+{text}
+```
+
 ## Prompt 7: Overshoot / Uniform Maximal Polish (run AFTER the scripts)
 
 Detects the high-perplexity failure direction: text tuned against AI
@@ -366,6 +412,7 @@ TEXT:
 - Always run Prompts 1-3 in parallel (independent assessments)
 - Prompt 4 runs after lexical scan (needs context of what regex missed)
 - Prompt 6 runs after the structural scan (catches the semantic antithesis pairs the `detect_antithesis` regex cannot)
+- Prompt 6b runs alongside Prompt 6 (rhetorical set pieces: allegory sweeps, anadiplosis chains, emphatic anchors, imperative runs, metaphor mirrors)
 - Prompt 0 runs FIRST, before any script — its cold-read verdict must not be anchored by metrics
 - Prompt 7 runs after the structural scan, seeded with the performance/punch/salad/formulae outputs; mandatory when the document has prior de-ai history or Prompt 0 flags register
 - Prompt 5 is the integrator — runs last with all evidence, including Prompt 0 and Prompt 7
