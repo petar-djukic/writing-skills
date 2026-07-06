@@ -495,6 +495,83 @@ TEXT:
 {text}
 ```
 
+## Prompt 10: Abstract Move Analysis
+
+Abstract mode's analysis pass. Grounded in references/abstract-standards.md.
+Composes with Prompt 8 (definedness/circularity) and Prompt 9 Part B (claim
+coherence per sentence) — run those on the abstract too; this prompt owns
+the move structure.
+
+```
+You are analyzing an abstract against the four-move standard
+(problem, gap, approach+results, implication). The mechanical report:
+
+ABSTRACT-CHECK OUTPUT:
+{abstract_check}    # word count, untraceable numbers, containedness findings
+
+Produce the MOVE MAP — one row per sentence:
+
+| # | Sentence (first 8 words) | Move (1-4 or NONE) | Conforming | Action |
+
+Rules:
+- A sentence assignable to no move is a defect (throat-clearing, scope
+  disclaimer, body material).
+- Flag missing moves and out-of-order moves.
+- Unglossed coinages: any invented term without an inline gloss.
+- Numbers without in-abstract referents ("74%" of what?).
+- Cross-check the opener against the introduction's opener (duplication).
+
+Output after the table:
+MISSING_MOVES / OUT_OF_ORDER / NO_MOVE_SENTENCES / UNGLOSSED_COINAGES
+VERDICT: conforming | repairable | rebuild
+
+---
+ABSTRACT:
+{abstract}
+
+INTRODUCTION OPENER (for the duplication check):
+{intro_opener}
+```
+
+## Prompt 11: Abstract Reconstruction (rewrite mode, opt-in)
+
+Runs only when Prompt 10's verdict is repairable/rebuild AND the caller
+asked for fixes. Written-last principle: derive from the body, never from
+the failed abstract's phrasing.
+
+```
+Rebuild this abstract move by move from the body excerpts. Rules:
+
+1. Move 1-2: compress the introduction's problem and gap material.
+2. Move 3: pull the headline numbers VERBATIM from the results excerpt;
+   every number gets an in-abstract referent (74% of what, measured how).
+3. Move 4: import the implication from the conclusion.
+4. Gloss or eliminate every coinage. No citations, no section references.
+5. Hard word limit: {limit} words.
+6. Do not reuse phrasing from the old abstract where that phrasing failed
+   a check. Do not introduce any claim or number absent from the body.
+
+Output only the rewritten abstract.
+
+---
+OLD ABSTRACT (for reference, not for phrasing):
+{abstract}
+
+INTRODUCTION EXCERPT:
+{intro_excerpt}
+
+RESULTS EXCERPT:
+{results_excerpt}
+
+CONCLUSION EXCERPT:
+{conclusion_excerpt}
+```
+
+After the rewrite: run scripts/abstract-check.py with --body (traceability
+must pass), re-run Prompt 10 on the rewrite (max 3 passes), and run the
+standard lexical/structural scans so the rewrite introduces no register
+regressions.
+
 ## Usage Notes
 
 - Process text in sections of 500-1500 words for best results
@@ -506,5 +583,6 @@ TEXT:
 - Prompt 7 runs after the structural scan, seeded with the performance/punch/salad/formulae outputs; mandatory when the document has prior de-ai history or Prompt 0 flags register
 - Prompt 8 runs on the document's opening material (abstract + section openers); mandatory for publication verdicts — cadence detectors cannot see undefined jargon or circular claims
 - Prompt 9 runs seeded with the structural script's paragraph_schema metrics; its Part B composes with Prompt 8 (circularity lives there)
+- Prompts 10-11 are abstract mode: 10 analyzes (always), 11 rebuilds (opt-in, only on a failing verdict), both seeded with abstract-check.py output
 - Prompt 5 is the integrator — runs last with all evidence, including Prompt 0 and Prompt 7
 - Cache results: if a section scores clean on all prompts, skip it in recursive passes

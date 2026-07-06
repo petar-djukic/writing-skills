@@ -89,6 +89,13 @@
 - MEAL defects (no main idea / evidence-first / link-only): {meal_defects}
 - Incoherent claims (nonsense check): {incoherent_claims}
 
+### Abstract Mode (Prompts 10-11, when an abstract is present)
+- Located via / word count: {abstract_locator} / {abstract_words}/{abstract_limit}
+- Move map: {move_map_table}
+- Missing/out-of-order moves: {move_defects}
+- Unglossed coinages / untraceable numbers: {abstract_coinages} / {abstract_untraceable}
+- Verdict: {abstract_verdict}
+
 ### Overshoot Assessment (Prompt 7)
 - Overshoot Score: {overshoot_score}/100
 - Confirmed punches: {confirmed_punches}
