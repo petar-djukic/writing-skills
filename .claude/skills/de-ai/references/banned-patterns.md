@@ -97,6 +97,7 @@ These have legitimate uses but are AI tells in most contexts.
 | constitutes | Legal/formal definition | "constitutes a significant X" — use "is" |
 | manifests | Medical/physical symptom | "manifests as..." — use "appears as" |
 | affords | — | "affords the ability to" — use "allows" |
+| shape | Geometry, plots, physical form | "keeps the same shape", "the shape of the problem" — metaphor for structure; name what actually recurs (the same failure mode, the same cost curve) |
 
 ## Tier 3: Density Markers (Fine Alone, Bad in Clusters)
 
@@ -172,6 +173,33 @@ These multi-word patterns are strong AI signals:
 "in effect"
 ```
 
+## Narrative Pivot and Stage-Setting Frames
+
+The model dramatizes its own exposition: instead of stating a fact, it
+stages a reveal. "This is where X comes in" is the type specimen — the
+sentence announces that the solution is about to appear rather than
+presenting the solution. The whole family manufactures suspense the
+content has not earned. The fix is the same for every member: delete the
+frame and state the fact directly.
+
+| Sub-group | Patterns | Fix |
+|---|---|---|
+| Stage-setting | "this is where X comes in", "comes into play", "enters the picture", "where the magic happens", bare "Enter X." | name what X does: "X resolves the lookup" |
+| Manufactured reveal | "here's the kicker", "here's the catch", "here's the twist", "but there's a catch", "plot twist", "The catch?" (fragment-question then answer) | state the complication as a fact |
+| Discovery narrative | "it turns out", "turns out,", "as it turns out", "that's when I realized", "that's when it hit me", "little did I know", "fast forward to" | drop the frame; keep the finding |
+| Reader poke | "sound familiar?", "let that sink in", "read that again", "you read that right", "we've all been there" | delete; the reader decides what sinks in |
+| Translation frame | "in plain English", "long story short", "the short answer is", "think of it as", "the beauty of X is" | write the plain version once, not both |
+| Epochal framing | "gone are the days", "in a world where", "we live in a world" | state the current condition with a date or number |
+| Significance narration | "this matters because", "this lands because", "why this matters" (section header favorite), "this is important because", "the reason this matters" | make the point carry its own weight; if the consequence is the content, state the consequence as a fact |
+
+Detection: the specific completions ("comes into play", "here's the
+kicker", "gone are the days") are hard flags in `detect-lexical.sh`
+(`narrative-pivot`). The bare openers ("this is where", "that's where",
+"here's where", "this works because", sentence-initial "Enter") are
+candidates — "this is where the function stores its state" is legitimate
+descriptive prose — so they carry to Step 3 for the removal test like
+the CoT candidates.
+
 ## Technical Writing Tells (Domain-specific AI patterns)
 
 These appear specifically in technical/academic LLM output at unnatural rates:
@@ -216,7 +244,7 @@ epigrams unwritable.
 | Sub-category | Words / frames | Plain alternative |
 |---|---|---|
 | Metaphor verbs (epigram engines) | loads, carries (a claim/cost), buys, hires/hired, manufacture, forfeits, inherits (an error rate), converts (failures), narrates, decides (as in "reliability decides whether"), survives (a prediction), awaits | use the literal verb: causes, requires, produces, loses, describes, determines |
-| Abstract epigram nouns | instrument, concession, axis (non-plot), mass (non-physics), price, floor/ceiling (non-math), dial, menu, engine (non-mechanical), affordance, register (non-CS), the split, the construct | name the concrete thing |
+| Abstract epigram nouns | instrument, concession, axis (non-plot), mass (non-physics), price, floor/ceiling (non-math), dial, menu, engine (non-mechanical), affordance, register (non-CS), the split, the construct, shape (non-geometric: "the shape of the problem") | name the concrete thing |
 | Rhetorical glue | merely, emphatic "itself", sentence-initial "Nor", "the X in question", "to the digit" | delete or use "only" |
 | Borrowed-metaphor adjectives | load-bearing, first-class, orthogonal (non-math), surface (non-API), upstream/downstream (non-pipeline), brittle (non-materials) | describe the actual property |
 | Aphorism frames (phrase-level) | "X is the Y, not the Z", "the price of X is Y", "buys X with Y", "X is not a Y problem but a Z problem", "what X narrates as Y" | state the claim once, plainly |
