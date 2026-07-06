@@ -84,6 +84,7 @@ THRESHOLDS = {
 OVERSHOOT_TYPES = {
     "overshoot-burstiness", "performing-heavy", "punch-clustered",
     "word-salad-heavy", "hyphen-compound-heavy", "colon-heavy", "dash-heavy",
+    "contrast-flip-heavy",
 }
 
 
@@ -708,6 +709,31 @@ def analyze(text: str, threshold_name: str = "medium") -> dict:
             "detail": f"{rather_than_density:.1f} 'rather than' per 500 words (threshold: <2.0). AI's default contrast device.",
             "severity": "low",
             "metric": rather_than_density,
+        })
+
+    # --- Intra-sentence contrast flips ---
+    # The antithesis reflex compressed into one sentence: "isn't X—it's Y",
+    # "Not because X—because Y", "X, not Y." Both constructions are
+    # legitimate in isolation; the tell is frequency, so this is a density
+    # metric like rather_than (the same class of default contrast device).
+    dash_flip = len(re.findall(
+        r"\b(?:is not|isn't|not)\s[^.?!]{0,40}[—–-]\s*(?:it's|it is|because|that's)",
+        prose, re.IGNORECASE))
+    comma_not = len(re.findall(r",\s+not\s+[^,.?!]{3,40}[.?!]", prose))
+    contrast_flip_density = ((dash_flip + comma_not) / word_count) * 500 if word_count > 0 else 0
+    metrics["dash_flip_count"] = dash_flip
+    metrics["comma_not_count"] = comma_not
+    metrics["contrast_flip_per_500w"] = round(contrast_flip_density, 1)
+
+    if contrast_flip_density > thresholds.get("contrast_flip_max", 2.0):
+        issues.append({
+            "type": "contrast-flip-heavy",
+            "detail": (f"{contrast_flip_density:.1f} intra-sentence contrast flips per 500 words "
+                       f"(threshold: <2.0; dash flips: {dash_flip}, comma-not: {comma_not}). "
+                       "\"isn't X—it's Y\" / \"X, not Y.\" is the antithesis reflex "
+                       "compressed into one sentence."),
+            "severity": "medium",
+            "metric": contrast_flip_density,
         })
 
     # --- "both X and Y" frequency ---
