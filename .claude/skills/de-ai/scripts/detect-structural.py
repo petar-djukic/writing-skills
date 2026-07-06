@@ -699,6 +699,53 @@ def analyze(text: str, threshold_name: str = "medium") -> dict:
             "metric": both_and_density,
         })
 
+    # --- Ordinal walkthrough template ---
+    # "The first was X. ... The second was Y. ... The third was Z." — the
+    # enumerated-walkthrough template. A single "The first thing" is
+    # legitimate; flag a paragraph only when 2+ DISTINCT ordinals appear in
+    # the template shape.
+    _ordinal_tpl = re.compile(
+        r"\bthe\s+(first|second|third|fourth|fifth)\s+"
+        r"(thing|one|was|is|step|reason|problem|issue|lesson|part)\b",
+        re.IGNORECASE)
+    ordinal_paras = 0
+    for p_idx, para in enumerate(paragraphs):
+        ordinals = {m.group(1).lower() for m in _ordinal_tpl.finditer(para)}
+        if len(ordinals) >= 2:
+            ordinal_paras += 1
+            issues.append({
+                "type": "ordinal-walkthrough",
+                "detail": (f"Paragraph {p_idx + 1} walks through "
+                           f"{sorted(ordinals)} with the 'The <ordinal> <noun>' "
+                           "template — enumerated-walkthrough AI cadence."),
+                "severity": "medium",
+                "position": f"paragraph {p_idx + 1}",
+            })
+    # Cross-paragraph variant: each ordinal opens its OWN paragraph
+    # ("The first was X." <para> "The second was Y." <para> ...). Flag when
+    # 2+ distinct ordinals open paragraphs within a 6-paragraph window.
+    openers = []
+    for p_idx, para in enumerate(paragraphs):
+        m = _ordinal_tpl.search(para[:60])
+        if m:
+            openers.append((p_idx, m.group(1).lower()))
+    for i in range(len(openers)):
+        window = [o for o in openers if 0 <= o[0] - openers[i][0] < 6]
+        distinct = {o[1] for o in window}
+        if len(distinct) >= 2:
+            ordinal_paras += 1
+            issues.append({
+                "type": "ordinal-walkthrough",
+                "detail": (f"Paragraphs {[o[0] + 1 for o in window]} open with "
+                           f"'The {sorted(distinct)} ...' — the enumerated-walkthrough "
+                           "template spread across paragraphs."),
+                "severity": "medium",
+                "position": f"paragraphs {window[0][0] + 1}-{window[-1][0] + 1}",
+            })
+            break  # one report per document is enough
+
+    metrics["ordinal_walkthrough_paragraphs"] = ordinal_paras
+
     # --- Performance intensity ("LinkedIn voice") ---
     perf = analyze_performance(sentences_all)
     metrics.update(perf)
