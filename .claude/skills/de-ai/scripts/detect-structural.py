@@ -174,13 +174,18 @@ _NEGATION_FINAL = {
     "doesn't", "didn't", "don't", "won't",
 }
 _NEGATION = re.compile(
-    r"\b(not|never|no|isn't|wasn't|aren't|weren't|don't|doesn't|didn't|won't|cannot|can't)\b",
+    r"\b(not|never|no|isn't|wasn't|aren't|weren't|don't|doesn't|didn't|won't"
+    r"|cannot|can't|hadn't|haven't|hasn't|couldn't|wouldn't|shouldn't)\b",
     re.IGNORECASE,
 )
 # Sentence 2 of a negation flip re-affirms by pointing back: "It is...", "That
 # is...". Requiring this restart separates the real flip ("...is not X. It is
 # Y.") from a mid-sentence "not" followed by an unrelated next sentence.
-_RESTART = {"it", "it's", "that", "that's", "this", "they", "they're", "those", "these"}
+_RESTART = {"it", "it's", "that", "that's", "this", "they", "they're", "those",
+            "these", "there", "i'd", "you", "you're", "we'd", "we're"}
+# Demonstrative restarts that carry the flip even in a LONG completion:
+# "The problem wasn't the AI. It was my lack of structure around how I worked."
+_STRONG_RESTART = {"it", "it's", "that's", "this"}
 
 
 def detect_antithesis(sentences_all: list) -> list:
@@ -206,8 +211,28 @@ def detect_antithesis(sentences_all: list) -> list:
         last2 = w2[-1].rstrip(".,;:!?\"'").lower()
         first2 = w2[0].rstrip(".,;:!?\"'").lower()
 
-        if _NEGATION.search(s1) and len2 <= 6 and first2 in _RESTART:
+        first1 = w1[0].rstrip(".,;:!?\"'").lower()
+        s1_negated = bool(_NEGATION.search(s1))
+        # negation in s2's opening words (for the mirrored affirm -> negate flip)
+        s2_head_negated = bool(_NEGATION.search(" ".join(w2[:4])))
+
+        if s1_negated and len2 <= 6 and first2 in _RESTART:
             kind, sev = "antithesis-negation", "high"
+        elif s1_negated and len2 <= 15 and first2 in _STRONG_RESTART:
+            # Long completion: the demonstrative restart is the tell, not the
+            # brevity ("The constraint is not the tool. It is the imagination
+            # of the person holding it.")
+            kind, sev = "antithesis-long-completion", "medium"
+        elif (s1_negated and len2 <= 12 and first1 == first2
+              and first2 in ("the", "a", "an")):
+            # Noun-phrase restart: "The developer isn't disappearing. The job
+            # is moving up the stack."
+            kind, sev = "antithesis-noun-restart", "medium"
+        elif (not s1_negated and s2_head_negated and len2 <= 15
+              and (first2 in _RESTART or first2 == first1)):
+            # Mirrored flip, affirm -> negate: "Cutting costs improves
+            # margins. It doesn't produce the next Cash App."
+            kind, sev = "antithesis-reverse", "medium"
         elif last2 in _ELLIPTICAL_FINAL and (len2 <= 6 or last2 in _NEGATION_FINAL):
             kind, sev = "antithesis-elliptical", "high"
         elif len1 <= 4 and len2 <= 4:
