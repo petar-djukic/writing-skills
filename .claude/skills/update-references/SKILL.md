@@ -89,6 +89,28 @@ markdown). The script generates it from the first author's family name and the
 publication year. The `arxiv_id` field is the base arXiv identifier used for
 deduplication and version tracking.
 
+## Running the scripts
+
+The Python scripts run in a pixi-managed environment that ships beside the
+skill: `pixi.toml` and `pixi.lock` sit at the root of the agent directory
+(the parent of this skill's `skills/` folder). Provision it once per machine —
+the agent does this on repo open — with the preflight:
+
+```bash
+<agent-dir>/scripts/ensure-env.sh
+```
+
+Then run every script through pixi. For brevity the commands below write
+`$RUN` for the wrapper:
+
+```bash
+RUN="pixi run --manifest-path <skill>/../../pixi.toml python"
+```
+
+where `<skill>/../../` resolves to the agent directory holding `pixi.toml`.
+This replaces the older `pip install --user` path — no packages are installed
+into the ambient interpreter.
+
 ## The workflow
 
 ### 1. Understand the current work first
@@ -108,7 +130,7 @@ candidate `new`, `known` (already have this version), or `outdated` (a newer
 version exists than the one on file):
 
 ```bash
-python3 <skill>/scripts/arxiv.py --db <db-path> search \
+$RUN <skill>/scripts/arxiv.py --db <db-path> search \
   --query "all:declarative agent state machine LLM" \
   --categories cs.AI cs.CL cs.LG \
   --sort relevance --max 15
@@ -127,7 +149,7 @@ For papers not on arXiv (conference proceedings, journals, older work), use
 Google Scholar via SerpAPI:
 
 ```bash
-python3 <skill>/scripts/scholar.py --db <db-path> search \
+$RUN <skill>/scripts/scholar.py --db <db-path> search \
   --query "declarative agent patterns finite state machines" \
   --max 10
 ```
@@ -146,7 +168,7 @@ exposes an open-access PDF the skill can download and read directly — so prefe
 it when a paper is not on arXiv:
 
 ```bash
-python3 <skill>/scripts/semantic_scholar.py --db <db-path> search \
+$RUN <skill>/scripts/semantic_scholar.py --db <db-path> search \
   --query "declarative agent patterns finite state machines" \
   --max 10
 ```
@@ -170,7 +192,7 @@ change the conclusions).
 For each paper worth reading:
 
 ```bash
-python3 <skill>/scripts/arxiv.py --db <db-path> fetch --id 2310.12345
+$RUN <skill>/scripts/arxiv.py --db <db-path> fetch --id 2310.12345
 ```
 
 This downloads the latest-version PDF and writes a database entry with
@@ -181,7 +203,7 @@ For Scholar results that have a direct PDF link, the scholar script can also
 fetch:
 
 ```bash
-python3 <skill>/scripts/scholar.py --db <db-path> fetch \
+$RUN <skill>/scripts/scholar.py --db <db-path> fetch \
   --title "Exact Paper Title" --url "https://example.com/paper.pdf"
 ```
 
@@ -190,7 +212,7 @@ output); the script downloads the open-access PDF when there is one and records
 `downloaded`, otherwise records `metadata-only` with the landing URL:
 
 ```bash
-python3 <skill>/scripts/semantic_scholar.py --db <db-path> fetch --paper-id <s2id>
+$RUN <skill>/scripts/semantic_scholar.py --db <db-path> fetch --paper-id <s2id>
 ```
 
 #### Papers that can't be downloaded
@@ -200,7 +222,7 @@ land in the database as `status: metadata-only` — recorded, but not readable.
 Collect them into a checklist you can hand to the user:
 
 ```bash
-python3 <skill>/scripts/scholar.py --db <db-path> pending
+$RUN <skill>/scripts/scholar.py --db <db-path> pending
 ```
 
 This writes `<db-dir>/downloads-needed.md`, one clickable landing URL per
@@ -208,7 +230,7 @@ paper. The user downloads the PDFs and hands each back; attach it to its entry
 with `ingest`, which converts the PDF and flips the status to `downloaded`:
 
 ```bash
-python3 <skill>/scripts/scholar.py --db <db-path> ingest \
+$RUN <skill>/scripts/scholar.py --db <db-path> ingest \
   --id <citation-id> --file ~/Downloads/paper.pdf
 ```
 
@@ -236,7 +258,7 @@ Name the file `<db-dir>/summaries/<id>-<short-slug>.md`.
 Close the loop so the database reflects reality:
 
 ```bash
-python3 <skill>/scripts/arxiv.py --db <db-path> record --id 2310.12345 \
+$RUN <skill>/scripts/arxiv.py --db <db-path> record --id 2310.12345 \
   --summary-file summaries/2310.12345-short-slug.md \
   --topics llm agents fsm declarative-agents \
   --relevance "One line on why it matters to this work."
@@ -261,7 +283,7 @@ If papers were fetched before markdown conversion was available, or if markdown
 files are missing for any reason, run `repair` to regenerate them from the PDFs:
 
 ```bash
-python3 <skill>/scripts/arxiv.py --db <db-path> repair
+$RUN <skill>/scripts/arxiv.py --db <db-path> repair
 ```
 
 This walks every entry in the database, checks for a missing `md_path`, and
@@ -270,13 +292,14 @@ entries by adding the `md_path` field. Prints a JSON summary of what it did.
 
 ## Dependencies
 
-PyYAML (`python3 -m pip install --user pyyaml`) is required. `pymupdf4llm` is
-recommended for PDF-to-markdown conversion that preserves headings, tables, and
-math; `pypdf` is the fallback (plain text only). If neither is installed,
-fetch still downloads the PDF and just skips the conversion. Everything else is
-Python stdlib plus the arXiv public API — no key needed. Be a good citizen: the
-script already retries with backoff; don't hammer the API with huge `--max`
-values in a tight loop.
+The pixi environment (see "Running the scripts") supplies PyYAML (required),
+`pymupdf4llm` (PDF-to-markdown conversion preserving headings, tables, and
+math), and `pypdf` (the plain-text fallback). It is provisioned by
+`ensure-env.sh`; no `pip install` is needed. If the conversion libraries were
+somehow absent, fetch still downloads the PDF and just skips the conversion.
+Everything else is Python stdlib plus the arXiv public API — no key needed. Be
+a good citizen: the script already retries with backoff; don't hammer the API
+with huge `--max` values in a tight loop.
 
 Google Scholar search requires a SerpAPI key (same key as the idea-factory
 job-search skill). Semantic Scholar needs no key — the public Graph API is

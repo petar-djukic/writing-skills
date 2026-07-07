@@ -43,6 +43,19 @@ or `@citation-id` inline. The citation ids must match entries in
 If `references.yaml` does not exist in the paper directory, stop and tell the
 user. They need to create it first (using `update-references` or manually).
 
+## Running the scripts
+
+This skill and the `update-references` scripts it calls run in the pixi-managed
+environment that ships beside the skills. The agent provisions it on repo open
+via `<agent-dir>/scripts/ensure-env.sh`; the commands below use `$RUN`:
+
+```bash
+RUN="pixi run --manifest-path <skill>/../../pixi.toml python"
+```
+
+No `pip install` is needed — the environment supplies PyYAML and the PDF
+libraries.
+
 ## The workflow
 
 ### 1. Extract citations
@@ -50,7 +63,7 @@ user. They need to create it first (using `update-references` or manually).
 Run the extraction script to get every citation and its surrounding context:
 
 ```bash
-python3 <skill>/scripts/extract_citations.py <document-path>
+$RUN <skill>/scripts/extract_citations.py <document-path>
 ```
 
 This outputs a JSON array of objects, each with:
@@ -84,19 +97,19 @@ For each resolved citation, get the paper text:
 
 2. **Has arxiv_id?** Fetch via the sibling skill's script:
    ```bash
-   python3 .claude/skills/update-references/scripts/arxiv.py \
+   $RUN .claude/skills/update-references/scripts/arxiv.py \
      --db <db-path> fetch --id <arxiv_id>
    ```
    Then read the markdown conversion it produces.
 
 3. **No arxiv_id?** Search Google Scholar for the title:
    ```bash
-   python3 .claude/skills/update-references/scripts/scholar.py \
+   $RUN .claude/skills/update-references/scripts/scholar.py \
      --db <db-path> search --query "<paper title>" --max 3
    ```
    If a match is found with a PDF link, fetch it:
    ```bash
-   python3 .claude/skills/update-references/scripts/scholar.py \
+   $RUN .claude/skills/update-references/scripts/scholar.py \
      --db <db-path> fetch --title "<title>" --url "<pdf_url>" \
      --authors "Given Family" --year YYYY
    ```
@@ -138,6 +151,8 @@ Summarize the results:
 
 ## Dependencies
 
-Same as `update-references`: PyYAML is required, `pymupdf4llm` is recommended
-for PDF-to-markdown conversion. The extraction script is pure Python stdlib.
-arXiv and Scholar access use the sibling skill's scripts.
+Same as `update-references`: the shared pixi environment supplies PyYAML and
+`pymupdf4llm` for PDF-to-markdown conversion, provisioned by `ensure-env.sh`
+with no `pip install`. The extraction script is pure Python stdlib. arXiv and
+Scholar access use the sibling skill's scripts, run through the same `$RUN`
+wrapper.

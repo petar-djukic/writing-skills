@@ -48,6 +48,21 @@ field's human writing looks like; do not duplicate de-ai's detectors.
 - **Rewritten drafts:** `<draft-stem>-rewritten.md` next to the draft. The
   draft itself is never modified.
 
+## Running the scripts
+
+The scripts run in the pixi-managed environment that ships beside the skill
+(`pixi.toml` / `pixi.lock` at the agent-directory root). The agent provisions
+it on repo open via `<agent-dir>/scripts/ensure-env.sh`; then the commands
+below use `$RUN` for the wrapper:
+
+```bash
+RUN="pixi run --manifest-path <skill>/../../pixi.toml python"
+```
+
+This supplies PyYAML and the `anthropic` package, so no `pip install` is
+needed. `match_voice.py` still needs `ANTHROPIC_API_KEY` (or an active
+`ant auth login`) at run time — pixi manages packages, not secrets.
+
 ## The workflow (interactive)
 
 ### 1. Locate the corpus
@@ -60,7 +75,7 @@ if PDFs exist without markdown).
 ### 2. Quantitative profiles
 
 ```bash
-python3 <skill>/scripts/style.py --db <db-path> corpus
+$RUN <skill>/scripts/style.py --db <db-path> corpus
 ```
 
 This writes `voice-profile.json`: aggregated metrics (whole-paper and
@@ -71,8 +86,8 @@ recorded corpus files and mtimes are unchanged.
 Useful inspection commands:
 
 ```bash
-python3 <skill>/scripts/style.py profile <paper.md>     # one paper, full JSON
-python3 <skill>/scripts/style.py freq <paper.md>        # frequency tables only
+$RUN <skill>/scripts/style.py profile <paper.md>     # one paper, full JSON
+$RUN <skill>/scripts/style.py freq <paper.md>        # frequency tables only
 ```
 
 ### 3. Qualitative profile
@@ -88,7 +103,7 @@ Skip if the profile exists and the corpus is unchanged.
 ### 4. Compare the draft
 
 ```bash
-python3 <skill>/scripts/style.py --db <db-path> compare <draft.md>
+$RUN <skill>/scripts/style.py --db <db-path> compare <draft.md>
 ```
 
 This emits the quantitative diff: metric deltas (whole-paper and
@@ -134,7 +149,7 @@ After every rewrite run both checks from the instructions file:
 2. Similarity guard:
 
 ```bash
-python3 <skill>/scripts/style.py similarity <draft-stem>-rewritten.md \
+$RUN <skill>/scripts/style.py similarity <draft-stem>-rewritten.md \
   --against <exemplar1.md> <exemplar2.md> --baseline <draft.md>
 ```
 
@@ -152,17 +167,17 @@ content blocks (corpus, blueprint) are prompt-cached.
 
 ```bash
 # Compare a draft against the corpus profile (one API call)
-python3 <skill>/scripts/match_voice.py <draft.md> --db <db-path>
+$RUN <skill>/scripts/match_voice.py <draft.md> --db <db-path>
 
 # Extract a blueprint from exemplars (one call each + synthesis)
-python3 <skill>/scripts/match_voice.py --db <db-path> \
+$RUN <skill>/scripts/match_voice.py --db <db-path> \
   --exemplar lee-meta-harness-2026 --exemplar path/to/other.md --name icml
 
 # Rewrite a draft with the latest blueprint (one call per section)
-python3 <skill>/scripts/match_voice.py <draft.md> --db <db-path> --rewrite
+$RUN <skill>/scripts/match_voice.py <draft.md> --db <db-path> --rewrite
 
 # Extract and rewrite in one run; --mimic also applies idiosyncrasies
-python3 <skill>/scripts/match_voice.py <draft.md> --exemplar <paper> --rewrite --mimic
+$RUN <skill>/scripts/match_voice.py <draft.md> --exemplar <paper> --rewrite --mimic
 ```
 
 Exemplars are file paths or citation ids resolved through `references.yaml`.
@@ -172,13 +187,15 @@ paper with the original draft as baseline; flagged passages are listed in
 the JSON summary and a warning is printed. Reports land in
 `<db-dir>/voice-reports/`; usage stats print to stdout.
 
-Requires `ANTHROPIC_API_KEY` (or an active `ant auth login` profile) and
-`pip install anthropic`. Suitable for CI, cron, or a mage target.
+Requires `ANTHROPIC_API_KEY` (or an active `ant auth login` profile) at run
+time; the `anthropic` package itself comes from the pixi environment. Suitable
+for CI, cron, or a mage target.
 
 ## Dependencies
 
-PyYAML is required for both scripts. `style.py` is otherwise pure stdlib.
-`match_voice.py` additionally requires the `anthropic` package. The corpus
+Both scripts run in the pixi environment (see "Running the scripts"), which
+supplies PyYAML and — for `match_voice.py` — the `anthropic` package;
+`style.py` is otherwise pure stdlib. No `pip install` is needed. The corpus
 must have been fetched by `update-references` with markdown conversion
 (issue #37) — plain-text legacy corpora work but lose section detection
 quality.

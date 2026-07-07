@@ -94,3 +94,7 @@ This setup is mirrored across assistant surfaces:
 - `.github/` — GitHub Copilot: self-contained so it works as a bare symlink into another repository. `copilot-instructions.md` inlines the agent instructions and rules; `prompts/*.prompt.md` inline the full workflow of each command and one prompt per skill; `skills/` holds the skill trees with paths rewritten to `.github/skills/...`. Nothing under `.github/` references `.claude/`, `.cursor/`, or `.opencode/` — the sync enforces this and fails if a reference leaks
 
 `.claude/` is canonical. Mirrors are generated, never edited directly: `scripts/sync-mirrors.sh` regenerates all of them, and `scripts/sync-mirrors.sh --check` reports drift (nonzero exit) without writing. Run the sync in the same change that edits commands or skills.
+
+## Python environment
+
+The skills' Python dependencies are managed by [pixi](https://pixi.sh/). `pixi.toml` and `pixi.lock` live at the root of each agent directory (canonical in `.claude/`, copied into the mirrors by `sync-mirrors.sh`) so the environment travels when a directory is symlinked into a target repository. `scripts/ensure-env.sh` is a self-locating preflight: on repo open it verifies pixi is installed (installing it if absent, unless `SKILL_ENV_NO_INSTALL` is set), then materializes the locked environment. Run skill scripts through it with `pixi run --manifest-path <agent-dir>/pixi.toml python <script>`. `.pixi/` (the materialized environment) is gitignored. The de-ai detectors are bash and Python stdlib, so they run without provisioning.

@@ -1,0 +1,4 @@
+# Materialized pixi environments (provisioned by scripts/ensure-env.sh from the
+# committed pixi.toml / pixi.lock). Never committed — regenerated per machine.
+.pixi/
+**/.pixi/
