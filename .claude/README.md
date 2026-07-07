@@ -10,15 +10,16 @@ This directory contains custom instructions and rules for the Claude Code agent.
 .claude/
 ├── instructions.md           # Main agent instructions (always applied)
 ├── rules/                    # Rule files for specific contexts
-│   ├── code-prd-architecture-linking.md
 │   ├── documentation-standards.md
 │   ├── git-workflow.md
-│   ├── prd-format.md
-│   ├── use-case-format.md
-│   ├── crumb-format.md
-│   ├── patent-disclosure-format.md
-│   ├── vision-format.md
-│   └── architecture-format.md
+│   ├── pixi-python.md
+│   └── readme-format.md
+├── skills/                   # Model-invoked skills (not mirrored as commands)
+│   ├── audit-references/
+│   ├── de-ai/
+│   ├── match-voice/
+│   ├── patent-disclosure/
+│   └── update-references/
 └── commands/                 # Command templates for common workflows
     ├── align-specs.md
     ├── bd-issue-pop.md
