@@ -89,8 +89,8 @@ Claude Code automatically loads `instructions.md` when working in this repositor
 
 This setup is mirrored across assistant surfaces:
 
-- `.cursor/` — Cursor AI: full mirror of `commands/` and `skills/` (skill-internal paths rewritten to `.cursor/skills/...`)
-- `.opencode/` — OpenCode: mirror of `commands/`
-- `.github/` — GitHub Copilot: `copilot-instructions.md` documenting the conventions and pointing to the canonical `.claude/` sources (Copilot has no one-to-one commands/skills layout)
+- `.cursor/` — Cursor AI: full mirror of `commands/` and `skills/` (skill-internal paths rewritten to `.cursor/skills/...`; commands carry generated front matter)
+- `.opencode/` — OpenCode: full mirror of `commands/` and `skills/` (same treatment)
+- `.github/` — GitHub Copilot: `copilot-instructions.md` documenting the conventions, plus `prompts/*.prompt.md` — one thin adapter per command pointing at its canonical `.claude/commands/` file
 
-`.claude/` is canonical; when commands or skills change, update the mirrors in the same change.
+`.claude/` is canonical. Mirrors are generated, never edited directly: `scripts/sync-mirrors.sh` regenerates all of them, and `scripts/sync-mirrors.sh --check` reports drift (nonzero exit) without writing. Run the sync in the same change that edits commands or skills.
