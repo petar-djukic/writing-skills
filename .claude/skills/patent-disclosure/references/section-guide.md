@@ -144,6 +144,13 @@ examination; standardization plans; competitive intelligence; related
 disclosures forming a patent family. Source all of this from the project
 context file — never invent it.
 
+Related disclosures follow the independence rule
+(technical-register.md): never say this invention "builds on", "borrows
+from", or "reuses" a companion disclosure — dependency language weakens
+the independent standing of both patents. Write "a companion disclosure
+in the same portfolio", "operates in the setting of", or "applies the
+same structure". Each disclosure must stand alone.
+
 ## Section 10 — Keywords
 
 Primary, secondary, and domain-specific keyword lists so the examiner
@@ -166,3 +173,6 @@ common than their expansions (HTTP, TCP/IP).
   qualifiers ("efficient", "improved") without quantification, no
   unsupported superlatives. This overlaps the de-ai skill's venue-jargon
   category — run the finished disclosure through de-ai.
+- Technical register: components perform operations, they do not
+  converse or gesture. Sweep Sections 5-6 against
+  technical-register.md after drafting (SKILL.md step 3b).

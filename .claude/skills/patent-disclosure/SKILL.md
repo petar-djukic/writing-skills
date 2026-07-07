@@ -27,6 +27,9 @@ domain-specific comes from a project context file, never from the skill.
   the problem-statement formula, the writing order, style rules.
 - **Patterns:** `references/patterns-and-antipatterns.md` — claim
   anatomy, four strong patterns, five anti-patterns with fixes.
+- **Register:** `references/technical-register.md` — anthropomorphic and
+  casual vocabulary with technical replacements, the term-of-art
+  exception, the companion-disclosure independence rule.
 - **Skeleton:** `assets/disclosure-template.md` — the section scaffold to
   copy for a new disclosure.
 - **Gate:** `assets/checklist.md` — the patentability checklist and the
@@ -74,6 +77,18 @@ as the scaffold and follow `references/section-guide.md` per section.
 Check each major claim/description against the patterns reference — if a
 passage matches an anti-pattern, apply its fix before moving on.
 
+### 3b. Register sweep
+
+After Sections 5-6 are drafted, sweep them against
+`references/technical-register.md`. Components perform operations; they
+do not ask, hold, hand off, or stand up. Replace conversational verbs
+with the role-precise technical verb (asks → queries for discovery,
+requests for a consumer), strip hand/body and motion metaphors, and
+delete idioms in favour of the named mechanism. Apply the term-of-art
+exception before each replacement: vocabulary the governing standard
+uses stays. Related disclosures follow the companion-disclosure
+independence rule — no "builds on" or "borrows from" language anywhere.
+
 ### 4. Self-assessment
 
 Run `assets/checklist.md`: every checkbox, then the rubric. Score each
@@ -87,6 +102,9 @@ Run the `de-ai` skill on the finished disclosure. The overlap is real:
 marketing vocabulary ("revolutionary", "cutting-edge") fails both de-ai's
 venue-jargon check and this skill's own style rules; undefined coinages
 fail both Prompt 8 and the claim-support check. Fix what both flag once.
+The register sweep (step 3b) is complementary, not redundant: de-ai does
+not flag "asks", "hands to", or "lets" — those are unremarkable in
+articles and only wrong in the patent register.
 
 ### 6. Report
 
