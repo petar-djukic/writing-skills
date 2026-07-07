@@ -358,16 +358,29 @@ def cmd_ingest(args):
         if args.title and normalize_title(e.get("title", "")) == normalize_title(args.title):
             idx = i
             break
-    if idx is None:
-        sys.exit(f"no db entry matches {'--id ' + args.id if args.id else '--title ' + args.title!r}")
 
-    entry = entries[idx]
-    stem = _naming.paper_stem(_first_family(entry.get("author")),
-                              (entry.get("issued") or {}).get("year"),
-                              entry.get("title", ""),
-                              arxiv_id=entry.get("arxiv_id"),
-                              doi=entry.get("doi"),
-                              citation_id=entry.get("id"))
+    if idx is None:
+        # No matching entry — create one if enough metadata was supplied,
+        # otherwise refuse (attaching to nothing is meaningless).
+        if not args.title:
+            sys.exit("no db entry matches; pass --title (and --authors/--year) "
+                     "to register this PDF as a new paper")
+        entry = None
+        family = _first_family([parse_author_name(a) for a in (args.authors or [])])
+        citation_id = _naming.citation_key(family, args.year,
+                                           {p["id"] for p in entries if p.get("id")})
+    else:
+        entry = entries[idx]
+        family = _first_family(entry.get("author"))
+        citation_id = entry.get("id")
+
+    if entry is not None:
+        stem = _naming.paper_stem(family, (entry.get("issued") or {}).get("year"),
+                                  entry.get("title", ""), arxiv_id=entry.get("arxiv_id"),
+                                  doi=entry.get("doi"), citation_id=citation_id)
+    else:
+        stem = _naming.paper_stem(family, args.year, args.title, citation_id=citation_id)
+
     pdf_dir = os.path.join(db_dir, "pdfs")
     os.makedirs(pdf_dir, exist_ok=True)
     pdf_path = os.path.join(pdf_dir, f"{stem}.pdf")
@@ -382,11 +395,24 @@ def cmd_ingest(args):
         with open(md_path, "w") as mf:
             mf.write(md_content)
 
+    if entry is None:
+        entry = {
+            "id": citation_id,
+            "type": "article",
+            "title": args.title,
+            "author": [parse_author_name(a) for a in (args.authors or [])],
+            "container-title": args.venue or "",
+            "URL": args.page_url or "",
+            "issued": {"year": args.year} if args.year else {},
+            "source": "local-import",
+            "added": str(date.today()),
+        }
+        entries.append(entry)
+
     entry["pdf_path"] = os.path.relpath(pdf_path, db_dir)
     if md_path:
         entry["md_path"] = os.path.relpath(md_path, db_dir)
     entry["status"] = "downloaded"
-    entries[idx] = entry
     save_db(args.db, entries)
     print(json.dumps({"id": entry.get("id"),
                       "pdf_path": entry.get("pdf_path"),
@@ -425,10 +451,14 @@ def main():
     pd.set_defaults(func=cmd_pending)
 
     ing = sub.add_parser("ingest",
-                         help="attach a manually-downloaded PDF to an existing entry")
+                         help="attach a PDF to an entry, or register a new one from metadata")
     ing.add_argument("--id", help="citation id of the db entry to attach to")
-    ing.add_argument("--title", help="title of the db entry (if no --id)")
+    ing.add_argument("--title", help="entry title (to match, or to register a new paper)")
     ing.add_argument("--file", required=True, help="path to the downloaded PDF")
+    ing.add_argument("--authors", nargs="*", help="author names for a new entry, e.g. 'Given Family'")
+    ing.add_argument("--year", type=int, help="publication year for a new entry")
+    ing.add_argument("--venue", help="journal or conference for a new entry")
+    ing.add_argument("--page-url", help="landing page URL for a new entry")
     ing.set_defaults(func=cmd_ingest)
 
     l = sub.add_parser("list", help="print the db as JSON")
