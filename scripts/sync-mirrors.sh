@@ -6,8 +6,19 @@
 #   .cursor/skills,   .opencode/skills     copies of .claude/skills with
 #                                          ".claude/skills/" path references
 #                                          rewritten to the target prefix
-#   .github/prompts/<cmd>.prompt.md        thin adapters pointing at the
-#                                          canonical command files
+#   .github/prompts/<cmd>.prompt.md        self-contained prompt per command:
+#                                          the full canonical command body,
+#                                          inlined (not a pointer)
+#   .github/prompts/<skill>.prompt.md      one prompt per skill, pointing at the
+#                                          co-located .github/skills/<name>/
+#   .github/skills/<name>/**               copies of .claude/skills with
+#                                          references rewritten to .github/skills
+#   .github/copilot-instructions.md        generated, self-contained: the
+#                                          instructions and rules inlined
+#
+# The .github tree is designed to work as a bare symlink: `ln -s .github` into
+# another repository gives Copilot working commands, instructions, and skills
+# with no reference escaping the .github subtree.
 #
 # Usage:
 #   scripts/sync-mirrors.sh           regenerate all mirrors in place
@@ -42,6 +53,37 @@ extract_description() {
   ' "$1" | cut -c1-150
 }
 
+# Command body with a leading copyright comment and/or a leading front-matter
+# block stripped, so it can be inlined beneath freshly generated front matter
+# without producing a doubled "---" fence.
+command_body() {
+  awk '
+    NR==1 && /^<!--/ { next }
+    NR==1 && /^<\\!--/ { next }
+    NR==1 && /^---$/ { fm=1; next }
+    fm==1 && /^---$/ { fm=0; started=1; next }
+    fm==1 { next }
+    # skip blank lines before the first real content
+    !started && /^[[:space:]]*$/ { next }
+    { started=1; print }
+  ' "$1"
+}
+
+# Inline the instructions/rules for copilot-instructions.md, dropping the
+# copyright comment and rewriting every canonical path reference so nothing
+# under .github points back at .claude/.cursor/.opencode.
+inline_rules() {
+  sed \
+    -e '/<!-- Copyright/d' \
+    -e '/<\\!-- Copyright/d' \
+    -e 's|\.claude/skills/|.github/skills/|g' \
+    -e 's|\.claude/commands/|.github/prompts/|g' \
+    -e 's|\.claude/rules/||g' \
+    -e 's|rules/||g' \
+    -e 's|\.claude/||g' \
+    "$1"
+}
+
 build_stage() {
   local target cmdfile name cdesc
   for target in .cursor .opencode; do
@@ -73,35 +115,113 @@ build_stage() {
     done
   done
 
-  mkdir -p "$STAGE/.github/prompts"
-  local cmd name desc
+  # -- .github: self-contained --------------------------------------------
+  mkdir -p "$STAGE/.github/prompts" "$STAGE/.github/skills"
+
+  # One prompt per command: the full canonical body inlined beneath generated
+  # front matter, so the prompt stands alone with no pointer to .claude.
+  local cmd desc
   for cmd in "$ROOT/.claude/commands/"*.md; do
     name="$(basename "$cmd" .md)"
     desc="$(extract_description "$cmd")"
-    cat > "$STAGE/.github/prompts/$name.prompt.md" <<EOF
+    {
+      printf -- '---\ndescription: "%s"\n---\n\n' "$desc"
+      printf 'Execute the /%s command. The full workflow follows; treat any\n' "$name"
+      printf 'text after the prompt invocation as its arguments ($ARGUMENTS).\n\n'
+      command_body "$cmd"
+    } > "$STAGE/.github/prompts/$name.prompt.md"
+  done
+
+  # Skills: copy each tree into .github/skills, rewriting every canonical path
+  # reference so nothing under .github points outside it. Unlike the
+  # .cursor/.opencode copies (which keep a sibling .claude/ and rewrite only
+  # the skills prefix), the .github copy must also flatten .claude/commands and
+  # .claude/rules mentions — those files are not carried by a bare symlink.
+  (cd "$ROOT/.claude/skills" && find . -type f) | while IFS= read -r rel; do
+    local src="$ROOT/.claude/skills/$rel"
+    local dst="$STAGE/.github/skills/$rel"
+    mkdir -p "$(dirname "$dst")"
+    sed \
+      -e 's|\.claude/skills/|.github/skills/|g' \
+      -e 's|\.claude/commands/|.github/prompts/|g' \
+      -e 's|\.claude/rules/||g' \
+      -e 's|\.claude/||g' \
+      "$src" > "$dst"
+    if [[ -x "$src" ]]; then chmod +x "$dst"; fi
+  done
+
+  # One prompt per skill, pointing at the co-located skill tree. The reference
+  # resolves inside .github, so it survives a bare symlink.
+  local skilldir sname sdesc
+  for skilldir in "$ROOT/.claude/skills/"*/; do
+    sname="$(basename "$skilldir")"
+    sdesc="$(extract_description "$skilldir/SKILL.md")"
+    cat > "$STAGE/.github/prompts/$sname.prompt.md" <<EOF
 ---
-description: "$desc"
+description: "$sdesc"
 ---
 
-Follow the workflow defined in \`.claude/commands/$name.md\` in this
-repository. Read that file and execute its steps exactly — it is the
-canonical definition of the /$name command; this prompt is a thin adapter
-so the command stays single-sourced. Treat any text after the prompt
-invocation as the command's arguments (\$ARGUMENTS).
+Apply the $sname skill. Read \`.github/skills/$sname/SKILL.md\` and follow
+its workflow, using the reference and asset files under
+\`.github/skills/$sname/\`. Treat any text after the prompt invocation as
+the skill's input.
 EOF
   done
+
+  # Self-contained Copilot instructions: inline the agent instructions and the
+  # repository rules, with every .claude path rewritten away.
+  {
+    cat <<'EOF'
+<!-- Generated by scripts/sync-mirrors.sh from the canonical sources — do not edit. -->
+
+# GitHub Copilot Instructions
+
+This file is self-contained: it inlines the agent instructions and the
+repository rules so the `.github` tree works as a bare symlink into another
+repository. Commands live in `.github/prompts/*.prompt.md` (full workflow
+each) and skills in `.github/skills/`.
+
+EOF
+    echo "## Agent instructions"
+    echo
+    inline_rules "$ROOT/.claude/instructions.md"
+    local rule
+    for rule in "$ROOT/.claude/rules/"*.md; do
+      echo
+      inline_rules "$rule"
+    done
+  } > "$STAGE/.github/copilot-instructions.md"
 }
 
-# Mirror areas managed by this script (relative to repo root)
+# Mirror directories managed by this script (relative to repo root). Each is
+# owned wholesale (rsync --delete); root-level siblings like .opencode's
+# node_modules are never listed, so they are left untouched.
 AREAS=(
   ".cursor/commands"
   ".cursor/skills"
   ".opencode/commands"
   ".opencode/skills"
   ".github/prompts"
+  ".github/skills"
+)
+
+# Single-file artifacts that live at a mirror root (cannot be a --delete area
+# without endangering siblings).
+FILES=(
+  ".github/copilot-instructions.md"
 )
 
 build_stage
+
+# Self-containment guard: nothing under the staged .github may reference a
+# sibling canonical tree, or the bare-symlink use case breaks. Checked before
+# writing so a leak never lands on disk.
+leaks="$(grep -rnE '\.(claude|cursor|opencode)/' "$STAGE/.github" 2>/dev/null || true)"
+if [[ -n "$leaks" ]]; then
+  echo "ERROR: .github references a sibling canonical tree (breaks symlink use):" >&2
+  echo "$leaks" | sed "s|^$STAGE/||" >&2
+  exit 1
+fi
 
 drift=0
 for area in "${AREAS[@]}"; do
@@ -115,6 +235,20 @@ for area in "${AREAS[@]}"; do
     mkdir -p "$ROOT/$area"
     rsync -a --delete "$STAGE/$area/" "$ROOT/$area/"
     echo "synced: $area"
+  fi
+done
+
+for file in "${FILES[@]}"; do
+  if [[ "$MODE" == "check" ]]; then
+    if ! diff "$STAGE/$file" "$ROOT/$file" > /dev/null 2>&1; then
+      drift=1
+      echo "DRIFT: $file"
+      diff "$STAGE/$file" "$ROOT/$file" 2>&1 | head -20 || true
+    fi
+  else
+    mkdir -p "$(dirname "$ROOT/$file")"
+    cp "$STAGE/$file" "$ROOT/$file"
+    echo "synced: $file"
   fi
 done
 
