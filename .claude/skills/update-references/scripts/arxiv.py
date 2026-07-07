@@ -359,6 +359,148 @@ def _entry_stem(entry):
                               citation_id=entry.get("id"))
 
 
+_ARXIV_TAGGED = re.compile(r"arxiv-(\d{4}\.\d{4,5})(?:v(\d+))?", re.I)
+_ARXIV_BARE = re.compile(r"(?<!\d)(\d{4}\.\d{4,5})(?:v(\d+))?(?!\d)")
+
+
+def _arxiv_id_from_name(name):
+    """Recover an arXiv id (and version) from a filename, or (None, None)."""
+    m = _ARXIV_TAGGED.search(name) or _ARXIV_BARE.search(name)
+    if not m:
+        return None, None
+    return m.group(1), (int(m.group(2)) if m.group(2) else None)
+
+
+def _pdf_metadata(pdf_abs):
+    """Best-effort (title, author) from a PDF's embedded document info."""
+    try:
+        import pypdf
+        info = pypdf.PdfReader(pdf_abs).metadata or {}
+        title = (info.get("/Title") or "").strip()
+        author = (info.get("/Author") or "").strip()
+        return (title or None, author or None)
+    except Exception:
+        return (None, None)
+
+
+def _convert_orphan_md(pdf_abs, stem, db_dir):
+    """Convert a PDF to markdown under papers/<stem>.md; return the rel path."""
+    md_content = convert_pdf(pdf_abs)
+    if not md_content or not md_content.strip():
+        return None
+    papers_dir = os.path.join(db_dir, "papers")
+    os.makedirs(papers_dir, exist_ok=True)
+    md_abs = os.path.join(papers_dir, f"{stem}.md")
+    with open(md_abs, "w") as mf:
+        mf.write(md_content)
+    return os.path.relpath(md_abs, db_dir)
+
+
+def _reconcile_orphan(pdf_abs, entries, db_dir):
+    """Import a PDF on disk that no db entry references.
+
+    Returns one of 'imported', 'needs_review', or 'unregistered'.
+    """
+    fn = os.path.basename(pdf_abs)
+    arxiv_id, _ver = _arxiv_id_from_name(fn)
+
+    if arxiv_id:
+        try:
+            metas = api_get_ids([arxiv_id])
+        except Exception:  # noqa: BLE001 — network/parse failure -> fall through
+            metas = []
+        if metas:
+            meta = metas[0]
+            year = int(meta["published"][:4]) if meta["published"] else None
+            fam = _first_family(meta)
+            stem = _naming.paper_stem(fam, year, meta["title"],
+                                      arxiv_id=meta["id"], version=meta["version"])
+            new_rel = os.path.join("pdfs", f"{stem}.pdf")
+            new_abs = os.path.join(db_dir, new_rel)
+            if os.path.abspath(new_abs) != os.path.abspath(pdf_abs):
+                os.rename(pdf_abs, new_abs)
+            md_rel = _convert_orphan_md(new_abs, stem, db_dir)
+            existing = index_by_id(entries).get(meta["id"])
+            if existing:
+                # Already tracked (lost its file) — attach, don't duplicate.
+                existing["pdf_path"] = new_rel
+                if md_rel:
+                    existing["md_path"] = md_rel
+                existing.setdefault("status", "downloaded")
+                return "imported"
+            cid = _naming.citation_key(fam, year,
+                                       {p["id"] for p in entries if p.get("id")})
+            entries.append({
+                "id": cid,
+                "type": "article",
+                "title": meta["title"],
+                "author": [parse_author_name(a) for a in meta["authors"]],
+                "container-title": f"arXiv preprint arXiv:{meta['id']}",
+                "URL": meta["abs_url"],
+                "issued": {"year": year} if year else {},
+                "arxiv_id": meta["id"],
+                "version": meta["version"],
+                "primary_category": meta["primary_category"],
+                "categories": meta["categories"],
+                "pdf_path": new_rel,
+                "md_path": md_rel,
+                "status": "downloaded",
+                "added": str(date.today()),
+            })
+            return "imported"
+
+    # Tier 2: embedded PDF metadata (inferred — flagged needs-review).
+    title, author = _pdf_metadata(pdf_abs)
+    if title and author:
+        fam = parse_author_name(author).get("family", "") or "unknown"
+        # Key first, so the file stem's citation_id matches what _entry_stem
+        # will later compute (keeps a subsequent reconcile a no-op).
+        cid = _naming.citation_key(fam, None,
+                                   {p["id"] for p in entries if p.get("id")})
+        stem = _naming.paper_stem(fam, None, title, citation_id=cid)
+        new_rel = os.path.join("pdfs", f"{stem}.pdf")
+        new_abs = os.path.join(db_dir, new_rel)
+        if os.path.abspath(new_abs) != os.path.abspath(pdf_abs):
+            os.rename(pdf_abs, new_abs)
+        md_rel = _convert_orphan_md(new_abs, stem, db_dir)
+        entries.append({
+            "id": cid,
+            "type": "article",
+            "title": title,
+            "author": [parse_author_name(author)],
+            "issued": {},
+            "URL": "",
+            "pdf_path": new_rel,
+            "md_path": md_rel,
+            "status": "needs-review",
+            "source": "local-import",
+            "added": str(date.today()),
+        })
+        return "needs_review"
+
+    # Tier 3: unrecoverable.
+    return "unregistered"
+
+
+def _write_unregistered(db_dir, filenames):
+    """List Tier-3 orphans with a ready-to-run ingest command per file."""
+    out_path = os.path.join(db_dir, "unregistered-pdfs.md")
+    if not filenames:
+        if os.path.exists(out_path):
+            os.remove(out_path)
+        return
+    lines = ["# PDFs that need metadata", "",
+             "These files are in `pdfs/` but could not be identified. Register",
+             "each with its metadata:", "", "```",
+             "scholar.py ingest --db <db> --file <path> \\",
+             "  --title \"…\" --authors \"Given Family\" --year YYYY", "```", ""]
+    for fn in filenames:
+        lines.append(f"- [ ] `pdfs/{fn}`")
+    lines.append("")
+    with open(out_path, "w") as f:
+        f.write("\n".join(lines))
+
+
 def cmd_repair(args):
     entries = load_db(args.db)
     db_dir = os.path.dirname(os.path.abspath(args.db))
@@ -415,9 +557,36 @@ def cmd_repair(args):
             entry[field] = new_rel
             renamed += 1
 
+    # Orphan import: PDFs in pdfs/ that no entry references. Recover metadata,
+    # convert, name to the convention, and add an entry — so the database is
+    # complete after a reconcile, not just consistent.
+    imported = needs_review = 0
+    unregistered = []
+    pdfs_dir = os.path.join(db_dir, "pdfs")
+    if os.path.isdir(pdfs_dir):
+        tracked = {os.path.abspath(os.path.join(db_dir, e["pdf_path"]))
+                   for e in entries if e.get("pdf_path")}
+        for fn in sorted(os.listdir(pdfs_dir)):
+            if not fn.lower().endswith(".pdf"):
+                continue
+            pdf_abs = os.path.join(pdfs_dir, fn)
+            if os.path.abspath(pdf_abs) in tracked:
+                continue
+            result = _reconcile_orphan(pdf_abs, entries, db_dir)
+            if result == "imported":
+                imported += 1
+            elif result == "needs_review":
+                needs_review += 1
+            else:
+                unregistered.append(fn)
+    _write_unregistered(db_dir, unregistered)
+
     save_db(args.db, entries)
     print(json.dumps({"checked": checked, "converted": converted,
-                      "renamed": renamed, "skipped": skipped}, indent=2))
+                      "renamed": renamed, "imported": imported,
+                      "needs_review": needs_review,
+                      "unregistered": len(unregistered), "skipped": skipped},
+                     indent=2))
 
 
 def cmd_list(args):
@@ -453,8 +622,12 @@ def main():
     r.add_argument("--relevance", help="one line on why it matters to the current work")
     r.set_defaults(func=cmd_record)
 
-    rp = sub.add_parser("repair", help="re-convert PDFs missing their markdown file")
+    rp = sub.add_parser("repair",
+                        help="reconcile the db: convert, rename, and import orphan PDFs")
     rp.set_defaults(func=cmd_repair)
+    rc = sub.add_parser("reconcile",
+                        help="alias for repair — reconcile disk against the database")
+    rc.set_defaults(func=cmd_repair)
 
     l = sub.add_parser("list", help="print the db as JSON")
     l.set_defaults(func=cmd_list)

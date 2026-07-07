@@ -122,6 +122,36 @@ into the ambient interpreter.
 
 ## The workflow
 
+### 0. Reconcile the database
+
+Run this first, every time the skill is invoked. The goal is a complete
+database in the correct naming convention before anything else happens:
+
+```bash
+$RUN <skill>/scripts/arxiv.py --db <db-path> reconcile
+```
+
+`reconcile` (the same command as `repair`) walks the whole database and the
+`pdfs/` directory and makes disk and db agree:
+
+- an entry missing its markdown is converted;
+- pdf/markdown/summary files on the older naming scheme are renamed to the
+  human-friendly stem (paths updated in the db; citation ids left intact);
+- a PDF in `pdfs/` that no entry references is imported — its metadata is
+  recovered from an arXiv id in the filename (fetched from arXiv), or, failing
+  that, from the PDF's embedded title/author (recorded `status: needs-review`
+  with year `nd`). Anything unrecoverable is listed in
+  `<db-dir>/unregistered-pdfs.md` with a ready-to-run `ingest` command.
+
+It is idempotent and prints counts (`converted`, `renamed`, `imported`,
+`needs_review`, `unregistered`). To register an unidentified PDF by hand, give
+`ingest` the metadata and it creates the entry:
+
+```bash
+$RUN <skill>/scripts/scholar.py --db <db-path> ingest --file pdfs/<file>.pdf \
+  --title "Exact Title" --authors "Given Family" --year 2024
+```
+
 ### 1. Understand the current work first
 
 Before searching, read what's in the working directory — a draft paper, notes,
@@ -243,8 +273,11 @@ $RUN <skill>/scripts/scholar.py --db <db-path> ingest \
   --id <citation-id> --file ~/Downloads/paper.pdf
 ```
 
-After `ingest`, the paper reads and summarizes like any other. Prefer Semantic
-Scholar's open-access PDFs first — they avoid this round-trip entirely.
+If the PDF has no matching entry yet, pass metadata and `ingest` registers a
+new paper (converting and naming it): `ingest --file <pdf> --title "…"
+--authors "Given Family" --year YYYY`. After `ingest`, the paper reads and
+summarizes like any other. Prefer Semantic Scholar's open-access PDFs first —
+they avoid this round-trip entirely.
 
 ### 4. Read and summarize
 
@@ -291,22 +324,24 @@ If any papers came back `metadata-only`, run `scholar.py pending` and hand the
 user `downloads-needed.md` so they can fetch those PDFs and return them via
 `ingest`.
 
-### Repair
+### Repair / reconcile
 
-If papers were fetched before markdown conversion was available, or if markdown
-files are missing for any reason, run `repair` to regenerate them from the PDFs:
+`repair` and `reconcile` are the same command — the database reconcile run at
+step 0. Run it any time to bring disk and db back into agreement:
 
 ```bash
-$RUN <skill>/scripts/arxiv.py --db <db-path> repair
+$RUN <skill>/scripts/arxiv.py --db <db-path> reconcile
 ```
 
-This walks every entry in the database, checks for a missing `md_path`, and
-re-converts the PDF if it exists on disk. It also migrates legacy `text_path`
-entries by adding the `md_path` field, and renames any PDF, markdown, or
-summary still on the older naming scheme to the human-friendly stem (updating
-`pdf_path`, `md_path`, and `summary_file`; citation `id` values are left
-unchanged). It is idempotent — files already correctly named are left alone.
-Prints a JSON summary (`checked`, `converted`, `renamed`, `skipped`).
+It walks every entry, re-converts any missing `md_path` from the PDF on disk,
+migrates legacy `text_path` entries, and renames any pdf/markdown/summary still
+on the older naming scheme to the human-friendly stem (updating `pdf_path`,
+`md_path`, `summary_file`; citation `id` values left unchanged). It then scans
+`pdfs/` for files no entry references and imports them (arXiv-id recovery, then
+embedded-metadata `needs-review`, then the `unregistered-pdfs.md` list). It is
+idempotent — correctly-named, tracked files are left alone. Prints a JSON
+summary (`checked`, `converted`, `renamed`, `imported`, `needs_review`,
+`unregistered`, `skipped`).
 
 ## Dependencies
 
