@@ -15,6 +15,10 @@
 #                                          references rewritten to .github/skills
 #   .github/copilot-instructions.md        generated, self-contained: the
 #                                          instructions and rules inlined
+#   <surface>/pixi.toml, pixi.lock         the pixi environment manifest and
+#                                          lockfile, copied into every surface
+#   <surface>/scripts/ensure-env.sh        the self-locating env preflight,
+#                                          copied into every surface
 #
 # The .github tree is designed to work as a bare symlink: `ln -s .github` into
 # another repository gives Copilot working commands, instructions, and skills
@@ -191,6 +195,20 @@ EOF
       inline_rules "$rule"
     done
   } > "$STAGE/.github/copilot-instructions.md"
+
+  # -- pixi environment ---------------------------------------------------
+  # Ship the manifest, lockfile, and preflight into every surface so a
+  # symlinked agent directory is self-provisioning. Verbatim copies:
+  # ensure-env.sh is self-locating and the manifest is surface-agnostic, so
+  # no path rewriting is needed (and nothing here references a sibling tree).
+  local surface
+  for surface in .cursor .opencode .github; do
+    mkdir -p "$STAGE/$surface/scripts"
+    cp "$ROOT/.claude/pixi.toml" "$STAGE/$surface/pixi.toml"
+    cp "$ROOT/.claude/pixi.lock" "$STAGE/$surface/pixi.lock"
+    cp "$ROOT/.claude/scripts/ensure-env.sh" "$STAGE/$surface/scripts/ensure-env.sh"
+    chmod +x "$STAGE/$surface/scripts/ensure-env.sh"
+  done
 }
 
 # Mirror directories managed by this script (relative to repo root). Each is
@@ -199,16 +217,25 @@ EOF
 AREAS=(
   ".cursor/commands"
   ".cursor/skills"
+  ".cursor/scripts"
   ".opencode/commands"
   ".opencode/skills"
+  ".opencode/scripts"
   ".github/prompts"
   ".github/skills"
+  ".github/scripts"
 )
 
 # Single-file artifacts that live at a mirror root (cannot be a --delete area
 # without endangering siblings).
 FILES=(
   ".github/copilot-instructions.md"
+  ".cursor/pixi.toml"
+  ".cursor/pixi.lock"
+  ".opencode/pixi.toml"
+  ".opencode/pixi.lock"
+  ".github/pixi.toml"
+  ".github/pixi.lock"
 )
 
 build_stage
