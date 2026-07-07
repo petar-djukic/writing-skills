@@ -36,6 +36,8 @@ import urllib.parse
 import urllib.request
 from datetime import date
 
+import _naming
+
 try:
     import yaml
 except ImportError:
@@ -112,19 +114,14 @@ def parse_author_name(name):
     return {"family": name, "given": ""}
 
 
-def make_citation_id(title, authors, year):
-    family = ""
-    if authors:
-        first = authors[0]
-        if isinstance(first, dict):
-            family = first.get("family", "")
-        else:
-            family = parse_author_name(first).get("family", "")
-    family = re.sub(r"[^\w]", "-", family.lower()).strip("-")
-    title_words = title.split()
-    slug = "-".join(w.lower() for w in title_words[:3] if w.isalpha())[:20]
-    yr = str(year) if year else "nd"
-    return f"{family}-{slug}-{yr}" if slug else f"{family}-{yr}"
+def _first_family(authors):
+    """First author's family name from a list of names or CSL author dicts."""
+    if not authors:
+        return ""
+    first = authors[0]
+    if isinstance(first, dict):
+        return first.get("family", "")
+    return parse_author_name(first).get("family", "")
 
 
 def _api_get(path, params, api_key, retries=4):
@@ -246,16 +243,25 @@ def cmd_fetch(args):
         if not rec:
             sys.exit(f"no exact-title match for: {args.title}")
 
-    citation_id = make_citation_id(rec["title"], rec["authors"], rec["year"])
     db_dir = os.path.dirname(os.path.abspath(args.db))
+    entries = load_db(args.db)
+    by_title = index_by_title(entries)
+    by_arxiv = index_by_arxiv(entries)
+    existing = _dedupe_status(rec, by_title, by_arxiv)
+    citation_id = (existing["id"] if existing
+                   else _naming.citation_key(_first_family(rec["authors"]), rec["year"],
+                                             {p["id"] for p in entries if p.get("id")}))
+    stem = _naming.paper_stem(_first_family(rec["authors"]), rec["year"], rec["title"],
+                              arxiv_id=rec.get("arxiv_id"), doi=rec.get("doi"),
+                              citation_id=citation_id)
+
     pdf_path = None
     md_path = None
 
     if rec.get("open_access_pdf"):
         pdf_dir = os.path.join(db_dir, "pdfs")
         os.makedirs(pdf_dir, exist_ok=True)
-        safe = re.sub(r"[^\w.-]", "-", citation_id)
-        pdf_path = os.path.join(pdf_dir, f"{safe}.pdf")
+        pdf_path = os.path.join(pdf_dir, f"{stem}.pdf")
         req = urllib.request.Request(rec["open_access_pdf"],
                                      headers={"User-Agent": USER_AGENT})
         try:
@@ -270,17 +276,12 @@ def cmd_fetch(args):
             if md_content and md_content.strip():
                 papers_dir = os.path.join(db_dir, "papers")
                 os.makedirs(papers_dir, exist_ok=True)
-                md_path = os.path.join(papers_dir, f"{safe}.md")
+                md_path = os.path.join(papers_dir, f"{stem}.md")
                 with open(md_path, "w") as mf:
                     mf.write(md_content)
 
-    entries = load_db(args.db)
-    by_title = index_by_title(entries)
-    by_arxiv = index_by_arxiv(entries)
-    existing = _dedupe_status(rec, by_title, by_arxiv)
-
     record = {
-        "id": existing["id"] if existing else citation_id,
+        "id": citation_id,
         "type": "article",
         "title": rec["title"],
         "author": rec["authors"],

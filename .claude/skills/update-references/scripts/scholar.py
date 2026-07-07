@@ -35,6 +35,8 @@ import urllib.parse
 import urllib.request
 from datetime import date
 
+import _naming
+
 try:
     import yaml
 except ImportError:
@@ -106,19 +108,14 @@ def parse_author_name(name):
     return {"family": name, "given": ""}
 
 
-def make_citation_id(title, authors, year):
-    family = ""
-    if authors:
-        first = authors[0]
-        if isinstance(first, dict):
-            family = first.get("family", "")
-        else:
-            family = parse_author_name(first).get("family", "")
-    family = re.sub(r"[^\w]", "-", family.lower()).strip("-")
-    title_words = title.split()
-    slug = "-".join(w.lower() for w in title_words[:3] if w.isalpha())[:20]
-    yr = str(year) if year else "nd"
-    return f"{family}-{slug}-{yr}" if slug else f"{family}-{yr}"
+def _first_family(authors):
+    """First author's family name from a list of names or CSL author dicts."""
+    if not authors:
+        return ""
+    first = authors[0]
+    if isinstance(first, dict):
+        return first.get("family", "")
+    return parse_author_name(first).get("family", "")
 
 
 def scholar_search(query, api_key, max_results=10):
@@ -200,17 +197,24 @@ def cmd_fetch(args):
 
     csl_authors = [parse_author_name(a) for a in (args.authors or [])]
     year = args.year
-    citation_id = make_citation_id(args.title, csl_authors, year)
+    family = _first_family(csl_authors)
 
     db_dir = os.path.dirname(os.path.abspath(args.db))
+    entries = load_db(args.db)
+    known = index_by_title(entries)
+    existing = known.get(normalize_title(args.title))
+    citation_id = (existing["id"] if existing
+                   else _naming.citation_key(family, year,
+                                             {p["id"] for p in entries if p.get("id")}))
+    stem = _naming.paper_stem(family, year, args.title, citation_id=citation_id)
+
     pdf_path = None
     md_path = None
 
     if args.url and (args.url.endswith(".pdf") or "pdf" in args.url.lower()):
         pdf_dir = os.path.join(db_dir, "pdfs")
         os.makedirs(pdf_dir, exist_ok=True)
-        safe = re.sub(r"[^\w.-]", "-", citation_id)
-        pdf_path = os.path.join(pdf_dir, f"{safe}.pdf")
+        pdf_path = os.path.join(pdf_dir, f"{stem}.pdf")
         req = urllib.request.Request(args.url, headers={"User-Agent": USER_AGENT})
         try:
             with urllib.request.urlopen(req, timeout=60) as r, open(pdf_path, "wb") as f:
@@ -224,18 +228,14 @@ def cmd_fetch(args):
             if md_content and md_content.strip():
                 papers_dir = os.path.join(db_dir, "papers")
                 os.makedirs(papers_dir, exist_ok=True)
-                md_path = os.path.join(papers_dir, f"{safe}.md")
+                md_path = os.path.join(papers_dir, f"{stem}.md")
                 with open(md_path, "w") as mf:
                     mf.write(md_content)
-
-    entries = load_db(args.db)
-    known = index_by_title(entries)
-    existing = known.get(normalize_title(args.title))
 
     container = args.venue or ""
 
     record = {
-        "id": existing["id"] if existing else citation_id,
+        "id": citation_id,
         "type": "article",
         "title": args.title,
         "author": csl_authors if csl_authors else [],
@@ -362,10 +362,15 @@ def cmd_ingest(args):
         sys.exit(f"no db entry matches {'--id ' + args.id if args.id else '--title ' + args.title!r}")
 
     entry = entries[idx]
-    safe = re.sub(r"[^\w.-]", "-", entry.get("id", "paper"))
+    stem = _naming.paper_stem(_first_family(entry.get("author")),
+                              (entry.get("issued") or {}).get("year"),
+                              entry.get("title", ""),
+                              arxiv_id=entry.get("arxiv_id"),
+                              doi=entry.get("doi"),
+                              citation_id=entry.get("id"))
     pdf_dir = os.path.join(db_dir, "pdfs")
     os.makedirs(pdf_dir, exist_ok=True)
-    pdf_path = os.path.join(pdf_dir, f"{safe}.pdf")
+    pdf_path = os.path.join(pdf_dir, f"{stem}.pdf")
     shutil.copyfile(args.file, pdf_path)
 
     md_path = None
@@ -373,7 +378,7 @@ def cmd_ingest(args):
     if md_content and md_content.strip():
         papers_dir = os.path.join(db_dir, "papers")
         os.makedirs(papers_dir, exist_ok=True)
-        md_path = os.path.join(papers_dir, f"{safe}.md")
+        md_path = os.path.join(papers_dir, f"{stem}.md")
         with open(md_path, "w") as mf:
             mf.write(md_content)
 
