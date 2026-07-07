@@ -91,6 +91,6 @@ This setup is mirrored across assistant surfaces:
 
 - `.cursor/` — Cursor AI: full mirror of `commands/` and `skills/` (skill-internal paths rewritten to `.cursor/skills/...`; commands carry generated front matter)
 - `.opencode/` — OpenCode: full mirror of `commands/` and `skills/` (same treatment)
-- `.github/` — GitHub Copilot: `copilot-instructions.md` documenting the conventions, plus `prompts/*.prompt.md` — one thin adapter per command pointing at its canonical `.claude/commands/` file
+- `.github/` — GitHub Copilot: self-contained so it works as a bare symlink into another repository. `copilot-instructions.md` inlines the agent instructions and rules; `prompts/*.prompt.md` inline the full workflow of each command and one prompt per skill; `skills/` holds the skill trees with paths rewritten to `.github/skills/...`. Nothing under `.github/` references `.claude/`, `.cursor/`, or `.opencode/` — the sync enforces this and fails if a reference leaks
 
 `.claude/` is canonical. Mirrors are generated, never edited directly: `scripts/sync-mirrors.sh` regenerates all of them, and `scripts/sync-mirrors.sh --check` reports drift (nonzero exit) without writing. Run the sync in the same change that edits commands or skills.
