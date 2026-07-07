@@ -2,7 +2,8 @@
 name: update-references
 description: >-
   Find, download, read, and summarize research papers related to the work in the
-  current directory. Searches arXiv and Google Scholar. Maintains a CSL-YAML
+  current directory. Searches arXiv, Semantic Scholar, and Google Scholar.
+  Maintains a CSL-YAML
   reference database (references.yaml) compatible with pandoc's --bibliography
   flag, so the same file serves both the skill and document builds. Triggers:
   update references, refresh the bibliography, find papers, related work,
@@ -13,8 +14,9 @@ description: >-
 # Update references (research paper search)
 
 This skill turns "find me what's been written about this" into a small,
-repeatable pipeline: read what the user is working on, search arXiv (and
-optionally Google Scholar) for related papers, download the relevant ones, read
+repeatable pipeline: read what the user is working on, search arXiv (and, for
+off-arXiv work, Semantic Scholar or Google Scholar) for related papers,
+download the relevant ones, read
 them, write a summary per paper, and keep a CSL-YAML database so work is never
 repeated and versions stay current.
 
@@ -132,6 +134,26 @@ deduplication logic. It requires a SerpAPI key — use the same key as the
 `idea-factory/.claude/skills/job-search/SKILL.md`). Set it via
 `--api-key <key>` or the `SERPAPI_KEY` environment variable.
 
+#### Semantic Scholar search
+
+Semantic Scholar covers the same off-arXiv territory as Google Scholar
+(conference proceedings, journals, older work) but needs no key, and it often
+exposes an open-access PDF the skill can download and read directly — so prefer
+it when a paper is not on arXiv:
+
+```bash
+python3 <skill>/scripts/semantic_scholar.py --db <db-path> search \
+  --query "declarative agent patterns finite state machines" \
+  --max 10
+```
+
+It uses the same `references.yaml` database and deduplication logic (matching on
+`arxiv_id` as well as title, so a paper already fetched from arXiv comes back
+`known`). Each result flags whether an open-access PDF is available. The public
+Graph API works with no key at a modest, shared rate limit; on a 429 the script
+retries with backoff, then advises waiting or setting a key. An optional key
+raises the limit — pass `--api-key <key>` or set `SEMANTIC_SCHOLAR_API_KEY`.
+
 #### Picking candidates
 
 Read the returned abstracts and pick the genuinely relevant papers. Don't
@@ -157,6 +179,14 @@ fetch:
 ```bash
 python3 <skill>/scripts/scholar.py --db <db-path> fetch \
   --title "Exact Paper Title" --url "https://example.com/paper.pdf"
+```
+
+For a Semantic Scholar result, fetch by its `paper_id` (from the search
+output); the script downloads the open-access PDF when there is one and records
+`downloaded`, otherwise records `metadata-only` with the landing URL:
+
+```bash
+python3 <skill>/scripts/semantic_scholar.py --db <db-path> fetch --paper-id <s2id>
 ```
 
 ### 4. Read and summarize
@@ -220,4 +250,6 @@ script already retries with backoff; don't hammer the API with huge `--max`
 values in a tight loop.
 
 Google Scholar search requires a SerpAPI key (same key as the idea-factory
-job-search skill).
+job-search skill). Semantic Scholar needs no key — the public Graph API is
+open, though shared and rate-limited; an optional `SEMANTIC_SCHOLAR_API_KEY`
+(or `--api-key`) raises the limit.
