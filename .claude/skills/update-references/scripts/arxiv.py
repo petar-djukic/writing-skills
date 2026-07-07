@@ -41,6 +41,8 @@ import urllib.request
 import xml.etree.ElementTree as ET
 from datetime import date
 
+import _naming
+
 try:
     import yaml
 except ImportError:
@@ -182,22 +184,15 @@ def api_get_ids(ids):
     return [parse_entry(e) for e in root.findall(f"{ATOM}entry")]
 
 
-def make_citation_id(meta):
-    """Generate a pandoc citation id from metadata: first-author-year."""
+def _first_family(meta):
+    """First author's family name from an arXiv metadata dict."""
     authors = meta.get("authors", [])
     if not authors:
-        return meta["id"]
+        return ""
     first = authors[0]
     if isinstance(first, dict):
-        family = first.get("family", "")
-    else:
-        parsed = parse_author_name(first)
-        family = parsed["family"]
-    family = re.sub(r"[^\w]", "-", family.lower()).strip("-")
-    year = meta.get("published", "")[:4]
-    title_words = meta.get("title", "").split()
-    slug = "-".join(w.lower() for w in title_words[:3] if w.isalpha())[:20]
-    return f"{family}-{slug}-{year}" if slug else f"{family}-{year}"
+        return first.get("family", "")
+    return parse_author_name(first).get("family", "")
 
 
 # --------------------------------------------------------------------------- #
@@ -270,10 +265,15 @@ def cmd_fetch(args):
         sys.exit(f"No arXiv entry found for id {args.id}")
     meta = metas[0]
     db_dir = os.path.dirname(os.path.abspath(args.db))
+
+    csl_authors = [parse_author_name(a) for a in meta["authors"]]
+    year = int(meta["published"][:4]) if meta["published"] else None
+    stem = _naming.paper_stem(_first_family(meta), year, meta["title"],
+                              arxiv_id=meta["id"], version=meta["version"])
+
     pdf_dir = args.pdf_dir or os.path.join(db_dir, "pdfs")
     os.makedirs(pdf_dir, exist_ok=True)
-    safe = re.sub(r"[^\w.-]", "-", meta["id"])
-    pdf_path = os.path.join(pdf_dir, f"{safe}v{meta['version']}.pdf")
+    pdf_path = os.path.join(pdf_dir, f"{stem}.pdf")
     req = urllib.request.Request(meta["pdf_url"], headers={"User-Agent": USER_AGENT})
     with urllib.request.urlopen(req, timeout=60) as r, open(pdf_path, "wb") as f:
         f.write(r.read())
@@ -283,7 +283,7 @@ def cmd_fetch(args):
     if md_content and md_content.strip():
         papers_dir = os.path.join(db_dir, "papers")
         os.makedirs(papers_dir, exist_ok=True)
-        md_path = os.path.join(papers_dir, f"{safe}v{meta['version']}.md")
+        md_path = os.path.join(papers_dir, f"{stem}.md")
         with open(md_path, "w") as mf:
             mf.write(md_content)
 
@@ -291,11 +291,10 @@ def cmd_fetch(args):
     idx = index_by_id(entries)
     existing = idx.get(meta["id"])
 
-    csl_authors = [parse_author_name(a) for a in meta["authors"]]
-    year = int(meta["published"][:4]) if meta["published"] else None
-
     record = {
-        "id": existing["id"] if existing else make_citation_id(meta),
+        "id": existing["id"] if existing
+              else _naming.citation_key(_first_family(meta), year,
+                                        {p["id"] for p in entries if p.get("id")}),
         "type": "article",
         "title": meta["title"],
         "author": csl_authors,
@@ -346,6 +345,20 @@ def cmd_record(args):
     print(json.dumps(entry, indent=2, ensure_ascii=False))
 
 
+def _entry_stem(entry):
+    """The human-friendly file stem for a db entry, from its CSL fields."""
+    authors = entry.get("author") or []
+    family = ""
+    if authors and isinstance(authors[0], dict):
+        family = authors[0].get("family", "")
+    year = (entry.get("issued") or {}).get("year")
+    return _naming.paper_stem(family, year, entry.get("title", ""),
+                              arxiv_id=entry.get("arxiv_id"),
+                              version=entry.get("version"),
+                              doi=entry.get("doi"),
+                              citation_id=entry.get("id"))
+
+
 def cmd_repair(args):
     entries = load_db(args.db)
     db_dir = os.path.dirname(os.path.abspath(args.db))
@@ -376,9 +389,35 @@ def cmd_repair(args):
             mf.write(md_content)
         entry["md_path"] = os.path.relpath(md_abs, db_dir)
         converted += 1
+
+    # Migration: rename existing pdf/markdown/summary files to the
+    # human-friendly stem and update the db path fields. Idempotent — a file
+    # already at its target name is left alone. Citation ids are NOT rewritten.
+    renamed = 0
+    for entry in entries:
+        stem = _entry_stem(entry)
+        for field, subdir, default_ext in (("pdf_path", "pdfs", ".pdf"),
+                                           ("md_path", "papers", ".md"),
+                                           ("summary_file", "summaries", ".md")):
+            rel = entry.get(field)
+            if not rel:
+                continue
+            old_abs = os.path.join(db_dir, rel)
+            if not os.path.exists(old_abs):
+                continue
+            ext = os.path.splitext(rel)[1] or default_ext
+            new_rel = os.path.join(subdir, f"{stem}{ext}")
+            new_abs = os.path.join(db_dir, new_rel)
+            if os.path.abspath(old_abs) == os.path.abspath(new_abs):
+                continue
+            os.makedirs(os.path.dirname(new_abs), exist_ok=True)
+            os.rename(old_abs, new_abs)
+            entry[field] = new_rel
+            renamed += 1
+
     save_db(args.db, entries)
-    print(json.dumps({"checked": checked, "converted": converted, "skipped": skipped},
-                     indent=2))
+    print(json.dumps({"checked": checked, "converted": converted,
+                      "renamed": renamed, "skipped": skipped}, indent=2))
 
 
 def cmd_list(args):
