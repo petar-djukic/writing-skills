@@ -1,6 +1,7 @@
 # Paper summary template
 
-One file per paper, written to `<db-dir>/summaries/<arxiv-id>-<short-slug>.md`.
+One file per paper, written to `<db-dir>/summaries/<stem>.md`, where `<stem>`
+is the paper's human-friendly stem (`<Family>-<Year>-<title-slug>-<source>-<id>`).
 The goal is a summary you can read in two minutes and trust without re-opening
 the PDF — and that tells you, specifically, whether the paper is worth citing
 in the current work.
@@ -18,10 +19,13 @@ updated: <YYYY-MM-DD>
 primary_category: <e.g. cs.AI>
 abs_url: <https://arxiv.org/abs/...>
 topics: [llm, agents, fsm, declarative-agents]
+tags: [paper, llm-agents, ...]
 date_summarized: <YYYY-MM-DD>
 ---
 
 # <Title>
+
+**Source:** [PDF](../pdfs/<stem>.pdf) · [full text](../papers/<stem>.md) · [source](<url>)
 
 ## TL;DR
 Two or three sentences. What problem, what they did, what they found.
@@ -55,5 +59,9 @@ Cited papers or directions worth chasing next (with arXiv ids if known).
 Notes:
 - `topics` should be drawn from the standing interests (llm, agents, fsm,
   declarative-agents) plus anything specific to the current work.
+- `tags` and the `**Source:**` line are populated by `keywords.py tag` — leave
+  them to the script; it merges keywords from the paper with `topics`, adds the
+  `paper` root tag, and inserts the relative PDF/full-text/source links. Any
+  tag you add by hand is preserved.
 - Numbers beat adjectives. "61% of total cost" is worth more than "expensive."
 - The relevance section is the reason this skill exists. Don't skip it.

@@ -152,6 +152,13 @@ $RUN <skill>/scripts/scholar.py --db <db-path> ingest --file pdfs/<file>.pdf \
   --title "Exact Title" --authors "Given Family" --year 2024
 ```
 
+After reconciling, refresh the Obsidian tags and source links on every summary
+(safe to run each time — it only changes what is stale):
+
+```bash
+$RUN <skill>/scripts/keywords.py --db <db-path> tag
+```
+
 ### 1. Understand the current work first
 
 Before searching, read what's in the working directory — a draft paper, notes,
@@ -314,6 +321,21 @@ $RUN <skill>/scripts/arxiv.py --db <db-path> record --id 2310.12345 \
 This flips the entry to `status: summarized`. The database is now the
 single source of truth: re-running a search later will mark these papers
 `known` and skip them.
+
+Then apply Obsidian tags and source links to the new summaries:
+
+```bash
+$RUN <skill>/scripts/keywords.py --db <db-path> tag
+```
+
+This walks the db and, for every summary, writes a normalized `tags:` block
+into the frontmatter — merging the paper's declared keywords (or a frequency
+fallback when it declares none) with the entry's `topics`, plus a `paper` root
+tag — and adds a `**Source:**` line linking the local PDF, the converted full
+text, and the source URL. It also drops a one-time PDF back-link at the top of
+each converted paper. Tags a human added are preserved; `--dry-run` previews
+without writing; a second run is a no-op. Because it walks the whole db, it
+also tags any older summary that predates this step, so a corpus converges.
 
 ### 6. Report back
 
