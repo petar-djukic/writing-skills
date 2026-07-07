@@ -13,7 +13,8 @@ This directory contains custom instructions and rules for the Claude Code agent.
 │   ├── documentation-standards.md
 │   ├── git-workflow.md
 │   ├── pixi-python.md
-│   └── readme-format.md
+│   ├── readme-format.md
+│   └── technical-document-types.md
 ├── skills/                   # Model-invoked skills (not mirrored as commands)
 │   ├── audit-references/
 │   ├── de-ai/
@@ -51,6 +52,7 @@ Main configuration file that Claude Code loads automatically. Contains:
 Context-specific rules that govern how the agent works:
 
 - **git-workflow.md**: Issue tracking, worktree discipline, PR workflow
+- **technical-document-types.md**: Catalog of external document types (concept paper through invention disclosure) with origins and structures
 - **code-prd-architecture-linking.md**: Requirements for linking code to PRDs and architecture docs
 - **documentation-standards.md**: Writing style, formatting, figures, and content quality rules
 - **prd-format.md**: Product Requirements Document structure and guidelines
