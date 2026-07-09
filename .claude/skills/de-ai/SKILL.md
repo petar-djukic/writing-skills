@@ -150,6 +150,7 @@ After each rewrite:
 
 After all passages are rewritten, run the full semantic analysis one more time on the complete document to check for:
 - New patterns introduced by rewrites
+- **Did the rewrites sand off texture?** Over-compression is its own tell (see rewrite-instructions.md §3b). Check that dated/personal asides, first-person hedges, deliberate two-beat rhythms, and conversational gestures survived; that clipped fragments did not stack at adjacent paragraph or section boundaries; and that `sentence_length_std` held or rose rather than dropping. If the prose reads "too sleek," restore slack — a reverted over-edit is a fix, not a regression.
 - Consistency issues between rewritten and preserved sections
 - Overall document flow after modifications
 
