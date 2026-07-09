@@ -144,6 +144,19 @@ Output:
 - LONGEST_PREDICTABLE_RUN: <number of consecutive transitions scoring 4+>
 - VERDICT: If mean > 3.5 or longest run > 5, flag as AI-like
 
+PART B — PER-PARAGRAPH NOVELTY (recap ballast).
+The transition scores above are adjacent-sentence; they miss a paragraph that is locally coherent but globally redundant — a recap that restates conclusions already made in earlier paragraphs or sections. Such a paragraph reads as smooth cohesion, not repetition, so it scores well on surprise while adding nothing.
+
+For each paragraph, in order:
+- Name the ONE thing it says that no earlier paragraph has already said — a new claim, fact, number, mechanism, or turn in the argument.
+- If you cannot name something genuinely new (it only re-summarizes, re-frames, or re-asserts prior points), flag the paragraph as RECAP BALLAST for deletion or compression, quoting its first sentence.
+- A transitional sentence that legitimately sets up new material is fine; a whole paragraph whose job is to restate is not.
+
+Output for Part B:
+- Per paragraph: P<n>: NEW = <the one new thing>, or RECAP BALLAST: "<first sentence>"
+- RECAP_PARAGRAPHS: <count flagged>
+- VERDICT: any recap-ballast paragraph is an AI signature (the drive to summarize before moving on); flag it.
+
 ---
 TEXT TO ANALYZE:
 {text}

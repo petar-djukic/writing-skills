@@ -379,6 +379,42 @@ def detect_parallelism(openings: list, max_repeats: int) -> list:
     return issues
 
 
+# Endings so trivial that a shared pair is noise, not an echo.
+_TRIVIAL_TAIL = set("the a an of to in on it and or is are be as at by for with".split())
+
+
+def _tail_tokens(sentence: str, n: int = 4) -> list:
+    """Last n word tokens of a sentence, lowercased."""
+    return re.findall(r"[a-z0-9']+", sentence.lower())[-n:]
+
+
+def detect_tail_echo(sentences: list) -> list:
+    """Flag adjacent sentences whose endings echo each other (epanalepsis).
+
+    detect_parallelism compares sentence *openings*; a rewrite that varies the
+    heads but keeps near-identical tails ("...whatever model you run." /
+    "...whatever you run it on.") sails through it while staying a mirror pair.
+    Compare the last 4 tokens of each adjacent pair; flag when they share >=2,
+    at least one of which is not a trivial stopword (so "...of the day." /
+    "...of the week." does not trip it).
+    """
+    issues = []
+    for i in range(1, len(sentences)):
+        a = _tail_tokens(sentences[i - 1])
+        b = _tail_tokens(sentences[i])
+        if len(a) < 4 or len(b) < 4:
+            continue
+        shared = set(a) & set(b)
+        if len(shared) >= 2 and any(t not in _TRIVIAL_TAIL for t in shared):
+            issues.append({
+                "type": "tail_echo",
+                "detail": f"adjacent sentence endings echo: shared tail words {sorted(shared)}",
+                "severity": "medium",
+                "position": f"sentences {i}-{i + 1}",
+            })
+    return issues
+
+
 # --------------------------------------------------------------------------- #
 # Overshoot detectors ("LinkedIn voice", punches, word salad, formulae)
 # --------------------------------------------------------------------------- #
@@ -905,6 +941,11 @@ def analyze(text: str, threshold_name: str = "medium") -> dict:
     frame_issues = detect_frame_parallelism(sentences)
     issues.extend(frame_issues)
     metrics["frame_parallelism_runs"] = len(frame_issues)
+
+    # --- Tail-echo parallelism (varied heads, mirrored endings) ---
+    tail_echo_issues = detect_tail_echo(sentences)
+    issues.extend(tail_echo_issues)
+    metrics["tail_echo_pairs"] = len(tail_echo_issues)
 
     # --- Antithesis / negation-flip pairs (zero tolerance) ---
     # Uses the unfiltered sentence list so clipped second clauses survive, but
