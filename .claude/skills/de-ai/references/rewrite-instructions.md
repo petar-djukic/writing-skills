@@ -37,6 +37,23 @@ The rewrite itself must not introduce:
 - Hedging language (take positions)
 - Em-dashes (the author's style avoids them)
 
+### 3b. Do Not Over-Compress — Texture Is Not Fat
+
+The rewrite optimizes in one direction: remove AI patterns, omit needless words. Pushed too far, it produces the opposite tell — prose where every sentence is load-bearing, every paragraph snaps shut, and no aside or hedge survives. Over-polished text reads machine-made too. Human writing keeps slack. "Too sleek" is a failure verdict, not a compliment.
+
+**Preserve texture. Do not remove:**
+- Dated or personal asides ("around twenty-nine Canadian the day I am writing this")
+- First-person hedges that are voice, not weakness ("I think", "I have not decided yet")
+- Parenthetical wobbles and small digressions that add personality
+- Deliberate two-beat rhythms ("You are not paying a frontier subscription to write your code. You are paying it, briefly, to set up the thing that will.")
+- Conversational gestures ("Here is…", "The thing is…") in coaching-voice or first-person pieces
+
+"Omit needless words" applies to self-narration and filler — not to slack. Slack is what makes prose sound written by a person. When in doubt, keep it.
+
+**Fragment-adjacency check.** After rewriting, scan for clipped fragments (under ~5 words). If two of them land in adjacent paragraphs or at consecutive section boundaries ("Five commands, installed once." / "One task, start to finish."), restore breath to one — expand it back into a full sentence. Stacked snaps are their own machine signature.
+
+**Burstiness floor.** Track `sentence_length_std` (the structural script reports it) across passes. If a rewrite pass *lowers* it, treat that as a warning, not progress — you have flattened rhythm toward uniformity, the exact tell the scan flags in the other direction. The metric should hold or rise through de-ai passes; a drop means you compressed texture the author wanted.
+
 ### 4. Specific Fix Strategies
 
 | Detected Issue | Fix Strategy |
@@ -80,7 +97,7 @@ The default action is deletion. Most flagged phrases are true leaks with no info
 
 A rewrite is DONE when:
 - Zero Tier 1 banned words remain
-- Sentence length std > 5.0
+- Sentence length std > 5.0 — and it did not *drop* from the previous pass (see §3b burstiness floor; a falling std means you flattened rhythm, even while above the floor)
 - No parallelism runs > 2 sentences
 - Opening diversity > 0.6 (or "The"-initial sentences < 15%)
 - CoT leakage density < 1 per 1000 words
