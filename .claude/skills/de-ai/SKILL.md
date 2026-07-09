@@ -144,15 +144,23 @@ After each rewrite:
 2. Re-run `detect-structural.py` on the rewritten section
 3. If issues remain AND count decreased: iterate (max 3 total passes)
 4. If issues remain AND count same or increased: STOP, flag for human review
-5. If clean on both scripts: accept the rewrite
+5. If clean on both scripts: the rewrite has passed the **surface** check — proceed, but do not treat this as approval of the rewrite's rhetoric
 
-### Step 6: Final Semantic Verification
+The scripts confirm surface metrics only (banned words, opening diversity, length variance). They are blind to most rhetorical patterns — including ones a rewrite can *introduce*, such as parallelism that moves from sentence heads to tails. A green Step 5 is necessary, not sufficient. The rewrite is not accepted until it clears the independent Step 6 check below; Step 5 green is not that approval.
 
-After all passages are rewritten, run the full semantic analysis one more time on the complete document to check for:
-- New patterns introduced by rewrites
-- **Did the rewrites sand off texture?** Over-compression is its own tell (see rewrite-instructions.md §3b). Check that dated/personal asides, first-person hedges, deliberate two-beat rhythms, and conversational gestures survived; that clipped fragments did not stack at adjacent paragraph or section boundaries; and that `sentence_length_std` held or rose rather than dropping. If the prose reads "too sleek," restore slack — a reverted over-edit is a fix, not a regression.
-- Consistency issues between rewritten and preserved sections
-- Overall document flow after modifications
+### Step 6: Final Semantic Verification (independent evaluator)
+
+The agent that wrote the rewrites cannot be the only judge of them. It shares the blind spots that produced them — it broke a mirror pair's heads and kept its tails, and its own re-read reads the result as fixed. This is the maker–checker gap: an auditor who watched the code get written blesses the blind spots that wrote it. So Step 6 runs as an **independent evaluation, in a fresh context**.
+
+Run it as a separate session or agent that sees ONLY the final rewritten text and the Step 3 report — never the rewrite history, the reasoning, or the diffs. (In Claude Code, spawn a subagent for this; in any tool, at minimum start a clean context and do not carry the rewrite conversation into it. Portability: the requirement is a maker≠checker separation, not a specific mechanism.)
+
+Give the evaluator this stance: **assume the rewrites introduced new patterns.** Its job is to find them, not to confirm the fix. Specifically:
+- Enumerate every parallelism, mirror pair, or echo in the rewritten passages — checking **both ends** of each sentence, heads and tails, since a rewrite commonly relocates parallelism from the front to the back (run the Prompt 6 / antithesis and Prompt 3 Part-B enumerations on the rewritten spans specifically).
+- Check for new patterns the rewrite introduced (banned words, mechanical transitions, CoT leaks).
+- **Did the rewrites sand off texture?** Over-compression is its own tell (rewrite-instructions.md §3b): confirm dated/personal asides, first-person hedges, deliberate two-beat rhythms, and conversational gestures survived; that clipped fragments did not stack at adjacent paragraph or section boundaries; and that `sentence_length_std` held or rose. If the prose reads "too sleek," restore slack — a reverted over-edit is a fix, not a regression.
+- Consistency between rewritten and preserved sections; overall flow.
+
+Anything the independent evaluator flags goes back through Step 4. A rewrite is accepted only when a checker that never saw it made pass it clean.
 
 ## Abstract Mode
 
