@@ -23,6 +23,8 @@ import json
 import re
 import sys
 
+import detex  # LaTeX -> prose preprocessing (same dir)
+
 NUMBER_RE = re.compile(r"\d+(?:[.,]\d+)*%?")
 CITE_RE = re.compile(r"\[@[^\]]+\]|\\cite\w*\{[^}]*\}|\[\d+(?:\s*,\s*\d+)*\]")
 SECTION_REF_RE = re.compile(r"\b[Ss]ection\s+\d|\\ref\{|Figure\s+\d|Table\s+\d")
@@ -32,11 +34,9 @@ def locate_abstract(text):
     """Return (abstract_text, how). Falls back to the whole file."""
     m = re.search(r"\\begin\{abstract\}(.*?)\\end\{abstract\}", text, re.DOTALL)
     if m:
-        inner = m.group(1)
-        # markdown-wrapped latex: the markers may sit inside fences with the
-        # prose between fence blocks — strip fence lines and latex commands
-        inner = "\n".join(l for l in inner.split("\n")
-                          if not l.strip().startswith(("```", "\\", "<!--")))
+        # Strip the LaTeX inside the environment (inline \textbf, \citep, etc.)
+        # to the prose view, so word counts and number traceability are clean.
+        inner = detex.detex(m.group(1))[0]
         return inner.strip(), "latex-environment"
 
     m = re.search(r"(?:^|\n)abstract:\s*(\||>-?)?\n((?:[ \t]+\S[^\n]*\n?)+)",
@@ -99,7 +99,11 @@ def main():
     if args.body:
         body_numbers = set()
         for b in args.body:
-            body_numbers |= numbers_in(strip_noise(open(b).read()))
+            raw = open(b).read()
+            # LaTeX body: use the prose view so citation years / ref numbers
+            # (\citep{smith2020}, \ref{fig:3}) don't seed phantom numbers.
+            body_text = detex.detex(raw)[0] if b.endswith(".tex") else raw
+            body_numbers |= numbers_in(strip_noise(body_text))
         untraceable = sorted(n for n in abs_numbers if n not in body_numbers)
 
     containedness = self_containedness(abstract_clean)

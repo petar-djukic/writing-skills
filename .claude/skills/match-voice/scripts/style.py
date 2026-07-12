@@ -238,9 +238,19 @@ def frequency_tables(text, top=50):
     }
 
 
-def profile_file(path):
+def read_prose(path):
+    """Read a file, returning its prose view. A .tex draft is run through detex
+    so markup does not inflate every token metric; .md is returned as-is."""
     with open(path) as f:
         text = f.read()
+    if path.endswith(".tex"):
+        import detex
+        text = detex.detex(text)[0]
+    return text
+
+
+def profile_file(path):
+    text = read_prose(path)
     sections = detect_sections(text)
     per_section = {}
     for name, sec_text in sections.items():
@@ -563,19 +573,16 @@ def cmd_compare(args):
 
 
 def cmd_freq(args):
-    with open(args.file) as f:
-        text = f.read()
+    text = read_prose(args.file)
     print(json.dumps(frequency_tables(text, top=args.top),
                      indent=2, ensure_ascii=False))
 
 
 def cmd_similarity(args):
-    with open(args.file) as f:
-        subject = f.read()
+    subject = read_prose(args.file)
     against = []
     for path in args.against:
-        with open(path) as f:
-            against.append((path, f.read()))
+        against.append((path, read_prose(path)))
     baseline = None
     if args.baseline:
         with open(args.baseline) as f:
