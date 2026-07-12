@@ -121,58 +121,62 @@ def _transform_inline(line: str, keep_cites: bool) -> str:
     return line.strip()
 
 
-def detex(tex: str, keep_cites: bool = False):
-    """Return (prose, line_map).
+def detex_aligned(tex: str, keep_cites: bool = False) -> list:
+    """Return one prose string per SOURCE line (empty where markup was dropped).
 
-    prose is the markup-stripped text, one entry per surviving source line.
-    line_map[k] is the 1-based source line number of prose line k.
+    The result has exactly as many entries as the input has lines, so a tool
+    that indexes or `grep -n`s the joined output reads correct source line
+    numbers with no separate map. This is the line-preserving prose view.
     """
     lines = tex.split("\n")
-    out_text = []
-    line_map = []
+    aligned = []
     drop_depth = 0  # nesting depth inside a _DROP_ENVS environment
 
-    for lineno, raw in enumerate(lines, 1):
+    for raw in lines:
         line = _strip_comment(raw)
+        emitted = ""
 
         if drop_depth > 0:
             # inside a dropped environment: keep only caption text
             if _CAPTION_RE.search(line):
-                cap = _transform_inline(line, keep_cites)
-                if cap:
-                    out_text.append(cap)
-                    line_map.append(lineno)
+                emitted = _transform_inline(line, keep_cites)
             for m in _END_RE.finditer(line):
                 if m.group(1) in _DROP_ENVS:
                     drop_depth -= 1
             for m in _BEGIN_RE.finditer(line):
                 if m.group(1) in _DROP_ENVS:
                     drop_depth += 1
+            aligned.append(emitted)
             continue
 
-        # not currently dropping: does this line open a drop env?
         begins = _BEGIN_RE.findall(line)
         if any(b in _DROP_ENVS for b in begins):
-            # keep any caption on the same line, then enter drop mode
             if _CAPTION_RE.search(line):
-                cap = _transform_inline(line, keep_cites)
-                if cap:
-                    out_text.append(cap)
-                    line_map.append(lineno)
+                emitted = _transform_inline(line, keep_cites)
             for b in begins:
                 if b in _DROP_ENVS:
                     drop_depth += 1
+            aligned.append(emitted)
             continue
 
         # keep-env markers (itemize/abstract/...) — drop just the marker
         line = _BEGIN_RE.sub("", line)
         line = _END_RE.sub("", line)
+        aligned.append(_transform_inline(line, keep_cites))
 
-        prose = _transform_inline(line, keep_cites)
-        if prose:
-            out_text.append(prose)
-            line_map.append(lineno)
+    return aligned
 
+
+def detex(tex: str, keep_cites: bool = False):
+    """Return (prose, line_map).
+
+    prose is the markup-stripped text, dropped lines removed. line_map[k] is the
+    1-based source line number of prose line k. For a view that keeps source
+    line numbers (e.g. for `grep -n`), use detex_aligned.
+    """
+    aligned = detex_aligned(tex, keep_cites)
+    out_text = [t for t in aligned if t]
+    line_map = [i + 1 for i, t in enumerate(aligned) if t]
     return "\n".join(out_text), line_map
 
 
@@ -187,9 +191,15 @@ def extract_abstract(tex: str):
 
 if __name__ == "__main__":
     import sys
-    keep = "--keep-cites" in sys.argv[1:]
-    paths = [a for a in sys.argv[1:] if not a.startswith("-")]
+    args = sys.argv[1:]
+    keep = "--keep-cites" in args
+    aligned = "--aligned" in args   # line-preserving: source line numbers survive
+    paths = [a for a in args if not a.startswith("-")]
     for p in paths:
         with open(p) as f:
-            prose, _ = detex(f.read(), keep_cites=keep)
-        sys.stdout.write(prose + "\n")
+            tex = f.read()
+        if aligned:
+            sys.stdout.write("\n".join(detex_aligned(tex, keep_cites=keep)) + "\n")
+        else:
+            prose, _ = detex(tex, keep_cites=keep)
+            sys.stdout.write(prose + "\n")

@@ -8,6 +8,8 @@
 
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
 if [[ $# -lt 1 ]]; then
   echo "Usage: $0 <file-or-dir> [file-or-dir ...] [--json]" >&2
   exit 2
@@ -35,7 +37,7 @@ for p in "${PATHS[@]}"; do
   if [[ -d "$p" ]]; then
     while IFS= read -r -d '' f; do
       FILES+=("$f")
-    done < <(find "$p" -name '*.md' -type f -print0 | sort -z)
+    done < <(find "$p" \( -name '*.md' -o -name '*.tex' \) -type f -print0 | sort -z)
   elif [[ -f "$p" ]]; then
     FILES+=("$p")
   else
@@ -45,7 +47,7 @@ for p in "${PATHS[@]}"; do
 done
 
 if [[ ${#FILES[@]} -eq 0 ]]; then
-  echo "Error: No .md files found in the given paths." >&2
+  echo "Error: No .md or .tex files found in the given paths." >&2
   exit 2
 fi
 
@@ -580,13 +582,22 @@ scan_candidates() {
 }
 
 run_on_file() {
+  local DISPLAY="$1"
   local FILE="$1"
+  # LaTeX input: grep the line-preserving prose view so command names, comments,
+  # and macro args don't false-positive. --aligned keeps source line numbers.
+  local TEX_TMP=""
+  if [[ "$DISPLAY" == *.tex ]]; then
+    TEX_TMP="$(mktemp)"
+    python3 "$SCRIPT_DIR/detex.py" --aligned "$DISPLAY" > "$TEX_TMP" 2>/dev/null || true
+    FILE="$TEX_TMP"
+  fi
   ISSUES_FOUND=0
   CANDIDATES_FOUND=0
   RESULTS=()
 
   if [[ "$JSON_MODE" != "--json" ]]; then
-    echo "=== Lexical AI Detection: $FILE ==="
+    echo "=== Lexical AI Detection: $DISPLAY ==="
     echo ""
     echo "--- Chat-Turn Residue (assistant voice — any hit fails the scan) ---"
   fi
@@ -751,6 +762,9 @@ run_on_file() {
   if [[ $ISSUES_FOUND -eq 1 ]]; then
     GLOBAL_EXIT=1
   fi
+
+  if [[ -n "$TEX_TMP" ]]; then rm -f "$TEX_TMP"; fi
+  return 0
 }
 
 # --- Main: iterate over all resolved files ---

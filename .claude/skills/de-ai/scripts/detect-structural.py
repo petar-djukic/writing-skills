@@ -34,6 +34,8 @@ import statistics
 from pathlib import Path
 from collections import Counter
 
+import detex  # LaTeX -> prose preprocessing (same dir)
+
 # --- Thresholds ---
 THRESHOLDS = {
     "strict": {
@@ -1350,7 +1352,7 @@ def main():
     for p in paths:
         path = Path(p)
         if path.is_dir():
-            files.extend(sorted(path.rglob("*.md")))
+            files.extend(sorted(list(path.rglob("*.md")) + list(path.rglob("*.tex"))))
         elif path.is_file():
             files.append(path)
         else:
@@ -1368,6 +1370,10 @@ def main():
 
     for filepath in files:
         text = filepath.read_text(encoding="utf-8")
+        # LaTeX input: analyze the prose view so \item runs, table rows, math,
+        # and float environments are not counted as sentences.
+        if filepath.suffix == ".tex":
+            text = detex.detex(text)[0]
         result = analyze(text, threshold)
         file_proses.append((str(filepath), extract_prose(text)))
         file_raws.append((str(filepath), text))
