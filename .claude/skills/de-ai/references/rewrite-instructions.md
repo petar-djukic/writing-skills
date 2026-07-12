@@ -6,6 +6,25 @@ Guidelines for the Opus rewrite pass. The goal is to fix detected AI patterns WI
 
 The rewrite is TARGETED, not wholesale. Only touch flagged passages. Preserve everything that scanned clean.
 
+## Editing LaTeX sources in place
+
+When the input is a `.tex` file, the scripts analyze a *prose view* produced by `detex` — not the source. The prose view is lossy: math, floats, and citations are dropped or tokenized, so it cannot be turned back into LaTeX. It tells you WHAT to fix and WHERE; the edit itself happens in the source file.
+
+- A finding carries a source line number via the detex line map (prose line → source `.tex` line). Open the `.tex` and rewrite the flagged sentence or passage AT THAT LINE, in place.
+- Leave all surrounding markup untouched: `\citep{...}`, `\ref{...}`, comments (`%`), math, floats, custom macros, `\label{...}`. Edit only the prose words.
+- When a flagged sentence contains a citation or reference, rewrite the prose around the command and keep the command verbatim — do not convert `\citep{smith2020}` to pandoc `[@smith2020]` or drop the `p`/`t` distinction.
+- **Never reconstruct the whole `.tex` from the prose view**, and never round-trip through markdown (`tex → md → tex` loses comments, the `\citep`/`\citet` distinction, custom macros, and spacing). The `.tex` is the source of truth; touch only the flagged spans.
+- After editing, re-run detection on the `.tex`. Untouched lines keep their numbers, so the line map from the prior pass stays valid for anything still flagged.
+
+Example. Structural flags a mirror pair at `03-method.tex:42`:
+
+```latex
+% before (line 42)
+The plan gives you predictability \citep{lee2026}, and the workflow gives you reliability \citep{doe2025}.
+% after — prose rewritten, both \citep commands preserved verbatim
+Your bill stays flat whatever model you run \citep{lee2026}; reliability rides on the workflow, not the host \citep{doe2025}.
+```
+
 ## Rewrite Rules
 
 ### 1. Preserve Meaning Exactly

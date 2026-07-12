@@ -135,6 +135,7 @@ For each flagged passage (in priority order from Prompt 5):
 3. For CoT leaks: remove the flagged sentence and re-read the paragraph. If no information is lost, the sentence is a true CoT leak — delete it. If information is lost, the sentence uses CoT-style wording on real content — reword to remove the scaffolding phrase while preserving the content.
 4. Rewrite ONLY the flagged passage using the rewrite prompt template
 5. Constraints: preserve meaning, match author voice, don't introduce new AI patterns
+6. For a `.tex` source: apply the rewrite to the source file in place at the flagged line (the detex prose view is analysis-only, never an edit target). Preserve surrounding `\citep`/`\ref`/comments/math/macros; never reconstruct the file or round-trip through markdown. See "Editing LaTeX sources in place" in the rewrite instructions.
 
 ### Step 5: Recursive Validation
 
@@ -159,6 +160,7 @@ Give the evaluator this stance: **assume the rewrites introduced new patterns.**
 - Check for new patterns the rewrite introduced (banned words, mechanical transitions, CoT leaks).
 - **Did the rewrites sand off texture?** Over-compression is its own tell (rewrite-instructions.md §3b): confirm dated/personal asides, first-person hedges, deliberate two-beat rhythms, and conversational gestures survived; that clipped fragments did not stack at adjacent paragraph or section boundaries; and that `sentence_length_std` held or rose. If the prose reads "too sleek," restore slack — a reverted over-edit is a fix, not a regression.
 - Consistency between rewritten and preserved sections; overall flow.
+- For a `.tex` source, verify against the edited `.tex` itself (analysis runs on its detex prose view); the in-place edits live in the source file, and untouched lines keep their numbers, so any still-flagged finding maps to source as before.
 
 Anything the independent evaluator flags goes back through Step 4. A rewrite is accepted only when a checker that never saw it made pass it clean.
 
