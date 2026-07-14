@@ -331,3 +331,6 @@ When you encounter a new AI pattern in the wild:
 1. Add it to the appropriate tier above
 2. Add the grep pattern to `../scripts/detect-lexical.sh`
 3. Test against known-clean files to verify no false positives
+4. Add the corresponding DO-form line to `drafting-guidance.md` (pair rule:
+   one home for the WHY here, one for the drafting-time DO there — prevention
+   travels with detection)
