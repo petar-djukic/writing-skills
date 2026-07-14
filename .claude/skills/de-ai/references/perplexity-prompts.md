@@ -421,6 +421,14 @@ TEXT:
 
 ## Prompt 8: Definedness and Circularity (forced enumeration)
 
+Scope. For a publication verdict, run parts (b)/(c) over the abstract and each
+section's first two paragraphs. For a **working or specification document** —
+anything another session will read and execute (SRD-style YAML prose, design
+docs, PRDs) — widen (a) UNDEFINED TERMS to the **whole document** and make this
+prompt **mandatory**. The reader-was-not-in-the-conversation test applies: a
+spec that names "the running matrix" or "claims posture" without defining it
+ships a private vocabulary to an executor who was not in the discussion.
+
 The cadence and register detectors measure HOW the text is written; this
 prompt measures whether the opening claims mean anything. Motivating case:
 a manuscript survived the full pipeline with a circular first sentence
@@ -458,6 +466,50 @@ Output per finding:
   de-circularize, or rename the quantity)
 
 UNDEFINED_COUNT / CIRCULAR_COUNT / MISMATCH_COUNT totals.
+
+---
+TEXT:
+{text}
+```
+
+## Prompt 8b: Empty-Phrase Enumeration (compressed conversation)
+
+A distinct defect from AI cadence: **compressed references to a conversation the
+reader was not in** — coined bigrams used as if defined ("claims posture", "the
+running matrix"), metaphors standing in for a mechanism ("connective tissue",
+"nearest standards hook"), editorializing adjectives telling the reader how to
+feel ("the sobering results"), and slogans standing in for claims ("the
+structure-over-prompt argument"). No banned word, no antithesis — the sentence
+reads fluent and means nothing a cold reader could act on. Documented in
+banned-patterns.md with a seed list; the structural script surfaces repeated
+undefined coinages as `coinage_candidates` and the lexical script flags
+editorializing adjectives — seed this enumeration with both, then add what only
+reading can find.
+
+```
+You are enumerating EMPTY PHRASES — language that compresses a conversation the
+reader was not in. Seed candidates (from the scripts): {coinage_candidates}
+and {editorializing_hits}. List every candidate first, then rule on each.
+
+For each phrase, apply the COLD-READER TEST:
+- Does the sentence state a mechanism, quantity, or concrete referent a reader
+  who was NOT in the authoring discussion could act on? If yes, keep it.
+- A metaphor is allowed ONLY when the mechanism it stands for is also stated in
+  the same sentence or the one before. "Connective tissue that routes state
+  between components" is fine; "connective tissue" alone is empty.
+- An editorializing adjective ("sobering", "striking", "remarkable") is allowed
+  ONLY when the judgment is defended with the specific result. Bare, it is a
+  label — cut it or replace it with the result.
+- A coined term used more than once must be defined at first use (a definition
+  marker: "that is", "we call", "defined as"). Undefined-and-repeated is the
+  strongest signal.
+
+Output per finding:
+- Quoted phrase, location, ruling (EMPTY / DEFENDED)
+- For EMPTY: the minimal fix (state the mechanism, name the quantity, define the
+  term, or delete the adjective)
+
+EMPTY_PHRASE_COUNT total.
 
 ---
 TEXT:
