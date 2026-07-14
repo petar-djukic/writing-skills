@@ -1060,9 +1060,13 @@ def analyze(text: str, threshold_name: str = "medium") -> dict:
     metrics["frame_parallelism_runs"] = len(frame_issues)
 
     # --- Tail-echo parallelism (varied heads, mirrored endings) ---
-    tail_echo_issues = detect_tail_echo(sentences)
-    issues.extend(tail_echo_issues)
-    metrics["tail_echo_pairs"] = len(tail_echo_issues)
+    # Advisory, not a hard issue: the GH-123 noise audit found tail overlap
+    # fires on ordinary domain repetition in human technical prose (8/8 proxy
+    # papers, e.g. shared ['an','element']). Candidates go to the semantic
+    # pass (Prompt 6 / Step 3) for the mirror-pair judgment.
+    tail_echo_candidates = detect_tail_echo(sentences)
+    metrics["tail_echo_pairs"] = len(tail_echo_candidates)
+    result_extra_tail_echo = tail_echo_candidates
 
     # --- Antithesis / negation-flip pairs (zero tolerance) ---
     # Uses the unfiltered sentence list so clipped second clauses survive, but
@@ -1434,7 +1438,8 @@ def analyze(text: str, threshold_name: str = "medium") -> dict:
     metrics["sentence_count"] = len(sentences)
     metrics["paragraph_count"] = len(paragraphs)
 
-    return {"issues": issues, "metrics": metrics, "verdict": verdict}
+    return {"issues": issues, "metrics": metrics, "verdict": verdict,
+            "tail_echo_candidates": result_extra_tail_echo}
 
 
 def main():
@@ -1508,6 +1513,8 @@ def main():
             print(f"=== Structural AI Detection: {filepath} ===")
             print(f"    Threshold: {threshold}")
             print(f"    Verdict: {result['verdict'].upper()}")
+            if result.get("tail_echo_candidates"):
+                print(f"    Tail-echo candidates (advisory, semantic pass): {len(result['tail_echo_candidates'])}")
             print()
 
             print("--- Metrics ---")

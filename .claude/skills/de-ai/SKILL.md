@@ -183,6 +183,8 @@ Every new detector passes the gate there before merge (fires on an ai sample;
 fires on ≤20% of human samples; no existing human-class rate rises). The
 human class is populated by the author only.
 
+Threshold provenance lives in [references/detector-thresholds.md](./references/detector-thresholds.md): every numeric gate with its justification or an explicit "uncalibrated" marker, the boundaries between overlapping detectors, and the standing noise-audit results.
+
 ## Failure taxonomy
 
 [references/failure-taxonomy.md](./references/failure-taxonomy.md) maps every

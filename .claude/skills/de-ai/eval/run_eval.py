@@ -72,6 +72,8 @@ def run_structural(path):
         fired.add("repeated_formulae")
     if d.get("coinage_candidates"):
         fired.add("coinage_candidates")
+    if d.get("tail_echo_candidates"):
+        fired.add("tail_echo_candidates")
     return d.get("verdict", "?"), fired
 
 
