@@ -328,6 +328,9 @@ Longer term, generate the list from the rules doc at scan time.
 ## Updating This List
 
 When you encounter a new AI pattern in the wild:
+0. Classify it first in `failure-taxonomy.md` (lexical / syntactic /
+   rhetorical / discourse / pragmatic) — the cell tells you which instrument
+   fits (script for surface, prompt for meaning)
 1. Add it to the appropriate tier above
 2. Add the grep pattern to `../scripts/detect-lexical.sh`
 3. Test against known-clean files to verify no false positives

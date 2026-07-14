@@ -174,6 +174,13 @@ Give the evaluator this stance: **assume the rewrites introduced new patterns.**
 
 Anything the independent evaluator flags goes back through Step 4. A rewrite is accepted only when a checker that never saw it made pass it clean.
 
+## Failure taxonomy
+
+[references/failure-taxonomy.md](./references/failure-taxonomy.md) maps every
+detector, prompt, and pattern class to its linguistic level (lexical /
+syntactic / rhetorical / discourse / pragmatic) and lists the known-empty
+territory. New tells are classified there before their detector is written.
+
 ## Prevention (drafting time)
 
 When the user is about to DRAFT — not repair — hand the model
