@@ -28,7 +28,8 @@ ones that complete it.
 - **Skeleton:** `assets/template.yaml` — copy to start a new language; it
   validates as-is.
 - **Validator:** `scripts/validate_language.py <file>` — structural checks
-  (keys, unique ids/numbers, grammar resolution, cites, connectivity).
+  (keys, unique ids/numbers, grammar resolution, cites, connectivity);
+  `--fix-plan` adds a concrete suggested edit per finding (read-only).
 
 ## Known instances (study before writing)
 
@@ -99,6 +100,33 @@ The file carries substantial prose (intents, contexts, solutions). Run the
 `de-ai` skill over it — pattern languages are exactly where coined-bigram and
 compressed-conversation tells accumulate, and every coined *pattern name* is
 deliberate but everything else must survive a cold reader.
+
+## Repairing an existing language
+
+Run the validator with the plan flag:
+
+```bash
+python3 <skill>/scripts/validate_language.py <file> --fix-plan
+```
+
+Each finding carries a concrete suggested edit — the verbatim conventions
+block to insert, a skeleton for a missing key, a bibliography stub or a
+close-match rename for a broken cite, wiring candidates for an orphan.
+Apply the plan by **editing the file in place**: never regenerate a pattern
+language through a YAML dumper — the header block is comments, and a
+round-trip destroys them. The script is read-only by design.
+
+Two kinds of repair, treated differently:
+
+- **Structural** (missing conventions/keys/grammar stubs, broken references,
+  unresolved cites): mechanical — apply the suggested edit as written.
+- **Content** (fewer than 2 forces, missing liabilities, confidence out of
+  range): the plan routes these to the mining guide — a pattern missing its
+  tension needs mining, not boilerplate. Filling `forces` with filler to
+  silence the validator produces a catalogue entry, not a pattern.
+
+Re-validate to zero findings. Bump `version` only if the pattern set changed
+(a pure repair does not). If prose was touched, run the de-ai pass.
 
 ## Extending an existing language
 
