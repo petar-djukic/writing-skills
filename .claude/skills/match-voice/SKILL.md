@@ -191,6 +191,14 @@ Requires `ANTHROPIC_API_KEY` (or an active `ant auth login` profile) at run
 time; the `anthropic` package itself comes from the pixi environment. Suitable
 for CI, cron, or a mage target.
 
+## Consumers
+
+The de-ai skill consumes `voice-profile.json` as a detector input: its
+structural scan accepts `--voice-profile=<path>` and reports a `voice_distance`
+block (z-scores against this profile's `metrics`/`metrics_std`), flagging
+drafts that pass de-ai's named checks but sit far from the corpus voice. The
+profile is read as a plain file — no cross-skill import.
+
 ## Dependencies
 
 Both scripts run in the pixi environment (see "Running the scripts"), which

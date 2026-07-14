@@ -93,6 +93,15 @@ Review the metrics output. Key signals:
 - `paragraph_schema` block = advisory Gopen & Swan / Williams proxies (topic_overlap, cohesion, subject_churn, anaphoric openers); low-topic paragraphs carry to Prompt 9
 - `verdict: likely-ai`, `suspicious`, or `suspicious-overshoot` = proceed to Pass 3
 
+**Voice distance (positive check — catches unnamed tells).** When a voice corpus exists — a `references.yaml` with summarized papers at or above the working directory, or one the user names — build/refresh the profile and pass it to the scan:
+
+```bash
+python3 .claude/skills/match-voice/scripts/style.py --db <db> corpus   # writes voice-profile.json
+python3 .claude/skills/de-ai/scripts/detect-structural.py <files> --voice-profile=<db-dir>/voice-profile.json
+```
+
+The named detectors are a denylist — a tell must be known to be caught. Distance from the target corpus is the complement: a new wrinkle is a deviation from human-corpus statistics whether or not anyone has named it yet. The `voice_distance` block reports z-scores for the rhythm metrics; for the full comparison (passive/hedges/citations/vocabulary), run `style.py --db <db> compare <draft>`. **Verdict rule: a document that passes every named check but sits far from the corpus profile (any |z| ≥ 2) is NOT clean** — report "passes named checks; voice-distance high" and route to Step 3 with the deviating metrics (and their direction) as seeds. No corpus available → skip this check with a one-line note; everything else behaves as before.
+
 If `opening_diversity` is flagged, load [opening-diversity-fixes.md](./references/opening-diversity-fixes.md) for six rewrite techniques (prepositional shift, gerund lead, infinitive purpose, subordinating conjunction, front-weighting, referential lead). This is the hardest issue to fix because it requires rewriting many sentences across the document.
 
 ### Step 3: Semantic Analysis (Requires Opus) — MANDATORY
