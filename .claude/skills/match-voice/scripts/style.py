@@ -306,6 +306,16 @@ def mean_of(dicts, key):
     return round(sum(vals) / len(vals), 2) if vals else None
 
 
+def std_of(dicts, key):
+    """Population std across papers, so consumers (de-ai voice-distance)
+    can compute z-scores instead of unscaled deltas."""
+    vals = [d[key] for d in dicts if d and key in d]
+    if len(vals) < 2:
+        return None
+    m = sum(vals) / len(vals)
+    return round((sum((v - m) ** 2 for v in vals) / len(vals)) ** 0.5, 3)
+
+
 def aggregate(profiles):
     """Aggregate per-paper profiles into a corpus profile."""
     overall = [p["overall"] for p in profiles if p["overall"]]
@@ -315,6 +325,7 @@ def aggregate(profiles):
         "hedges_per_1000_words", "citations_per_paragraph",
     ]
     agg = {k: mean_of(overall, k) for k in metric_keys}
+    agg_std = {k: std_of(overall, k) for k in metric_keys}
 
     section_names = set()
     for p in profiles:
@@ -348,6 +359,7 @@ def aggregate(profiles):
         "papers": n_docs,
         "total_words": total_words,
         "metrics": agg,
+        "metrics_std": agg_std,
         "sections": sections,
         "frequency": {
             "words": dict(word_freq.most_common(100)),

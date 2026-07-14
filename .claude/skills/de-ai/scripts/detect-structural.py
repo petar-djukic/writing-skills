@@ -832,6 +832,72 @@ def detect_coinage(file_proses: list, min_count: int = 2) -> list:
     return out[:20]
 
 
+def voice_distance(file_proses: list, profile_path: str) -> dict:
+    """Compare the draft's rhythm metrics against a match-voice corpus profile.
+
+    Positive-specification check (GH-121): the denylist detectors catch named
+    tells; distance from the target corpus catches unnamed ones. Reads the
+    voice-profile.json that match-voice's `style.py corpus` writes (a plain
+    file — no cross-skill import; skills are mirrored independently). Compares
+    the three metrics this script can compute in the profile's terms; the full
+    comparison (passive/hedges/citations/vocabulary) is `style.py compare`.
+
+    z-scores use the profile's per-metric std across papers (metrics_std);
+    when absent (older profiles), falls back to relative deviation.
+    """
+    try:
+        with open(profile_path) as f:
+            profile = json.load(f)
+    except (OSError, json.JSONDecodeError) as e:
+        return {"error": f"could not read voice profile: {e}"}
+
+    corpus_m = profile.get("metrics", {})
+    corpus_s = profile.get("metrics_std", {}) or {}
+
+    prose = "\n\n".join(p for _, p in file_proses)
+    sent_lens = [len(s.split()) for s in split_sentences_all(prose)]
+    paras = split_paragraphs(prose)
+    para_sents = [len(split_sentences_all(p)) for p in paras if p.strip()]
+
+    draft = {}
+    if sent_lens:
+        m = sum(sent_lens) / len(sent_lens)
+        draft["sentence_length_mean"] = round(m, 2)
+        draft["sentence_length_stdev"] = round(
+            (sum((v - m) ** 2 for v in sent_lens) / len(sent_lens)) ** 0.5, 2)
+    if para_sents:
+        draft["paragraph_length_mean_sentences"] = round(
+            sum(para_sents) / len(para_sents), 2)
+
+    comparisons = {}
+    deviating = []
+    for k, d in draft.items():
+        c = corpus_m.get(k)
+        if c is None:
+            continue
+        entry = {"draft": d, "corpus": c}
+        s = corpus_s.get(k)
+        if s:
+            z = round((d - c) / s, 2)
+            entry["z"] = z
+            if abs(z) >= 2.0:
+                deviating.append(k)
+        elif c:
+            rel = round((d - c) / abs(c), 2)
+            entry["rel_dev"] = rel
+            if abs(rel) >= 0.5:
+                deviating.append(k)
+        comparisons[k] = entry
+
+    return {
+        "profile": profile_path,
+        "corpus_papers": profile.get("papers"),
+        "metrics": comparisons,
+        "deviating": deviating,
+        "note": "rhythm metrics only; run match-voice style.py compare for the full profile",
+    }
+
+
 _DET_CLASS = {"the", "a", "an", "this", "that", "these", "those"}
 _PRON_CLASS = {"i", "you", "we", "they", "it", "he", "she"}
 
@@ -1378,6 +1444,7 @@ def main():
 
     json_mode = "--json" in sys.argv
     threshold = "strict"
+    voice_profile = None
 
     # Separate flags from paths
     paths = []
@@ -1387,6 +1454,8 @@ def main():
             if threshold not in THRESHOLDS:
                 print(f"Error: Unknown threshold '{threshold}'. Use: strict, medium, relaxed", file=sys.stderr)
                 sys.exit(2)
+        elif arg.startswith("--voice-profile="):
+            voice_profile = arg.split("=", 1)[1]
         elif arg == "--json":
             continue
         else:
@@ -1420,9 +1489,12 @@ def main():
     for filepath in files:
         text = filepath.read_text(encoding="utf-8")
         # LaTeX input: analyze the prose view so \item runs, table rows, math,
-        # and float environments are not counted as sentences.
+        # and float environments are not counted as sentences. The aligned view
+        # keeps one entry per source line (blank where markup was dropped), so
+        # paragraph boundaries survive — the compact view would collapse the
+        # whole document into one paragraph and skew paragraph metrics.
         if filepath.suffix == ".tex":
-            text = detex.detex(text)[0]
+            text = "\n".join(detex.detex_aligned(text))
         result = analyze(text, threshold)
         file_proses.append((str(filepath), extract_prose(text)))
         file_raws.append((str(filepath), text))
@@ -1463,6 +1535,9 @@ def main():
     # --- Undefined coinage candidates (advisory; for the semantic pass) ---
     coinage = detect_coinage(file_proses)
 
+    # --- Voice distance vs a match-voice corpus profile (optional) ---
+    vdist = voice_distance(file_proses, voice_profile) if voice_profile else None
+
     # --- Abstract/introduction opener duplication (cross-document) ---
     opener_dup = detect_opener_duplication(file_raws)
     if opener_dup:
@@ -1478,6 +1553,8 @@ def main():
             payload["repeated_formulae"] = formulae
             payload["opener_duplication"] = opener_dup
             payload["coinage_candidates"] = coinage
+        if vdist is not None:
+            payload["voice_distance"] = vdist
         print(json.dumps(payload, indent=2))
     else:
         if opener_dup:
@@ -1501,6 +1578,20 @@ def main():
                 print(f"  [{f['count']}x] \"{f['phrase']}\"  ({locs})")
             print("  Repeated insider phrases never defined. Confirm in Prompt 8/8b:")
             print("  does the sentence state a mechanism a cold reader could act on?")
+            print()
+        if vdist is not None:
+            print("=== Voice Distance (vs corpus profile) ===")
+            if "error" in vdist:
+                print(f"  {vdist['error']}")
+            else:
+                for k, e in vdist["metrics"].items():
+                    score = f"z={e['z']}" if "z" in e else f"rel={e.get('rel_dev')}"
+                    mark = "  <-- deviating" if k in vdist["deviating"] else ""
+                    print(f"  {k}: draft {e['draft']} vs corpus {e['corpus']} ({score}){mark}")
+                if vdist["deviating"]:
+                    print("  Far from the target voice on the marked metrics — even if all")
+                    print("  named checks pass, this is not clean. Seed Step 3 with these.")
+                print(f"  ({vdist['note']})")
             print()
 
     sys.exit(1 if any_issues else 0)
