@@ -174,6 +174,15 @@ Give the evaluator this stance: **assume the rewrites introduced new patterns.**
 
 Anything the independent evaluator flags goes back through Step 4. A rewrite is accepted only when a checker that never saw it made pass it clean.
 
+## Calibration (eval corpus)
+
+The scripts are calibrated against the labeled corpus in
+[eval/](./eval/README.md): `python3 eval/run_eval.py` reports per-detector
+fire rates on human vs ai classes and diffs against the committed baseline.
+Every new detector passes the gate there before merge (fires on an ai sample;
+fires on ≤20% of human samples; no existing human-class rate rises). The
+human class is populated by the author only.
+
 ## Failure taxonomy
 
 [references/failure-taxonomy.md](./references/failure-taxonomy.md) maps every

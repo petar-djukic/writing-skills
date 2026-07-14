@@ -1,0 +1,305 @@
+{
+  "classes": {
+    "human": {
+      "files": 0,
+      "verdicts": {}
+    },
+    "ai": {
+      "files": 3,
+      "verdicts": {
+        "bland-assistant-article.md": "likely-ai",
+        "overshoot-linkedin-article.md": "likely-ai",
+        "spec-compressed-conversation.md": "likely-ai"
+      }
+    }
+  },
+  "detectors": {
+    "ai-cliche": {
+      "human": {
+        "fired": 0,
+        "of": 0,
+        "rate": null
+      },
+      "ai": {
+        "fired": 2,
+        "of": 3,
+        "rate": 0.67
+      }
+    },
+    "antithesis-elliptical": {
+      "human": {
+        "fired": 0,
+        "of": 0,
+        "rate": null
+      },
+      "ai": {
+        "fired": 1,
+        "of": 3,
+        "rate": 0.33
+      }
+    },
+    "antithesis-fragment": {
+      "human": {
+        "fired": 0,
+        "of": 0,
+        "rate": null
+      },
+      "ai": {
+        "fired": 1,
+        "of": 3,
+        "rate": 0.33
+      }
+    },
+    "antithesis-negation": {
+      "human": {
+        "fired": 0,
+        "of": 0,
+        "rate": null
+      },
+      "ai": {
+        "fired": 1,
+        "of": 3,
+        "rate": 0.33
+      }
+    },
+    "antithesis-noun-restart": {
+      "human": {
+        "fired": 0,
+        "of": 0,
+        "rate": null
+      },
+      "ai": {
+        "fired": 1,
+        "of": 3,
+        "rate": 0.33
+      }
+    },
+    "banned-word": {
+      "human": {
+        "fired": 0,
+        "of": 0,
+        "rate": null
+      },
+      "ai": {
+        "fired": 1,
+        "of": 3,
+        "rate": 0.33
+      }
+    },
+    "coinage_candidates": {
+      "human": {
+        "fired": 0,
+        "of": 0,
+        "rate": null
+      },
+      "ai": {
+        "fired": 3,
+        "of": 3,
+        "rate": 1.0
+      }
+    },
+    "colon-heavy": {
+      "human": {
+        "fired": 0,
+        "of": 0,
+        "rate": null
+      },
+      "ai": {
+        "fired": 2,
+        "of": 3,
+        "rate": 0.67
+      }
+    },
+    "cot-candidate": {
+      "human": {
+        "fired": 0,
+        "of": 0,
+        "rate": null
+      },
+      "ai": {
+        "fired": 2,
+        "of": 3,
+        "rate": 0.67
+      }
+    },
+    "dash-heavy": {
+      "human": {
+        "fired": 0,
+        "of": 0,
+        "rate": null
+      },
+      "ai": {
+        "fired": 1,
+        "of": 3,
+        "rate": 0.33
+      }
+    },
+    "editorializing": {
+      "human": {
+        "fired": 0,
+        "of": 0,
+        "rate": null
+      },
+      "ai": {
+        "fired": 1,
+        "of": 3,
+        "rate": 0.33
+      }
+    },
+    "false-emphasis": {
+      "human": {
+        "fired": 0,
+        "of": 0,
+        "rate": null
+      },
+      "ai": {
+        "fired": 1,
+        "of": 3,
+        "rate": 0.33
+      }
+    },
+    "frame-parallelism": {
+      "human": {
+        "fired": 0,
+        "of": 0,
+        "rate": null
+      },
+      "ai": {
+        "fired": 1,
+        "of": 3,
+        "rate": 0.33
+      }
+    },
+    "hyphen-compound-heavy": {
+      "human": {
+        "fired": 0,
+        "of": 0,
+        "rate": null
+      },
+      "ai": {
+        "fired": 2,
+        "of": 3,
+        "rate": 0.67
+      }
+    },
+    "low-burstiness": {
+      "human": {
+        "fired": 0,
+        "of": 0,
+        "rate": null
+      },
+      "ai": {
+        "fired": 1,
+        "of": 3,
+        "rate": 0.33
+      }
+    },
+    "low-opening-diversity": {
+      "human": {
+        "fired": 0,
+        "of": 0,
+        "rate": null
+      },
+      "ai": {
+        "fired": 3,
+        "of": 3,
+        "rate": 1.0
+      }
+    },
+    "narrative-pivot-candidate": {
+      "human": {
+        "fired": 0,
+        "of": 0,
+        "rate": null
+      },
+      "ai": {
+        "fired": 1,
+        "of": 3,
+        "rate": 0.33
+      }
+    },
+    "ornate-register": {
+      "human": {
+        "fired": 0,
+        "of": 0,
+        "rate": null
+      },
+      "ai": {
+        "fired": 1,
+        "of": 3,
+        "rate": 0.33
+      }
+    },
+    "tail_echo": {
+      "human": {
+        "fired": 0,
+        "of": 0,
+        "rate": null
+      },
+      "ai": {
+        "fired": 2,
+        "of": 3,
+        "rate": 0.67
+      }
+    },
+    "topic-sentence-weak": {
+      "human": {
+        "fired": 0,
+        "of": 0,
+        "rate": null
+      },
+      "ai": {
+        "fired": 3,
+        "of": 3,
+        "rate": 1.0
+      }
+    },
+    "tricolon-heavy": {
+      "human": {
+        "fired": 0,
+        "of": 0,
+        "rate": null
+      },
+      "ai": {
+        "fired": 1,
+        "of": 3,
+        "rate": 0.33
+      }
+    },
+    "uniform-paragraphs": {
+      "human": {
+        "fired": 0,
+        "of": 0,
+        "rate": null
+      },
+      "ai": {
+        "fired": 3,
+        "of": 3,
+        "rate": 1.0
+      }
+    },
+    "word-salad-heavy": {
+      "human": {
+        "fired": 0,
+        "of": 0,
+        "rate": null
+      },
+      "ai": {
+        "fired": 2,
+        "of": 3,
+        "rate": 0.67
+      }
+    }
+  },
+  "verdict_accuracy": {
+    "ai_flagged": {
+      "count": 3,
+      "of": 3
+    },
+    "human_clean": {
+      "count": 0,
+      "of": 0,
+      "note": "human corpus empty \u2014 populate eval/human/ (see README); false-positive rates unmeasured until then"
+    }
+  }
+}
