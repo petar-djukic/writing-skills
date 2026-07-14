@@ -424,6 +424,10 @@ NARRATIVE_PIVOT_CANDIDATES=(
   "the best part"
   "this works because"
   '[.!?] Enter [A-Z]'
+  # Announce-the-structure frame (GH-117): a quantified noun "organizing" the
+  # document, then a colon and the actual claim. Delete the frame, state the
+  # claim as a plain sentence. ERE (scan_candidates uses grep -E).
+  '(^|[.!?] )(One|A single|Two|Three|Four|Five) [a-z]+ (organizes|structures|anchors|underpins|drives|governs|shapes|orders) (it|this|the [a-z]+)'
 )
 
 # --- Category: Marketing and hype vocabulary (venue-inappropriate jargon) ---
@@ -532,6 +536,24 @@ COT_CANDIDATES=(
   'whether .* or '
 )
 
+# --- Category: Editorializing adjectives (compressed-conversation class, GH-117) ---
+# Adjectives that tell the reader how to feel about a result instead of stating
+# it. Empty on their own; candidates for the semantic pass (a defended judgment
+# is fine, a bare label is not). Word-boundary matched.
+EDITORIALIZING=(
+  'sobering'
+  'striking'
+  'remarkabl'
+  'notabl'
+  'crucially'
+  'importantly'
+  'interestingly'
+  'tellingly'
+  'surprisingly'
+  'compelling'
+  'profound'
+)
+
 scan_patterns() {
   local category="$1"
   shift
@@ -564,8 +586,9 @@ scan_candidates() {
   local patterns=("$@")
 
   for pattern in "${patterns[@]}"; do
+    # -E (ERE) so candidate patterns may use alternation groups
     local matches
-    matches=$(grep -in "$pattern" "$FILE" 2>/dev/null || true)
+    matches=$(grep -inE "$pattern" "$FILE" 2>/dev/null || true)
     if [[ -n "$matches" ]]; then
       CANDIDATES_FOUND=1
       while IFS= read -r line; do
@@ -733,6 +756,12 @@ run_on_file() {
     echo "--- CoT Candidates (needs LLM verification) ---"
   fi
   scan_candidates "cot-candidate" "${COT_CANDIDATES[@]}"
+
+  if [[ "$JSON_MODE" != "--json" ]]; then
+    echo ""
+    echo "--- Editorializing Adjectives (compressed-conversation; verify in semantic pass) ---"
+  fi
+  scan_candidates "editorializing" "${EDITORIALIZING[@]}"
 
   if [[ "$JSON_MODE" == "--json" ]]; then
     echo "["

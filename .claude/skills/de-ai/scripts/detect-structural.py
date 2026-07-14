@@ -783,6 +783,55 @@ def repeated_formulae(file_proses: list, min_count: int = 3) -> list:
     return out[:25]
 
 
+_DEF_MARKERS = re.compile(
+    r"\b(that is|i\.e\.|e\.g\.|meaning|we call|we term|we define|defined as|"
+    r"refers? to|namely|in other words|which we (?:call|term|define)|"
+    r"is defined|means that|denotes|stands for|by which we mean)\b", re.I)
+
+
+def detect_coinage(file_proses: list, min_count: int = 2) -> list:
+    """Repeated content bigrams/trigrams that never appear near a definition.
+
+    The compressed-conversation class: coined insider phrases ("claims
+    posture", "running matrix", "connective tissue") used more than once but
+    never defined, so a cold reader cannot act on them. Advisory — these are
+    candidates for the semantic pass (Prompt 8/8b), not hard failures. A phrase
+    that co-occurs (in any sentence) with a definition marker is treated as
+    defined and dropped.
+    """
+    counts = Counter()
+    files = {}
+    defined = set()
+    for fname, prose in file_proses:
+        for sent in split_sentences_all(prose):
+            has_def = bool(_DEF_MARKERS.search(sent))
+            toks = re.findall(r"[a-z][a-z'-]*", sent.lower())
+            for n in (2, 3):
+                for i in range(len(toks) - n + 1):
+                    gram = tuple(toks[i:i + n])
+                    if sum(1 for w in gram if w not in FUNCTION_WORDS) < 2:
+                        continue
+                    counts[gram] += 1
+                    files.setdefault(gram, {})
+                    files[gram][fname] = files[gram].get(fname, 0) + 1
+                    if has_def:
+                        defined.add(gram)
+
+    out = []
+    reported_bigrams = set()  # dedup nested/overlapping phrases
+    for gram, c in counts.most_common():
+        if c < min_count:
+            break
+        if gram in defined:
+            continue
+        bgs = {(gram[i], gram[i + 1]) for i in range(len(gram) - 1)}
+        if bgs & reported_bigrams:
+            continue
+        reported_bigrams |= bgs
+        out.append({"phrase": " ".join(gram), "count": c, "files": files[gram]})
+    return out[:20]
+
+
 _DET_CLASS = {"the", "a", "an", "this", "that", "these", "those"}
 _PRON_CLASS = {"i", "you", "we", "they", "it", "he", "she"}
 
@@ -1411,6 +1460,9 @@ def main():
     if formulae:
         any_issues = True
 
+    # --- Undefined coinage candidates (advisory; for the semantic pass) ---
+    coinage = detect_coinage(file_proses)
+
     # --- Abstract/introduction opener duplication (cross-document) ---
     opener_dup = detect_opener_duplication(file_raws)
     if opener_dup:
@@ -1420,10 +1472,12 @@ def main():
         payload = all_results if len(all_results) > 1 else all_results[0]
         if len(all_results) > 1:
             payload = {"files": all_results, "repeated_formulae": formulae,
-                       "opener_duplication": opener_dup}
+                       "opener_duplication": opener_dup,
+                       "coinage_candidates": coinage}
         else:
             payload["repeated_formulae"] = formulae
             payload["opener_duplication"] = opener_dup
+            payload["coinage_candidates"] = coinage
         print(json.dumps(payload, indent=2))
     else:
         if opener_dup:
@@ -1439,6 +1493,14 @@ def main():
                 locs = ", ".join(f"{Path(k).name} x{v}" for k, v in f["files"].items())
                 print(f"  [{f['count']}x] \"{f['phrase']}\"  ({locs})")
             print("  Each coined phrase gets one home; paraphrase the rest.")
+            print()
+        if coinage:
+            print("=== Undefined Coinage Candidates (for the semantic pass) ===")
+            for f in coinage:
+                locs = ", ".join(f"{Path(k).name} x{v}" for k, v in f["files"].items())
+                print(f"  [{f['count']}x] \"{f['phrase']}\"  ({locs})")
+            print("  Repeated insider phrases never defined. Confirm in Prompt 8/8b:")
+            print("  does the sentence state a mechanism a cold reader could act on?")
             print()
 
     sys.exit(1 if any_issues else 0)

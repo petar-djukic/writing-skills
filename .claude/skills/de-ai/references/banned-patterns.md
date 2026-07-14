@@ -269,6 +269,44 @@ and reflexive use.
 | Imperative-run closer | closing drumbeat of commands | "Find the cracks. Build in your own time. Document everything. Set your exit timeline." |
 | Metaphor mirror pair | adjacent sentences mapping a pair onto a metaphor pair | "The specification is the source. The generated code is the binary." |
 
+## Compressed Conversation / Empty Phrases (Prompt 8b — not regexable)
+
+A defect distinct from AI cadence: language that compresses a discussion the
+reader was not in. No banned word, no antithesis — the sentence is fluent and
+says nothing a cold reader could act on. Four shapes, ruled by the cold-reader
+test (does the sentence state a mechanism/quantity/referent one could act on?):
+coined bigram used as if defined; metaphor substituting for a mechanism;
+editorializing adjective telling the reader how to feel; slogan standing in for
+a claim. The structural script surfaces repeated undefined coinages as
+`coinage_candidates`; the lexical script flags the editorializing adjectives;
+the semantic pass (Prompt 8b) rules on all of it. Accumulates most in working
+and spec documents (SRD-style prose), which get the least semantic checking.
+
+Seed list (autogenic-systems SRD, 2026-07-13 review):
+
+| Phrase | Shape |
+|---|---|
+| sets the envelope | coined bigram, undefined |
+| connective tissue | metaphor for a mechanism |
+| the demand side and the supply side of the consensus gap | coined, undefined |
+| the running matrix | coined bigram, undefined (repeated) |
+| the sobering multi-agent results | editorializing adjective |
+| the agentic turn | slogan for a claim |
+| the structure-over-prompt argument | slogan for a claim |
+| governance attachments | coined bigram, undefined |
+| locates this rung and states the claims posture | coined ("claims posture", repeated) |
+| heavy/light operator coupling | coined, undefined |
+| the escalation residue class | coined, undefined |
+| nearest standards hook | metaphor for a mechanism |
+
+Related sub-class — announce-the-structure frames. A quantified noun that
+"organizes" the document, then a colon and the real claim: "One rule organizes
+it: the autonomy level is set by ...". The frame announces structure instead of
+stating content; delete it and state the claim as a plain sentence. Caught as a
+`narrative-pivot-candidate` in detect-lexical.sh (ERE: `(One|A single|Two|…)
+<noun> (organizes|structures|anchors|underpins|drives|governs|shapes) (it|this|
+the <noun>)`). Ruled in the semantic pass — a frame that adds no content is empty.
+
 ## Quoted Examples (false-positive handling)
 
 Documents that deliberately quote banned phrases as examples (e.g. an essay
