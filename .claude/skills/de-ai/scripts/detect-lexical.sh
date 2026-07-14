@@ -85,7 +85,10 @@ BANNED_WORDS=(
   "key"
   "deliberate" "deliberatively"
   "correctly"
-  "sound"
+  # "sound" only in booster collocations, not as a predicate adjective
+  # ("the mechanism is sound" is legitimate; "a sound foundation" is a tell).
+  "sound foundation" "sound footing" "sound basis" "sound engineering"
+  "sound principles" "on a sound" "technically sound"
   "strategic" "strategically"
   "precisely"
   "absolutely"
@@ -554,6 +557,40 @@ EDITORIALIZING=(
   'profound'
 )
 
+# --- Category: Reader-psychology / invented-discourse (GH-135) ---
+# Purpose sentences that stage a discourse the document never established, or
+# narrate the reader's mental state. Candidates: the semantic pass asks whether
+# the sentence references a discourse the document itself established or invents
+# one. Fix is to write the unit as subject stating its function. ERE.
+READER_DIRECTIVE=(
+  'answer the objection'
+  'convince the reader'
+  'persuade the reader'
+  'let the reader (watch|see|follow|observe|understand)'
+  'show the reader'
+  'the reader (sees|learns|comes away|will (see|notice|understand)|should)'
+  'every (operator|reader|engineer|developer|practitioner|user) (raises|asks|wonders|expects|wants)'
+  'the (question|objection) every'
+  'help the reader'
+  'give the reader'
+)
+
+# --- Category: Self-referential document meta-narration (GH-135) ---
+# Trailing clauses describing the artifact's own structure or cross-references
+# instead of stating content. Candidates for the semantic pass (a genuine
+# roadmap sentence differs from a clause that only narrates layout). ERE.
+META_NARRATION=(
+  'stated here and'
+  'cited by every section'
+  'introduced above and revisited below'
+  'throughout this (article|paper|section|document)'
+  'as (each|every) section (shows|demonstrates)'
+  'that (serves|follows|precedes) (them|it) '
+  'as (we|discussed) (will (see|show)|above|below)'
+  'in the sections? that follow'
+  'the remainder of this (article|paper|section)'
+)
+
 scan_patterns() {
   local category="$1"
   shift
@@ -762,6 +799,18 @@ run_on_file() {
     echo "--- Editorializing Adjectives (compressed-conversation; verify in semantic pass) ---"
   fi
   scan_candidates "editorializing" "${EDITORIALIZING[@]}"
+
+  if [[ "$JSON_MODE" != "--json" ]]; then
+    echo ""
+    echo "--- Reader-Psychology / Invented Discourse (verify in semantic pass) ---"
+  fi
+  scan_candidates "reader-directive" "${READER_DIRECTIVE[@]}"
+
+  if [[ "$JSON_MODE" != "--json" ]]; then
+    echo ""
+    echo "--- Self-Referential Meta-Narration (verify in semantic pass) ---"
+  fi
+  scan_candidates "meta-narration" "${META_NARRATION[@]}"
 
   if [[ "$JSON_MODE" == "--json" ]]; then
     echo "["
