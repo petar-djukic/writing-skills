@@ -424,6 +424,10 @@ NARRATIVE_PIVOT_CANDIDATES=(
   "the best part"
   "this works because"
   '[.!?] Enter [A-Z]'
+  # Announce-the-structure frame (GH-117): a quantified noun "organizing" the
+  # document, then a colon and the actual claim. Delete the frame, state the
+  # claim as a plain sentence. ERE (scan_candidates uses grep -E).
+  '(^|[.!?] )(One|A single|Two|Three|Four|Five) [a-z]+ (organizes|structures|anchors|underpins|drives|governs|shapes|orders) (it|this|the [a-z]+)'
 )
 
 # --- Category: Marketing and hype vocabulary (venue-inappropriate jargon) ---
@@ -582,8 +586,9 @@ scan_candidates() {
   local patterns=("$@")
 
   for pattern in "${patterns[@]}"; do
+    # -E (ERE) so candidate patterns may use alternation groups
     local matches
-    matches=$(grep -in "$pattern" "$FILE" 2>/dev/null || true)
+    matches=$(grep -inE "$pattern" "$FILE" 2>/dev/null || true)
     if [[ -n "$matches" ]]; then
       CANDIDATES_FOUND=1
       while IFS= read -r line; do

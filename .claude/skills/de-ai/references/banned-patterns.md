@@ -299,6 +299,14 @@ Seed list (autogenic-systems SRD, 2026-07-13 review):
 | the escalation residue class | coined, undefined |
 | nearest standards hook | metaphor for a mechanism |
 
+Related sub-class — announce-the-structure frames. A quantified noun that
+"organizes" the document, then a colon and the real claim: "One rule organizes
+it: the autonomy level is set by ...". The frame announces structure instead of
+stating content; delete it and state the claim as a plain sentence. Caught as a
+`narrative-pivot-candidate` in detect-lexical.sh (ERE: `(One|A single|Two|…)
+<noun> (organizes|structures|anchors|underpins|drives|governs|shapes) (it|this|
+the <noun>)`). Ruled in the semantic pass — a frame that adds no content is empty.
+
 ## Quoted Examples (false-positive handling)
 
 Documents that deliberately quote banned phrases as examples (e.g. an essay
