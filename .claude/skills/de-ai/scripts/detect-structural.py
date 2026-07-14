@@ -1006,7 +1006,15 @@ def analyze(text: str, threshold_name: str = "medium") -> dict:
     metrics = {}
 
     if len(prose.split()) < 50:
-        return {"issues": [], "metrics": {"word_count": len(prose.split())}, "verdict": "too-short"}
+        # Structural metrics (burstiness, opening diversity) are meaningless on
+        # a handful of sentences, so scoring is skipped — but this is NOT a
+        # clean bill. Single-sentence leads, goal statements, and captions are
+        # exactly where lexical/semantic tells live (GH-135). The lexical scan
+        # (detect-lexical.sh, no length gate) and Step 3 still apply.
+        return {"issues": [], "metrics": {"word_count": len(prose.split())},
+                "verdict": "too-short",
+                "note": "structural scoring skipped (too short); run detect-lexical.sh "
+                        "and the semantic pass — this is not a clean verdict"}
 
     sentences = split_sentences(prose)
     paragraphs = split_paragraphs(prose)
@@ -1513,6 +1521,8 @@ def main():
             print(f"=== Structural AI Detection: {filepath} ===")
             print(f"    Threshold: {threshold}")
             print(f"    Verdict: {result['verdict'].upper()}")
+            if result.get("note"):
+                print(f"    Note: {result['note']}")
             if result.get("tail_echo_candidates"):
                 print(f"    Tail-echo candidates (advisory, semantic pass): {len(result['tail_echo_candidates'])}")
             print()

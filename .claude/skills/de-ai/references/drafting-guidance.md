@@ -44,6 +44,15 @@ banned-patterns.md section (or prompt) that documents the WHY.
   [Editorializing adjectives]
 - Do not announce structure: "One rule organizes it: R" → just state R.
   [Stage-setting frames; Narrative Pivots]
+- Write a unit as its own subject stating its function, not as a reader-
+  directive: "States why generated actions are safe to run", never "answer the
+  objection every operator raises" or "let the reader watch the loop close".
+  Do not narrate the reader's mind or invent an objection nobody raised.
+  [Reader-Psychology; Prompt 8b]
+- Do not describe the document's own layout: cut "stated here and cited by
+  every section that serves them", "throughout this article", "as each section
+  shows". State the content; a one-line roadmap is fine, plumbing narration is
+  not. [Self-Referential Meta-Narration; Prompt 8b]
 
 ## Paragraphs and document shape
 

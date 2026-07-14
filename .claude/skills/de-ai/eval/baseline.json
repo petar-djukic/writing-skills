@@ -5,10 +5,11 @@
       "verdicts": {}
     },
     "ai": {
-      "files": 3,
+      "files": 4,
       "verdicts": {
         "bland-assistant-article.md": "likely-ai",
         "overshoot-linkedin-article.md": "likely-ai",
+        "reader-psychology-meta.md": "likely-ai",
         "spec-compressed-conversation.md": "likely-ai"
       }
     }
@@ -22,8 +23,8 @@
       },
       "ai": {
         "fired": 2,
-        "of": 3,
-        "rate": 0.67
+        "of": 4,
+        "rate": 0.5
       }
     },
     "antithesis-elliptical": {
@@ -33,9 +34,9 @@
         "rate": null
       },
       "ai": {
-        "fired": 1,
-        "of": 3,
-        "rate": 0.33
+        "fired": 2,
+        "of": 4,
+        "rate": 0.5
       }
     },
     "antithesis-fragment": {
@@ -46,8 +47,8 @@
       },
       "ai": {
         "fired": 1,
-        "of": 3,
-        "rate": 0.33
+        "of": 4,
+        "rate": 0.25
       }
     },
     "antithesis-negation": {
@@ -58,8 +59,8 @@
       },
       "ai": {
         "fired": 1,
-        "of": 3,
-        "rate": 0.33
+        "of": 4,
+        "rate": 0.25
       }
     },
     "antithesis-noun-restart": {
@@ -70,8 +71,8 @@
       },
       "ai": {
         "fired": 1,
-        "of": 3,
-        "rate": 0.33
+        "of": 4,
+        "rate": 0.25
       }
     },
     "banned-word": {
@@ -82,8 +83,8 @@
       },
       "ai": {
         "fired": 1,
-        "of": 3,
-        "rate": 0.33
+        "of": 4,
+        "rate": 0.25
       }
     },
     "coinage_candidates": {
@@ -94,8 +95,8 @@
       },
       "ai": {
         "fired": 3,
-        "of": 3,
-        "rate": 1.0
+        "of": 4,
+        "rate": 0.75
       }
     },
     "colon-heavy": {
@@ -106,8 +107,20 @@
       },
       "ai": {
         "fired": 2,
-        "of": 3,
-        "rate": 0.67
+        "of": 4,
+        "rate": 0.5
+      }
+    },
+    "contrast-flip-heavy": {
+      "human": {
+        "fired": 0,
+        "of": 0,
+        "rate": null
+      },
+      "ai": {
+        "fired": 1,
+        "of": 4,
+        "rate": 0.25
       }
     },
     "cot-candidate": {
@@ -117,9 +130,9 @@
         "rate": null
       },
       "ai": {
-        "fired": 2,
-        "of": 3,
-        "rate": 0.67
+        "fired": 3,
+        "of": 4,
+        "rate": 0.75
       }
     },
     "dash-heavy": {
@@ -130,8 +143,8 @@
       },
       "ai": {
         "fired": 1,
-        "of": 3,
-        "rate": 0.33
+        "of": 4,
+        "rate": 0.25
       }
     },
     "editorializing": {
@@ -142,8 +155,8 @@
       },
       "ai": {
         "fired": 1,
-        "of": 3,
-        "rate": 0.33
+        "of": 4,
+        "rate": 0.25
       }
     },
     "false-emphasis": {
@@ -154,8 +167,8 @@
       },
       "ai": {
         "fired": 1,
-        "of": 3,
-        "rate": 0.33
+        "of": 4,
+        "rate": 0.25
       }
     },
     "frame-parallelism": {
@@ -166,8 +179,8 @@
       },
       "ai": {
         "fired": 1,
-        "of": 3,
-        "rate": 0.33
+        "of": 4,
+        "rate": 0.25
       }
     },
     "hyphen-compound-heavy": {
@@ -177,9 +190,9 @@
         "rate": null
       },
       "ai": {
-        "fired": 2,
-        "of": 3,
-        "rate": 0.67
+        "fired": 3,
+        "of": 4,
+        "rate": 0.75
       }
     },
     "low-burstiness": {
@@ -190,8 +203,8 @@
       },
       "ai": {
         "fired": 1,
-        "of": 3,
-        "rate": 0.33
+        "of": 4,
+        "rate": 0.25
       }
     },
     "low-opening-diversity": {
@@ -202,8 +215,20 @@
       },
       "ai": {
         "fired": 3,
-        "of": 3,
-        "rate": 1.0
+        "of": 4,
+        "rate": 0.75
+      }
+    },
+    "meta-narration": {
+      "human": {
+        "fired": 0,
+        "of": 0,
+        "rate": null
+      },
+      "ai": {
+        "fired": 1,
+        "of": 4,
+        "rate": 0.25
       }
     },
     "narrative-pivot-candidate": {
@@ -214,8 +239,8 @@
       },
       "ai": {
         "fired": 1,
-        "of": 3,
-        "rate": 0.33
+        "of": 4,
+        "rate": 0.25
       }
     },
     "ornate-register": {
@@ -225,9 +250,21 @@
         "rate": null
       },
       "ai": {
+        "fired": 2,
+        "of": 4,
+        "rate": 0.5
+      }
+    },
+    "reader-directive": {
+      "human": {
+        "fired": 0,
+        "of": 0,
+        "rate": null
+      },
+      "ai": {
         "fired": 1,
-        "of": 3,
-        "rate": 0.33
+        "of": 4,
+        "rate": 0.25
       }
     },
     "tail_echo_candidates": {
@@ -238,8 +275,8 @@
       },
       "ai": {
         "fired": 2,
-        "of": 3,
-        "rate": 0.67
+        "of": 4,
+        "rate": 0.5
       }
     },
     "topic-sentence-weak": {
@@ -249,8 +286,8 @@
         "rate": null
       },
       "ai": {
-        "fired": 3,
-        "of": 3,
+        "fired": 4,
+        "of": 4,
         "rate": 1.0
       }
     },
@@ -261,9 +298,9 @@
         "rate": null
       },
       "ai": {
-        "fired": 1,
-        "of": 3,
-        "rate": 0.33
+        "fired": 2,
+        "of": 4,
+        "rate": 0.5
       }
     },
     "uniform-paragraphs": {
@@ -273,8 +310,8 @@
         "rate": null
       },
       "ai": {
-        "fired": 3,
-        "of": 3,
+        "fired": 4,
+        "of": 4,
         "rate": 1.0
       }
     },
@@ -286,15 +323,15 @@
       },
       "ai": {
         "fired": 2,
-        "of": 3,
-        "rate": 0.67
+        "of": 4,
+        "rate": 0.5
       }
     }
   },
   "verdict_accuracy": {
     "ai_flagged": {
-      "count": 3,
-      "of": 3
+      "count": 4,
+      "of": 4
     },
     "human_clean": {
       "count": 0,

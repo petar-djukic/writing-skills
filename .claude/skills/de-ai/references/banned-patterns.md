@@ -307,6 +307,42 @@ stating content; delete it and state the claim as a plain sentence. Caught as a
 <noun> (organizes|structures|anchors|underpins|drives|governs|shapes) (it|this|
 the <noun>)`). Ruled in the semantic pass — a frame that adds no content is empty.
 
+## Reader-Psychology / Invented Discourse (pragmatic; Prompt 8b)
+
+Purpose sentences that stage a discourse the document never established, or
+narrate the reader's mental state instead of stating the unit's function. A
+human flags these on sight ("reeks of ai talk … completely out of context").
+The fix is to write the unit as the subject stating what it does: "answer the
+objection every operator raises" → "States why generated actions are safe to
+run." Caught as a `reader-directive` candidate in detect-lexical.sh; the
+semantic pass asks: does the sentence reference a discourse the document itself
+established, or invent one? (GH-135)
+
+| Phrase | Shape |
+|---|---|
+| answer the objection every operator raises | invents an unraised objection |
+| convince the reader that … | narrates persuasion, not content |
+| let the reader watch the loop close | directs the reader's attention |
+| the reader comes away / sees / learns … | narrates the reader's mind |
+| every engineer wonders / asks … | invents an audience reaction |
+
+## Self-Referential Meta-Narration (pragmatic; Prompt 8b)
+
+A trailing clause describing the artifact's own structure or cross-references
+instead of stating content: "The article pursues five goals, stated here and
+cited by every section that serves them." (human: "ai slop"). The clause
+"stated here and cited by every section that serves them" adds nothing a reader
+acts on — delete it and keep the claim. Caught as a `meta-narration` candidate
+in detect-lexical.sh; a genuine roadmap sentence differs from a clause that only
+narrates layout. (GH-135)
+
+Seed triggers: "stated here", "cited by every section", "introduced above and
+revisited below", "throughout this article", "as each section shows",
+"that serves/follows/precedes them/it". These land in short units (leads, goal
+statements, captions) that fall under `detect-structural.py`'s too-short floor,
+so lexical owns them — structural now says so explicitly instead of passing
+silently.
+
 ## Quoted Examples (false-positive handling)
 
 Documents that deliberately quote banned phrases as examples (e.g. an essay

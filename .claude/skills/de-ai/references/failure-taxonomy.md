@@ -63,16 +63,24 @@ Instruments: `lex` = detect-lexical.sh, `str` = detect-structural.py,
 | Compressed-conversation empty phrases (coinage, metaphor-for-mechanism) | str (`coinage_candidates`) + lex + P8b | banned-patterns: Compressed Conversation |
 | Definedness, circularity, quantity mismatch | P8 | — |
 
-## Pragmatic (author–reader relationship) — the mostly-empty row
+## Pragmatic (author–reader relationship)
 
-Covered today: quantity mismatch (P8c) is a narrow slice of evidence handling;
-voice distance (`--voice-profile`, GH-121) is a coarse cross-level catch-all
-that flags *unnamed* deviations at any level, including this one.
+Covered today:
 
-Known-empty territory. Candidates enumerated per the no-speculation rule —
-**none has a documented corpus example yet, so none gets a detector**; the
-first observed instance of each should be added here with its example, then
-instrumented (almost certainly as a Step 3 prompt, not a script):
+| Tell | Instrument | Reference |
+|---|---|---|
+| Reader-psychology / invented discourse ("answer the objection every operator raises") | lex (`reader-directive`) + P8b | banned-patterns: Reader-Psychology (GH-135) |
+| Self-referential meta-narration ("stated here and cited by every section") | lex (`meta-narration`) + P8b | banned-patterns: Meta-Narration (GH-135) |
+| Quantity mismatch (evidence shape, narrow) | P8c | — |
+| Any unnamed pragmatic deviation | str (`--voice-profile`, coarse cross-level) | GH-121 |
+
+The first two moved out of the speculative list below when GH-135 observed
+real examples (autogenic-systems SRD prose) — the promotion path in action.
+
+Still known-empty. Candidates per the no-speculation rule — **none has a
+documented corpus example yet, so none gets a detector**; the first observed
+instance of each should be added with its example, then instrumented (almost
+certainly as a Step 3 prompt, not a script):
 
 | Candidate tell | What it would look like | Status |
 |---|---|---|

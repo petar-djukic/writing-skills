@@ -488,8 +488,9 @@ reading can find.
 
 ```
 You are enumerating EMPTY PHRASES — language that compresses a conversation the
-reader was not in. Seed candidates (from the scripts): {coinage_candidates}
-and {editorializing_hits}. List every candidate first, then rule on each.
+reader was not in. Seed candidates (from the scripts): {coinage_candidates},
+{editorializing_hits}, {reader_directive_hits}, {meta_narration_hits}. List
+every candidate first, then rule on each.
 
 For each phrase, apply the COLD-READER TEST:
 - Does the sentence state a mechanism, quantity, or concrete referent a reader
@@ -503,6 +504,19 @@ For each phrase, apply the COLD-READER TEST:
 - A coined term used more than once must be defined at first use (a definition
   marker: "that is", "we call", "defined as"). Undefined-and-repeated is the
   strongest signal.
+- READER PSYCHOLOGY / INVENTED DISCOURSE: a sentence that stages a discourse the
+  document never established ("answer the objection every operator raises") or
+  narrates the reader's mind ("let the reader watch the loop close") is EMPTY
+  unless the objection/question was actually raised earlier in the document.
+  Test: is the referenced discourse present in the text, or invented? The fix
+  is to make the unit its own subject stating its function ("States why
+  generated actions are safe to run").
+- SELF-REFERENTIAL META-NARRATION: a clause describing the artifact's own layout
+  or cross-references ("stated here and cited by every section that serves
+  them") is EMPTY — it tells the reader about the document's plumbing, not its
+  content. A genuine one-line roadmap that a reader uses to navigate is DEFENDED;
+  a trailing participial that only advertises structure is not. Fix: delete the
+  clause, keep the claim.
 
 Output per finding:
 - Quoted phrase, location, ruling (EMPTY / DEFENDED)
