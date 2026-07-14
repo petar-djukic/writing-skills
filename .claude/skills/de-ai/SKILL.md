@@ -174,6 +174,17 @@ Give the evaluator this stance: **assume the rewrites introduced new patterns.**
 
 Anything the independent evaluator flags goes back through Step 4. A rewrite is accepted only when a checker that never saw it made pass it clean.
 
+## Prevention (drafting time)
+
+When the user is about to DRAFT — not repair — hand the model
+[references/drafting-guidance.md](./references/drafting-guidance.md) as part of
+the drafting context instead of running this pipeline after the fact. It is
+the compact DO-form counterpart to banned-patterns.md: the tells are cheaper
+to prevent than to remove, and every confirmed failure class feeds both files
+(the pair rule in banned-patterns.md "Updating This List"). The detection
+pipeline still runs on the result; prevention lowers the pass count, it does
+not replace verification.
+
 ## Abstract Mode
 
 Abstracts are read ~100x more than the body and have the most rigid,
