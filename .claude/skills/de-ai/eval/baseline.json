@@ -230,7 +230,7 @@
         "rate": 0.33
       }
     },
-    "tail_echo": {
+    "tail_echo_candidates": {
       "human": {
         "fired": 0,
         "of": 0,
