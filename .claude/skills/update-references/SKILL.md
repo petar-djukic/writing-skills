@@ -2,7 +2,8 @@
 name: update-references
 description: >-
   Find, download, read, and summarize research papers related to the work in the
-  current directory. Searches arXiv, Semantic Scholar, and Google Scholar.
+  current directory. Searches arXiv, OpenAlex, Semantic Scholar, and Google
+  Scholar, with a hierarchical mode (hubs, surveys, citation snowball).
   Maintains a CSL-YAML
   reference database (references.yaml) compatible with pandoc's --bibliography
   flag, so the same file serves both the skill and document builds. Triggers:
@@ -97,6 +98,29 @@ generated from the first author's family name and the year — just
 deliberately short; the richer provenance lives in the file names. The
 `arxiv_id` field is the base arXiv identifier used for deduplication and
 version tracking.
+
+Entries fetched through OpenAlex additionally carry two marker blocks that
+later steps use (pandoc ignores them):
+
+```yaml
+  openalex_id: W2158864412
+  ranking:
+    cited_by: 5671            # citations TO the paper
+    references_count: 52      # citations IN the paper
+    fwci: 102.6               # field-weighted citation impact (1.0 = field average)
+    citation_percentile: 100.0
+    venue: IEEE Transactions on Software Engineering
+    institutions: [Massachusetts Institute of Technology]
+    institution_types: [education]
+    retrieved: 2026-07-15     # counts age; they are dated
+  discovery:
+    method: survey-references # seed-search | survey-references | forward-citations | author-drill
+    via: "Wang et al. 2024 autonomous-agents survey"
+```
+
+`ranking` answers "how important, by whose measure, as of when"; `discovery`
+answers "how did this paper enter the corpus". Both persist so the reading
+step can prioritize and the summaries can cite them.
 
 ## Running the scripts
 
@@ -226,6 +250,52 @@ Graph API works with no key at a modest, shared rate limit; on a 429 the script
 retries with backoff, then advises waiting or setting a key. An optional key
 raises the limit — pass `--api-key <key>` or set `SEMANTIC_SCHOLAR_API_KEY`.
 
+#### OpenAlex search and the hierarchical protocol
+
+OpenAlex is the graph backbone: keyless with usable limits (set
+`OPENALEX_MAILTO` or `--mailto` for the polite pool, ~10 req/s), 250M+ works
+including IEEE, citation graph in-record, institutions as first-class
+entities, and `fwci` (field-weighted citation impact, 1.0 = field average).
+
+```bash
+$RUN <skill>/scripts/openalex.py --db <db-path> search --query "..." --max 10
+```
+
+Keyword search is level 0. When the goal is coverage of a field rather than a
+spot lookup, go hierarchical (snowball sampling):
+
+1. **Hubs** — aggregate a broad seed into ranked key authors, pivotal papers,
+   and surveys:
+   ```bash
+   $RUN <skill>/scripts/openalex.py --db <db-path> hubs --query "..." --max 40
+   ```
+   Pick by judgment: 2-3 key authors, 1-2 surveys, 1-2 pivotal papers. A
+   survey is worth twenty keyword queries — its reference list is a curated
+   bibliography.
+2. **Drill one level** with per-level budget (<=10 fetches per level):
+   ```bash
+   $RUN <skill>/scripts/openalex.py --db <db-path> references --id W...      # what a survey/pivotal paper builds on
+   $RUN <skill>/scripts/openalex.py --db <db-path> citations --id W...       # who builds on it since (catches recent work keywords miss)
+   $RUN <skill>/scripts/openalex.py --db <db-path> author-papers --author-id A...
+   ```
+   Candidates come back ranked (cited_by, fwci) and dedupe-tagged.
+3. **Rank and select** — prefer high fwci/cited_by; boost respected
+   institutions (OpenAlex resolves them; treat as a boost, not a filter) and
+   strong venues.
+4. **Stop at saturation** — when a drill level returns mostly `known`, the
+   corpus has converged; stop.
+5. **Fetch with provenance** so the discovery path is preserved:
+   ```bash
+   $RUN <skill>/scripts/openalex.py --db <db-path> fetch --id W... \
+     --discovered survey-references --via "Wang et al. 2024 survey"
+   ```
+   OA PDFs download directly; paywalled works (IEEE etc.) land
+   `metadata-only` and flow into the pending/ingest manual loop.
+
+Semantic Scholar remains an optional enricher (its keyless pool throttles
+hard): when reachable, its `influentialCitationCount` sharpens the pivotal-
+paper ranking; nothing in the protocol depends on it.
+
 #### Picking candidates
 
 Read the returned abstracts and pick the genuinely relevant papers. Don't
@@ -287,6 +357,10 @@ summarizes like any other. Prefer Semantic Scholar's open-access PDFs first —
 they avoid this round-trip entirely.
 
 ### 4. Read and summarize
+
+When several papers await reading, use the `ranking` markers to order them:
+pivotal first (high `fwci`/`cited_by`), and read a survey before the papers
+discovered through it (`discovery.via` tells you which those are).
 
 Read the markdown conversion that `fetch` produced — its path is in the
 `md_path` field of the fetch output and the db entry (under
@@ -376,7 +450,8 @@ Everything else is Python stdlib plus the arXiv public API — no key needed. Be
 a good citizen: the script already retries with backoff; don't hammer the API
 with huge `--max` values in a tight loop.
 
-Google Scholar search requires a SerpAPI key (same key as the idea-factory
+OpenAlex needs no key — set `OPENALEX_MAILTO` (any email) for the polite
+pool's higher rate limits. Google Scholar search requires a SerpAPI key (same key as the idea-factory
 job-search skill). Semantic Scholar needs no key — the public Graph API is
 open, though shared and rate-limited; an optional `SEMANTIC_SCHOLAR_API_KEY`
 (or `--api-key`) raises the limit.
