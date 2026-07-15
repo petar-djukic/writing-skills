@@ -19,6 +19,10 @@ updated: <YYYY-MM-DD>
 primary_category: <e.g. cs.AI>
 abs_url: <https://arxiv.org/abs/...>
 topics: [llm, agents, fsm, declarative-agents]
+cited_by: <n>                # from the entry's ranking block, when present
+fwci: <x.x>
+institutions: [<from ranking.institutions>]
+discovered_via: <from discovery.via>
 tags: [paper, llm-agents, ...]
 date_summarized: <YYYY-MM-DD>
 ---
@@ -63,5 +67,7 @@ Notes:
   them to the script; it merges keywords from the paper with `topics`, adds the
   `paper` root tag, and inserts the relative PDF/full-text/source links. Any
   tag you add by hand is preserved.
+- The `cited_by`/`fwci`/`institutions`/`discovered_via` lines come from the
+  db entry's `ranking` and `discovery` markers; omit them when absent.
 - Numbers beat adjectives. "61% of total cost" is worth more than "expensive."
 - The relevance section is the reason this skill exists. Don't skip it.
