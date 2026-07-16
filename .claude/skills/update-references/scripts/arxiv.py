@@ -79,7 +79,23 @@ def save_db(path, entries):
 
 
 def index_by_id(entries):
-    return {p["id"]: p for p in entries}
+    """Index by base arXiv id (GH-140).
+
+    Keys on the arxiv_id field when present — the citation id may be a legacy
+    long form (shen-small-llms-are-2024) or a GH-87 short key (shen-2024), so
+    it cannot serve as the arXiv lookup. Version-suffixed arxiv_ids get a
+    base-form alias; the citation id is kept as a fallback for legacy dbs
+    whose entries were keyed by the arXiv id itself.
+    """
+    idx = {}
+    for p in entries:
+        aid = str(p.get("arxiv_id") or "")
+        if aid:
+            idx[aid] = p
+            idx.setdefault(re.sub(r"v\d+$", "", aid), p)
+    for p in entries:
+        idx.setdefault(str(p.get("id")), p)
+    return idx
 
 
 # --------------------------------------------------------------------------- #
@@ -311,16 +327,33 @@ def cmd_fetch(args):
         "added": str(date.today()),
     }
     if existing:
-        for keep in ("summary_file", "topics", "relevance", "added"):
-            if keep in existing:
-                record.setdefault(keep, existing[keep])
-        record["added"] = existing.get("added", record["added"])
-        entries = [record if p.get("arxiv_id") == meta["id"] or p["id"] == existing["id"]
-                   else p for p in entries]
+        # Update in place (GH-140/GH-139): the paper was just downloaded, so
+        # paths and version refresh; everything else is additive — CSL extras,
+        # custom stamps, and openalex ranking/discovery blocks survive.
+        prev_version = existing.get("version")
+        existing["arxiv_id"] = meta["id"]
+        existing["version"] = meta["version"]
+        existing["pdf_path"] = os.path.relpath(pdf_path, db_dir)
+        if md_path:
+            existing["md_path"] = os.path.relpath(md_path, db_dir)
+        for k in ("title", "author", "container-title", "URL", "issued",
+                  "primary_category", "categories"):
+            if not existing.get(k) and record.get(k):
+                existing[k] = record[k]
+        # status: forward from pre-read states; a version bump re-opens a
+        # summarized entry (summary metadata stays — it flags the re-read).
+        if existing.get("status") in (None, "metadata-only", "candidate",
+                                      "needs-review"):
+            existing["status"] = "downloaded"
+        elif existing.get("status") == "summarized" and \
+                prev_version is not None and meta["version"] > prev_version:
+            existing["status"] = "downloaded"
+        out = existing
     else:
         entries.append(record)
+        out = record
     save_db(args.db, entries)
-    print(json.dumps({"pdf_path": pdf_path, "md_path": md_path, "meta": record},
+    print(json.dumps({"pdf_path": pdf_path, "md_path": md_path, "meta": out},
                      indent=2, ensure_ascii=False))
 
 
