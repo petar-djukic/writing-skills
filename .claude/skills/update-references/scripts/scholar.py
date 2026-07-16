@@ -289,7 +289,9 @@ def cmd_pending(args):
     """
     db_dir = os.path.dirname(os.path.abspath(args.db))
     entries = load_db(args.db)
-    pending = [e for e in entries if e.get("status") == "metadata-only"]
+    metadata_only = [e for e in entries if e.get("status") == "metadata-only"]
+    pending = [e for e in metadata_only if e.get("download") != "deferred"]
+    deferred = [e for e in metadata_only if e.get("download") == "deferred"]
     out_path = os.path.join(db_dir, "downloads-needed.md")
 
     lines = ["# Papers to download manually", ""]
@@ -331,6 +333,12 @@ def cmd_pending(args):
     else:
         lines.append("Nothing pending — every paper in the database has been "
                      "downloaded or summarized.")
+    if deferred:
+        lines.append("")
+        lines.append("## Deferred (not needed for the current article)")
+        lines.append("")
+        for e in deferred:
+            lines.append(f"- `{e.get('id', '')}` — {e.get('title', '(untitled)')}")
     lines.append("")
 
     os.makedirs(db_dir, exist_ok=True)
@@ -346,8 +354,10 @@ def cmd_pending(args):
         "relevance": e.get("relevance"),
         "discovered_via": (e.get("discovery") or {}).get("via"),
         "topics": e.get("topics"),
-    } for e in pending]
+        "deferred": e.get("download") == "deferred",
+    } for e in metadata_only]
     print(json.dumps({"count": len(pending),
+                      "deferred_count": len(deferred),
                       "list_file": os.path.relpath(out_path, db_dir),
                       "pending": report}, indent=2, ensure_ascii=False))
 
