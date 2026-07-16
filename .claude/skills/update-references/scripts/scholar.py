@@ -314,6 +314,20 @@ def cmd_pending(args):
             lines.append(f"- [ ] `{e.get('id', '')}` — {link}")
             if meta:
                 lines.append(f"  {meta}")
+            relevance = e.get("relevance")
+            if relevance:
+                lines.append(f"  why: {relevance}")
+            via = (e.get("discovery") or {}).get("via")
+            topics = [t for t in (e.get("topics") or [])
+                      if t != "reconciled-from-autogenic-systems"
+                      and not t.startswith("area:")][:4]
+            for_parts = []
+            if via:
+                for_parts.append(f"found via {via}")
+            if topics:
+                for_parts.append("topics: " + ", ".join(topics))
+            if for_parts:
+                lines.append(f"  for: {'; '.join(for_parts)}")
     else:
         lines.append("Nothing pending — every paper in the database has been "
                      "downloaded or summarized.")
@@ -329,6 +343,9 @@ def cmd_pending(args):
         "url": e.get("URL"),
         "container-title": e.get("container-title"),
         "year": (e.get("issued") or {}).get("year"),
+        "relevance": e.get("relevance"),
+        "discovered_via": (e.get("discovery") or {}).get("via"),
+        "topics": e.get("topics"),
     } for e in pending]
     print(json.dumps({"count": len(pending),
                       "list_file": os.path.relpath(out_path, db_dir),
