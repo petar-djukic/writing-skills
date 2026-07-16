@@ -355,7 +355,7 @@ def cmd_fetch(args):
             "retrieved": str(date.today()),
         },
         "discovery": {
-            "method": args.discovered,
+            "method": args.discovered or "seed-search",
             "via": args.via or "",
         },
     }
@@ -367,20 +367,43 @@ def cmd_fetch(args):
         record["md_path"] = os.path.relpath(md_path, db_dir)
 
     if existing:
-        for keep in ("summary_file", "topics", "relevance", "added", "arxiv_id",
-                     "pdf_path", "md_path"):
-            if keep in existing and keep not in record:
-                record[keep] = existing[keep]
-        record["added"] = existing.get("added", record["added"])
-        eid = existing.get("id")
-        entries = [record if p.get("id") == eid else p for p in entries]
+        # Additive merge (GH-139): enrich in place, never delete or downgrade.
+        # Everything already on the entry — status lifecycle, CSL fields
+        # (volume/issue/page/publisher, uppercase DOI), custom stamps
+        # (venue_verified, evidence_role, ...) — stays untouched.
+        existing["openalex_id"] = rec["openalex_id"]
+        existing["ranking"] = record["ranking"]          # refresh (dated)
+        # discovery is provenance: keep the first record unless the caller
+        # explicitly states a new path for this fetch.
+        if "discovery" not in existing or args.discovered or args.via:
+            existing["discovery"] = {"method": args.discovered or "seed-search",
+                                     "via": args.via or ""}
+        # fill CSL fields only where absent
+        for k in ("title", "author", "container-title", "URL", "issued", "type"):
+            if not existing.get(k) and record.get(k):
+                existing[k] = record[k]
+        # DOI: respect an existing uppercase-DOI (pandoc) or lowercase field
+        if rec["doi"] and not existing.get("DOI") and not existing.get("doi"):
+            existing["doi"] = rec["doi"]
+        if pdf_path and not existing.get("pdf_path"):
+            existing["pdf_path"] = os.path.relpath(pdf_path, db_dir)
+        if md_path and not existing.get("md_path"):
+            existing["md_path"] = os.path.relpath(md_path, db_dir)
+        # status moves forward only: never off summarized/downloaded
+        if pdf_path and existing.get("status") in (None, "metadata-only",
+                                                   "candidate", "needs-review"):
+            existing["status"] = "downloaded"
+        elif not existing.get("status"):
+            existing["status"] = "metadata-only"
+        out = existing
     else:
         entries.append(record)
+        out = record
     save_db(args.db, entries)
-    print(json.dumps({"id": record["id"], "status": record["status"],
-                      "pdf_path": record.get("pdf_path"),
-                      "ranking": record["ranking"],
-                      "discovery": record["discovery"]},
+    print(json.dumps({"id": out["id"], "status": out.get("status"),
+                      "pdf_path": out.get("pdf_path"),
+                      "ranking": out["ranking"],
+                      "discovery": out.get("discovery")},
                      indent=2, ensure_ascii=False))
 
 
@@ -425,7 +448,7 @@ def main():
     f = sub.add_parser("fetch")
     f.add_argument("--id", help="OpenAlex W-id")
     f.add_argument("--doi", help="DOI (alternative to --id)")
-    f.add_argument("--discovered", default="seed-search",
+    f.add_argument("--discovered", default=None,
                    choices=["seed-search", "survey-references",
                             "forward-citations", "author-drill"],
                    help="how this paper was found (persisted as discovery.method)")
