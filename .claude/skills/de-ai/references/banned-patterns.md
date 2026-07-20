@@ -33,6 +33,7 @@ These never appear in good technical writing. Instant flag.
 | delve, delving | ChatGPT signature word |
 | tapestry | Purple prose, never needed |
 | realm | Metaphor pollution |
+| ripple, ripples, rippling | Metaphor pollution ("ripple effects", "ripples through") — AI-register word |
 | landscape | Overloaded metaphor |
 | paradigm | Almost never the right word |
 | synergy | Corporate jargon |

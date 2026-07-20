@@ -13,7 +13,8 @@ banned-patterns.md section (or prompt) that documents the WHY.
 - Use plain technical vocabulary. If a word would look at home in a keynote
   ("revolutionary", "seamless", "landscape"), replace it with the specific
   fact. [Tier 1, Marketing and Hype Vocabulary]
-- Skip the ornate register: no "tapestry", "testament", "at its core", no
+- Skip the ornate register: no "tapestry", "testament", "ripple effects",
+  "at its core", no
   verbs doing theater ("unleash", "harness"). Plain verbs carry technical
   prose. [Ornate Register]
 
