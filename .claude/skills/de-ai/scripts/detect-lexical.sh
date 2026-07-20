@@ -240,6 +240,7 @@ AI_PHRASES=(
   "delve"
   "delving"
   "realm"
+  "rippl"
   "tapestry"
   "multifaceted"
   "intricate"
