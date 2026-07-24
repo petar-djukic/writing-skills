@@ -2,3 +2,4 @@
 # committed pixi.toml / pixi.lock). Never committed — regenerated per machine.
 .pixi/
 **/.pixi/
+__pycache__/
