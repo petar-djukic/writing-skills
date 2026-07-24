@@ -20,6 +20,8 @@
 #   AGENTS.md                               root-level Codex discovery copy of
 #                                          the generated repository instructions
 #   .codex/prompts/<cmd>.md                full workflow per canonical command
+#   .codex/skills/<cmd>/SKILL.md            command workflow exposed as a
+#                                          Codex-discoverable skill
 #   .codex/skills/<name>/**                copied skill trees, with paths
 #                                          rewritten to stay in .codex/
 #   <surface>/pixi.toml, pixi.lock         the pixi environment manifest and
@@ -237,6 +239,25 @@ EOF
       "$cmd" > "$STAGE/.codex/prompts/$name"
   done
 
+  # Codex discovers reusable workflows from SKILL.md directories. Keep the
+  # prompt copies above for direct reference, and also expose every canonical
+  # command as a skill wrapper with the complete workflow inline.
+  for cmd in "$ROOT/.claude/commands/"*.md; do
+    name="$(basename "$cmd" .md)"
+    cdesc="$(extract_description "$cmd")"
+    mkdir -p "$STAGE/.codex/skills/$name"
+    {
+      printf -- '---\nname: "%s"\ndescription: "%s"\n---\n\n' "$name" "$cdesc"
+      printf '# %s command\n\n' "$name"
+      printf 'Apply this command workflow. Treat any text after its invocation as the command input.\n\n'
+      command_body "$cmd" | sed \
+        -e 's|\.claude/skills/|.codex/skills/|g' \
+        -e 's|\.claude/commands/|.codex/prompts/|g' \
+        -e 's|\.claude/rules/||g' \
+        -e 's|\.claude/|.codex/|g'
+    } > "$STAGE/.codex/skills/$name/SKILL.md"
+  done
+
   (cd "$ROOT/.claude/skills" && find . -type f ! -path '*/__pycache__/*') | while IFS= read -r rel; do
     local src="$ROOT/.claude/skills/$rel"
     local dst="$STAGE/.codex/skills/$rel"
@@ -287,8 +308,9 @@ that all mirrors are current.
 - `AGENTS.md` — repository-wide instructions and rules for Codex.
 - `prompts/` — complete equivalents of the canonical command workflows,
   including `gh-issue-push` and `gh-issue-pop`.
-- `skills/` — reusable skills with canonical skill references rewritten
-  to stay inside this directory.
+- `skills/` — reusable skills and one Codex-discoverable command skill per
+  canonical command. All canonical skill references are rewritten to stay
+  inside this directory.
 - `pixi.toml`, `pixi.lock`, and `scripts/ensure-env.sh` — the portable Python
   environment used by skills that run scripts.
 
