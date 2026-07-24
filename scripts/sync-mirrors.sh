@@ -134,7 +134,7 @@ build_stage() {
       fi
     done
     # skills: copy tree, rewriting canonical path references
-    (cd "$ROOT/.claude/skills" && find . -type f) | while IFS= read -r rel; do
+    (cd "$ROOT/.claude/skills" && find . -type f ! -path '*/__pycache__/*') | while IFS= read -r rel; do
       local src="$ROOT/.claude/skills/$rel"
       local dst="$STAGE/$target/skills/$rel"
       mkdir -p "$(dirname "$dst")"
@@ -167,7 +167,7 @@ build_stage() {
   # .cursor/.opencode copies (which keep a sibling .claude/ and rewrite only
   # the skills prefix), the .github copy must also flatten .claude/commands and
   # .claude/rules mentions — those files are not carried by a bare symlink.
-  (cd "$ROOT/.claude/skills" && find . -type f) | while IFS= read -r rel; do
+  (cd "$ROOT/.claude/skills" && find . -type f ! -path '*/__pycache__/*') | while IFS= read -r rel; do
     local src="$ROOT/.claude/skills/$rel"
     local dst="$STAGE/.github/skills/$rel"
     mkdir -p "$(dirname "$dst")"
@@ -237,7 +237,7 @@ EOF
       "$cmd" > "$STAGE/.codex/prompts/$name"
   done
 
-  (cd "$ROOT/.claude/skills" && find . -type f) | while IFS= read -r rel; do
+  (cd "$ROOT/.claude/skills" && find . -type f ! -path '*/__pycache__/*') | while IFS= read -r rel; do
     local src="$ROOT/.claude/skills/$rel"
     local dst="$STAGE/.codex/skills/$rel"
     mkdir -p "$(dirname "$dst")"
