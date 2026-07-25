@@ -75,5 +75,37 @@ are additive, never required.
   so a writing repository gets the rule from the workflow rather than from a
   per-repo note. Repositories without `writing-voice/` are unaffected.
 
+- **Pangram check** — an optional external measurement, and the only consumer
+  that sends text off the machine. Governed by the consent rule below.
+
 Reference implementation of the directory: `petar-djukic/autogenic-systems`
 (`writing-voice/`, 28 exemplars — 24 `author-voice`, 4 `venue-voice`).
+
+## Uploading a draft to an external detector
+
+Every other tool here runs locally. `voice-rewrite` prefers a local model
+precisely so unpublished prose stays on the machine. An external AI detector
+breaks that deliberately, so it asks first — every time.
+
+**Ask before every upload.** Name the file, name the destination
+(`text.external-api.pangram.com`), and say that the text is retained and
+reachable through a `dashboard_link` on the vendor's site. Proceed only on a
+clear yes.
+
+**Per document, every time.** Not once per session, not implied by a key. A key
+in the environment says the user has an account with the vendor; it says
+nothing about whether *this* document may leave the machine. Sessions cover
+many files, and one blanket yes cannot be informed consent for a file the user
+had not thought about yet. An upload cannot be taken back.
+
+**Refuse some documents even with consent in hand.** Anything under embargo or
+NDA, and any unpublished claim where disclosure could bear on prior art, gets
+raised rather than uploaded. The user may still say yes; they should say it
+knowing that.
+
+**No key, or a declined prompt, means skip.** Say the check was skipped. Never
+pass silently, and never present a local de-ai result as though it were the
+external one — the whole value of an outside detector is that it is outside.
+
+**A result is evidence, not a verdict.** It never certifies a document on its
+own; see de-ai's Verdict Validity Rules.

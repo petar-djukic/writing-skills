@@ -264,6 +264,40 @@ LaTeX and its boundaries are baked into the eval baseline, and
 `match-voice/scripts/style.py` chunks exemplars for comparison and never needs
 line fidelity.
 
+## External check (Pangram — optional, uploads the document)
+
+Every detector above was written by reading model output and writing down what
+it does. That makes "the detectors stopped firing" a circular answer to "did
+the rewrite work?" — this skill grading its own homework. Pangram has never
+seen our denylist, so its result is evidence rather than an echo. It is the
+only outside measurement here, and the only step that sends text off the
+machine.
+
+**Consent first, every document.** See the upload rule in the `writing-voice/`
+directory rule. A key in the environment is not consent. No key, or a declined
+prompt, means skip and say so — never substitute a local result for it.
+
+```bash
+python3 <de-ai>/scripts/pangram.py --check                      # key + reachability, spends nothing
+python3 <de-ai>/scripts/pangram_report.py payload --article <file.md>   # prose-only payload + span map
+python3 <de-ai>/scripts/pangram.py --text <file>.payload.txt --json > before.json
+python3 <de-ai>/scripts/pangram_report.py report --response before.json --spans <file>.payload.spans.json
+```
+
+Add `--baseline before.json` after a rewrite to report what moved. The baseline
+must be captured **before** the rewrite; it cannot be reconstructed afterwards.
+
+Only prose is submitted — code fences, tables, and front matter are excluded by
+the shared extractor, which both keeps non-prose from skewing a prose detector
+and holds down cost. Billing counts started 1,000-word blocks with a one-unit
+minimum, and the free tier is four scans a day, so a full before/after
+comparison spends half of it.
+
+Read the result as three document fractions (`fraction_ai`,
+`fraction_ai_assisted`, `fraction_human`) plus per-paragraph scores. There is
+no single AI score. And per the Verdict Validity Rules below, a favourable
+result never issues a clean verdict on its own.
+
 ## Calibration (eval corpus)
 
 The scripts are calibrated against the labeled corpus in
@@ -324,7 +358,7 @@ failed phrasing). Then verify: abstract-check.py traceability must pass
 
 ## Convergence Rules
 
-- Rewrites must never be validated by script metrics alone — that is how overshoot happens. After each rewrite pass, re-run Prompt 0 on the rewritten section; a rewrite that improves the metrics but worsens the cold read is a regression.
+- Rewrites must never be validated by script metrics alone — that is how overshoot happens. After each rewrite pass, re-run Prompt 0 on the rewritten section; a rewrite that improves the metrics but worsens the cold read is a regression. An external detector score counts as a metric here: a falling `fraction_ai` alongside a worse cold read is still a regression.
 - Maximum 3 rewrite iterations per passage
 - If iteration N finds >= issues as iteration N-1, stop immediately
 - Never rewrite direct quotations
@@ -335,6 +369,7 @@ failed phrasing). Then verify: abstract-check.py traceability must pass
 
 - A "clean" or "in voice" verdict requires Step 3 to have been run and to have returned no high-priority issues. Verdicts issued without Step 3 are invalid.
 - A `clean` or `minor-issues` label from the structural script is not a substitute for Step 3. The label is a surface-metric summary, not a voice assessment.
+- **An external detector result is not a verdict either.** A Pangram `Human Written`, a low `fraction_ai`, or an empty flagged list does not certify a document and does not substitute for Step 3. It is one more input to the read, and it errs in both directions — a false negative on polished AI prose, a false positive on a terse human author writing in an unusual register. "Pangram says human, so it is clean" is the same procedural failure as anchoring on the structural script.
 - "Looks mostly fine" / "largely in voice" / similar freeform softening language is not a valid verdict. Use one of the four plain-language options from Step 3's required output.
 - If you anchor on the structural script's verdict and skip Step 3, the report is a procedural failure regardless of how the prose actually reads.
 

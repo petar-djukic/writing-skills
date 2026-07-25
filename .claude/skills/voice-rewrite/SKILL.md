@@ -172,6 +172,39 @@ default; applying them directly is opt-in.
 | Anchors per paragraph | `-k` | 3 |
 | Max copied run (words) | `--max-shared-run` | 8 |
 
+## Did it work? (optional external check)
+
+This skill has had no outcome measure. The gate proves a candidate preserved
+citations, numbers, and meaning; it cannot tell you whether the prose stopped
+reading as machine-written. de-ai's detectors cannot settle it either — they
+are the denylist the rewrite was steering around, so their silence is close to
+tautological.
+
+An external detector answers it from outside. Scan, rewrite, scan again:
+
+```bash
+python3 <de-ai>/scripts/pangram_report.py payload --article draft.md
+python3 <de-ai>/scripts/pangram.py --text draft.payload.txt --json > before.json
+# ... run the rewrite ...
+python3 <de-ai>/scripts/pangram_report.py payload --article draft.md
+python3 <de-ai>/scripts/pangram.py --text draft.payload.txt --json > after.json
+python3 <de-ai>/scripts/pangram_report.py report --response after.json \
+    --spans draft.payload.spans.json --baseline before.json
+```
+
+Two things to know before starting. The baseline must be captured **before**
+the rewrite — there is no reconstructing it afterwards, and discovering that
+later means the comparison is simply unavailable. And a full comparison costs
+two scans against a free tier of four a day.
+
+This uploads the draft to a third party that retains it, which is the opposite
+of the local-first reason this skill exists. It asks per document, every time;
+see the upload rule in the `writing-voice/` directory rule. Without a key, skip
+it — the pipeline is unchanged and still worth running.
+
+The still-flagged paragraph list is the useful output: it is the worklist for
+another pass, pointing at the passages the rewrite did not fix.
+
 ## Relationship to the other prose skills
 
 - **de-ai** detects the tells and, with `writing-voice/`, steers its own
