@@ -321,7 +321,22 @@ def detect_question_patterns(paragraphs: list) -> list:
 
 
 def split_paragraphs(text: str) -> list:
-    """Split into paragraphs (separated by blank lines)."""
+    """Split into paragraphs (separated by blank lines).
+
+    NOT the canonical extractor. That is md_paragraphs.py in this directory,
+    which classifies every line and reports what it skipped; voice-rewrite's
+    drive.py imports it. This one stays separate for two reasons (GH-167):
+
+    - It runs on already-flattened text, including detexed LaTeX, where the
+      markdown line grammar (fences, tables, `![`, `[1]`) does not hold.
+    - Its output feeds the structural metrics and their thresholds, and the
+      GH-120 eval baseline is calibrated against these paragraph boundaries.
+      Swapping the splitter shifts paragraph counts on every document, so the
+      migration is a baseline regeneration, not a refactor.
+
+    Migrate by teaching md_paragraphs.py a plain-text mode, then rerunning
+    eval/run_eval.py and reviewing the thresholds against the new baseline.
+    """
     paragraphs = re.split(r"\n\s*\n", text)
     return [p.strip() for p in paragraphs if p.strip() and len(p.split()) >= 5]
 

@@ -15,7 +15,7 @@ Defaults to local gemma4:12b (best local in the GH-163 bake-off). A cloud
 model is a one-flag swap (--model gemma4:31b-cloud).
 
 Usage:
-  rewrite.py --text <file>|- --anchors <file>|-- [--model llama3.1:8b]
+  rewrite.py --text <file>|- --anchors <file>|-- [--model gemma4:12b]
              [--endpoint http://localhost:11434] [--temperature 0.7]
              [--timeout 300]
              [--retry-note "..."] [--json]
