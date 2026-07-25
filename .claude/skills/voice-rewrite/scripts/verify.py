@@ -8,7 +8,8 @@ Nothing is spliced back into a draft until both pass.
 
 Checks:
   citations  every [@key] and \\citep{key}/\\citet{key} in the original must
-             survive verbatim, same multiset
+             survive verbatim, same multiset AND the same syntax family — a
+             pandoc key silently rewritten as natbib breaks the build
   numbers    every number (with its unit when attached) must survive
   terms      acronyms and technical tokens from the original must survive
   similarity n-gram overlap against the anchor passages, so the model does not
@@ -46,12 +47,30 @@ ACRONYM = re.compile(r"\b([A-Z]{2,}(?:-\d+)?)\b")
 
 
 def _citation_keys(text):
-    keys = []
+    """Counter of keys, ignoring which syntax carried them."""
+    return Counter(k for k, _fam in _citation_pairs(text))
+
+
+def _citation_pairs(text):
+    """[(key, family)] where family is 'pandoc' or 'natbib'.
+
+    The syntax family matters (GH-163): a model that silently rewrites
+    [@key] as \citep{key} keeps the key but breaks a pandoc build, and a
+    key-only comparison passes it.
+    """
+    pairs = []
     for m in CITE_PANDOC.finditer(text):
-        keys.extend(CITE_KEY.findall(m.group(0)))
+        pairs.extend((k, "pandoc") for k in CITE_KEY.findall(m.group(0)))
     for m in CITE_NATBIB.finditer(text):
-        keys.extend(k.strip() for k in m.group(1).split(",") if k.strip())
-    return Counter(keys)
+        pairs.extend((k.strip(), "natbib")
+                     for k in m.group(1).split(",") if k.strip())
+    return pairs
+
+
+def _strip_citations(text):
+    """Remove citation spans so their years are not read as document numbers."""
+    text = CITE_PANDOC.sub(" ", text)
+    return CITE_NATBIB.sub(" ", text)
 
 
 def _numbers(text):
@@ -110,7 +129,19 @@ def verify(original, rewritten, anchors_json=None, max_shared_run=8):
             findings.append({"check": "citations", "severity": "fatal",
                              "detail": f"citation key '{key}' invented by the rewrite"})
 
-    o_n, r_n = _numbers(original), _numbers(rewritten)
+    # citation spans stripped first: [@boutaba-2018-...] must not contribute
+    # "2018" as a document number (GH-163), which double-reported a lost cite
+    o_fam = {k: f for k, f in _citation_pairs(original)}
+    r_fam = {k: f for k, f in _citation_pairs(rewritten)}
+    for key, fam in o_fam.items():
+        if key in r_fam and r_fam[key] != fam:
+            findings.append({"check": "citation-syntax", "severity": "fatal",
+                             "detail": f"citation '{key}' changed syntax family "
+                                       f"{fam} -> {r_fam[key]}; this breaks the "
+                                       "document build even though the key survived"})
+
+    o_n, r_n = (_numbers(_strip_citations(original)),
+                _numbers(_strip_citations(rewritten)))
     for val, n in o_n.items():
         if r_n.get(val, 0) < n:
             findings.append({"check": "numbers", "severity": "fatal",
