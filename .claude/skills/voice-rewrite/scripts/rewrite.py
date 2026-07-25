@@ -11,8 +11,10 @@ unreachable or the model is missing, this exits nonzero with remediation. The
 skill must report that and stop — falling back to a Claude rewrite would
 defeat the decorrelation the pipeline exists for.
 
-Defaults to local gemma4:12b (best local in the GH-163 bake-off). A cloud
-model is a one-flag swap (--model gemma4:31b-cloud).
+Defaults to local gemma4:12b, the best local model in the GH-163 bake-off that
+runs on any machine. Bigger is a one-flag swap: --model gemma4:31b-mlx on a
+32 GB Apple Silicon box keeps the paragraphs on the machine, --model
+gemma4:31b-cloud when the memory is not there. SKILL.md has the tiers.
 
 Usage:
   rewrite.py --text <file>|- --anchors <file>|-- [--model gemma4:12b]
