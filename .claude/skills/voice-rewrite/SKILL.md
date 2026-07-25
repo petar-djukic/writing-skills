@@ -39,6 +39,33 @@ python3 <skill>/scripts/rewrite.py --check --text /dev/null
 If this fails, **report it and stop**. The skill never falls back to a Claude
 rewrite: that would defeat the decorrelation it exists for.
 
+## Driver (whole-article orchestration)
+
+`scripts/drive.py` runs the per-paragraph pipeline over a full article and
+assembles the gate-passing rewrites into a sibling `<article>.vr-draft.md`:
+
+```bash
+python3 <skill>/scripts/drive.py --article <path.md> --model gemma4:31b-cloud
+python3 <skill>/scripts/drive.py --article <path.md> --coverage-only   # no model calls
+```
+
+- **Coverage audit is mandatory output.** Every body line is classified
+  (prose / heading / figure / table / code / reference / blockquote / list /
+  rule / blank); any unclassifiable line is reported as a WARNING and
+  `--coverage-only` exits nonzero. Added after a real question — "did the
+  driver skip the first paragraphs?" — that an ad-hoc driver could not answer.
+  Run `--coverage-only` first when in doubt; the paragraph map is the answer.
+- Retries are failure-classified automatically (copy → anti-copy note,
+  number/citation loss → preserve-numbers note, register → banned-vocab note).
+- The driver applies the MECHANICAL gate only. The emitted draft is a set of
+  candidates: run the meaning-entailment review (references/prompts.md) on each
+  accepted paragraph, and de-ai over the assembled file, before treating the
+  draft as accepted.
+- Kept-original paragraphs are listed with their failure category. A kept
+  original is a correct outcome, and the keeps double as an internal control
+  in redistribution experiments (the 2026-07 Pangram run: flagged residue
+  mapped to the kept paragraphs).
+
 ## The pipeline (per paragraph)
 
 Paragraph is the unit of work. The skill never restructures across
