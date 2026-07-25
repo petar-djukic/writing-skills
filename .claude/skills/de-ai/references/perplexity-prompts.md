@@ -406,6 +406,15 @@ Assess each dimension:
     was rhetoric (confirmed punch). If information is lost, it is a plain
     short sentence (clear it).
 
+VOICE ANCHORS (when the repository defines a writing-voice/; these are the
+author's own passages on nearby topics — the register the text should occupy):
+{voice_anchors}
+
+If anchors are present, judge drift against them, not against a generic ideal:
+prose that is markedly more polished, more epigrammatic, or more uniformly
+performing than the anchors is overshooting even when every surface check
+passes. Quote the anchor line that a flagged sentence should have sounded like.
+
 Output:
 OVERSHOOT_SCORE: <0-100>
 CONFIRMED_PUNCHES: <list>
