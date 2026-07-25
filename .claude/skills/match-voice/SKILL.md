@@ -191,6 +191,25 @@ Requires `ANTHROPIC_API_KEY` (or an active `ant auth login` profile) at run
 time; the `anthropic` package itself comes from the pixi environment. Suitable
 for CI, cron, or a mage target.
 
+## Exemplar sources
+
+Two sources of exemplars are accepted:
+
+- **`references.yaml` corpus** (default) — the papers fetched by
+  `update-references`, selected with `--db`.
+- **`writing-voice/manifest.yaml`** — a curated exemplar directory carried by
+  the repository (contract: the repository's writing-voice rule; roles
+  `author-voice` / `venue-voice`). Use it when a repository has no fetched
+  corpus, or when the target voice is the author's own prior work rather than
+  a field's literature. Point the profile/compare commands at the exemplar
+  files listed in the manifest (`writing-voice/<file>` per entry, preferring
+  `author-voice`); the metrics and persona extraction are unchanged — only the
+  input set differs.
+
+de-ai delegates persona extraction from a `writing-voice/` directory here
+rather than reimplementing it; it uses the directory directly only for its
+baseline profile and anchor retrieval.
+
 ## Consumers
 
 The de-ai skill consumes `voice-profile.json` as a detector input: its

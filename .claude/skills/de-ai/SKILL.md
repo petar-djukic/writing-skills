@@ -174,6 +174,59 @@ Give the evaluator this stance: **assume the rewrites introduced new patterns.**
 
 Anything the independent evaluator flags goes back through Step 4. A rewrite is accepted only when a checker that never saw it made pass it clean.
 
+## Voice injection (when the repository defines a target voice)
+
+A writing repository may carry a `writing-voice/` directory of exemplar
+samples — the contract is in the repository's writing-voice rule (manifest
+schema, `author-voice`/`venue-voice` roles, discovery). When one is
+discoverable from the file under review, de-ai measures against it and steers
+rewrites toward it. **Absent, everything below is skipped and behavior is
+exactly as before** — voice features are additive.
+
+**1. Discover.**
+
+```bash
+python3 .claude/skills/de-ai/scripts/voice_anchors.py discover <file>
+```
+
+**2. Baseline profile.** Build (or refresh) a style profile over the
+exemplars, then feed it to the structural scan as the baseline:
+
+```bash
+python3 .claude/skills/de-ai/scripts/voice_anchors.py profile --for <file>
+python3 .claude/skills/de-ai/scripts/detect-structural.py <file> \
+  --voice-profile=<repo>/writing-voice/.voice-profile.json
+```
+
+The `voice_distance` block then reports each metric as a distance from the
+author's own register rather than only against fixed thresholds. (This is the
+same mechanism GH-121 added for a match-voice corpus profile — one baseline
+flag, two sources, no second overlapping option.) The profile is cached in
+`writing-voice/.voice-profile.json` and rebuilt only when a sample's mtime
+changes; `--force` overrides.
+
+**3. Rewrite anchors.** Before rewriting a flagged passage, retrieve the
+topically nearest exemplar passages and inject them into the rewrite prompt's
+`{voice_anchors}` slot (see rewrite-instructions.md):
+
+```bash
+python3 .claude/skills/de-ai/scripts/voice_anchors.py anchors --text <passage> --for <file> -k 3
+```
+
+Retrieval is tf-idf over paragraph-level passages (stdlib, no embeddings),
+preferring `author-voice`. This is the point of the whole feature: a rewrite
+with no target register aims only at *not tripping detectors*, which is the
+documented cause of overshoot into uniform polish. Anchors give it a register
+that exists.
+
+**4. Overshoot guard.** Pass the same anchors into Prompt 7. Drift from the
+anchors toward heavier polish is an overshoot signal even when every surface
+check passes — the anchors make "too sleek" measurable against something
+concrete instead of a judgment call.
+
+Persona extraction from these exemplars belongs to `match-voice`, which
+accepts the manifest as a curated source; de-ai does not reimplement it.
+
 ## Calibration (eval corpus)
 
 The scripts are calibrated against the labeled corpus in

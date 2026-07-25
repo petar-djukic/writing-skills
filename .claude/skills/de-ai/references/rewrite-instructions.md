@@ -132,6 +132,24 @@ Stop rewriting and flag for human review when:
 - The passage is a direct quotation (never rewrite quotes)
 - The passage is a formal specification or requirement statement
 
+## Voice Anchors (when the repository defines a voice)
+
+If a `writing-voice/` directory is discoverable from the file (see the
+repository's writing-voice rule), retrieve the topically nearest exemplar
+passages before rewriting and inject them into the template's
+`{voice_anchors}` slot:
+
+```bash
+python3 <skill>/scripts/voice_anchors.py anchors --text <passage-file> --for <draft> -k 3
+```
+
+Anchors change the target: without them a rewrite aims only at *not tripping
+detectors*, which is what drives overshoot into uniform polish. With them it
+aims at a register that exists — the author's own prose on a nearby topic.
+`author-voice` exemplars are preferred; `venue-voice` fills in genre
+convention where the author has no near passage. When no `writing-voice/`
+exists, leave the slot empty and rewrite as before.
+
 ## Rewrite Prompt Template
 
 ```
@@ -139,6 +157,11 @@ You are rewriting a passage to remove AI writing patterns while preserving exact
 
 DETECTED ISSUES IN THIS PASSAGE:
 {issue_report}
+
+VOICE ANCHORS (when the repo has writing-voice/ — the target register, in the
+author's own words; rewrite to sound like THESE passages, not merely to clear
+the detectors):
+{voice_anchors}
 
 AUTHOR'S STYLE (from writing-style-guide.md):
 - Concise, active voice, Strunk & White style
