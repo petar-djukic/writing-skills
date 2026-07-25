@@ -9,12 +9,14 @@ The driver applies the MECHANICAL gate only. Meaning entailment is a judgment
 call and stays with the reviewing model (references/prompts.md); the emitted
 draft is a set of candidates, not an accepted result.
 
-Every body line is classified (prose / heading / figure / table / code /
-reference / blockquote / list / rule / blank). Unclassifiable lines are
-reported loudly: a nonempty unaccounted list means the parser skipped prose.
+Paragraph extraction and the coverage audit come from de-ai's
+md_paragraphs.py, the canonical extractor shared by the prose skills: every
+body line is classified (prose / heading / figure / table / code / reference /
+blockquote / list / rule / blank), and a nonempty unaccounted list means the
+parser skipped prose.
 
 Usage:
-  python3 drive.py --article <path.md> [--model llama3.1:8b] [--out <path>]
+  python3 drive.py --article <path.md> [--model gemma4:12b] [--out <path>]
                    [--retries 2] [--min-words 12] [--temperature 0.7]
                    [--coverage-only]
 """
@@ -37,60 +39,33 @@ def run(cmd, **kw):
     return subprocess.run(cmd, capture_output=True, text=True, **kw)
 
 
+def _md_paragraphs():
+    """The canonical extractor lives in de-ai (GH-167): one parser, so a block
+    this driver treats as prose is the same block the metrics and anchors see."""
+    sibling = os.path.normpath(os.path.join(SK, "..", "..", "de-ai", "scripts"))
+    if sibling not in sys.path:
+        sys.path.insert(0, sibling)
+    try:
+        import md_paragraphs
+        return md_paragraphs
+    except ImportError as e:
+        sys.exit(f"could not import de-ai md_paragraphs.py from {sibling}: {e}")
+
+
 def parse_paragraphs(path, min_words):
-    """Return (paragraphs, coverage) where coverage maps every 1-indexed body
-    line to a category and paragraphs are [start, end, text] prose blocks."""
-    lines = open(path).read().split("\n")
-    fm_close = 0
-    if lines and lines[0].strip() == "---":
-        for i in range(1, len(lines)):
-            if lines[i].strip() == "---":
-                fm_close = i
-                break
-    paras, coverage = [], {}
-    in_code = False
-    buf, buf_start = [], None
+    """Return (lines, fm_close, paragraphs, coverage, unaccounted).
 
-    def flush():
-        nonlocal buf, buf_start
-        if buf:
-            txt = "\n".join(buf).strip()
-            if txt:
-                paras.append([buf_start + 1, buf_start + len(buf), txt])
-        buf, buf_start = [], None
-
-    for idx in range(fm_close + 1, len(lines)):
-        ln, s = idx + 1, lines[idx].strip()
-        if s.startswith("```"):
-            flush(); in_code = not in_code; coverage[ln] = "code"; continue
-        if in_code:
-            coverage[ln] = "code"; continue
-        if s == "":
-            flush(); coverage[ln] = "blank"; continue
-        cat = None
-        if s.startswith("#"): cat = "heading"
-        elif s.startswith("!["): cat = "figure"
-        elif s.startswith("|"): cat = "table"
-        elif s.startswith("**Figure"): cat = "figure-caption"
-        elif re.match(r"^\[\d+\]", s): cat = "reference"
-        elif s == "---": cat = "rule"
-        elif s.startswith(">"): cat = "blockquote"
-        elif re.match(r"^([-*+]\s|\d+\.\s)", s): cat = "list"
-        if cat:
-            flush(); coverage[ln] = cat; continue
-        if buf_start is None:
-            buf_start = idx
-        buf.append(lines[idx]); coverage[ln] = "prose"
-    flush()
-    # audit: every body line must be classified
-    unaccounted = [i + 1 for i in range(fm_close + 1, len(lines)) if (i + 1) not in coverage]
-    return lines, fm_close, paras, coverage, unaccounted
+    Thin wrapper over the canonical extractor; signature preserved so the
+    driver and its --coverage-only output are unchanged.
+    """
+    r = _md_paragraphs().parse_file(path)
+    return r.lines, r.fm_close, r.paragraphs, r.coverage, r.unaccounted
 
 
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--article", required=True)
-    ap.add_argument("--model", default=os.environ.get("VOICE_REWRITE_MODEL", "llama3.1:8b"))
+    ap.add_argument("--model", default=os.environ.get("VOICE_REWRITE_MODEL", "gemma4:12b"))
     ap.add_argument("--endpoint", default=os.environ.get("OLLAMA_ENDPOINT", "http://localhost:11434"))
     ap.add_argument("--out", help="draft path (default: <article>.vr-draft.md)")
     ap.add_argument("--retries", type=int, default=2)

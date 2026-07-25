@@ -230,7 +230,7 @@ target. That is one model grading and fixing its own prose — cheap and usually
 fine, but its output still carries this model's lexical habits, which is
 exactly what a reader detects. When that matters, hand the rewrite to the
 `voice-rewrite` skill instead: it sends the paragraph and the same anchors to
-a different model family (Ollama; local `llama3.1:8b` by default) and Claude
+a different model family (Ollama; local `gemma4:12b` by default) and Claude
 switches roles from author to judge, gating every candidate on citation and
 number preservation, meaning entailment, anchor-copy similarity, and register.
 Use this skill's rewrite for speed and for passages where the tell is
@@ -239,6 +239,30 @@ Claude wrote it.
 
 Persona extraction from these exemplars belongs to `match-voice`, which
 accepts the manifest as a curated source; de-ai does not reimplement it.
+
+## Paragraph extraction (shared)
+
+`scripts/md_paragraphs.py` is the canonical markdown paragraph extractor for
+the prose skills, and lives here because de-ai is what the others already
+import from. It classifies every body line — prose, heading, figure,
+figure-caption, table, code, reference, blockquote, list, rule, blank — and
+returns prose blocks with the source line ranges a rewrite can be spliced back
+into. `voice-rewrite/scripts/drive.py` imports it rather than carrying its own
+parser (GH-167); a sibling import works because every agent surface carries
+the full skill set.
+
+```bash
+python3 .claude/skills/de-ai/scripts/md_paragraphs.py <file.md> [--json] [--coverage-only]
+```
+
+`--coverage-only` prints the classification tally, which is the answer to "did
+the driver skip paragraphs, or does the document just not have any there?"
+
+Two splitters stay separate on purpose, each with the reason recorded at its
+definition: `detect-structural.py` runs on flattened text including detexed
+LaTeX and its boundaries are baked into the eval baseline, and
+`match-voice/scripts/style.py` chunks exemplars for comparison and never needs
+line fidelity.
 
 ## Calibration (eval corpus)
 

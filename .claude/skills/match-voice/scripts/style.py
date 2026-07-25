@@ -118,6 +118,15 @@ def split_sentences(text):
 
 
 def split_paragraphs(text):
+    """Paragraph chunks for style measurement and anchor retrieval.
+
+    Deliberately not de-ai's md_paragraphs.py, the canonical extractor for
+    "which lines of this document are prose" (GH-167). The jobs differ: that
+    one maps paragraphs back to source line ranges so a rewrite can be spliced
+    in, while this one whitespace-flattens exemplar text into comparable
+    chunks and never needs to write anything back. Line fidelity is the whole
+    point there and irrelevant here.
+    """
     parts = re.split(r"\n\s*\n", text)
     out = []
     for p in parts:
