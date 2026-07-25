@@ -28,9 +28,27 @@ strengthen a claim. Nothing is spliced into a draft until the gate passes.
 - A `writing-voice/` directory of exemplars (contract: the repository's
   writing-voice rule; roles `author-voice` / `venue-voice`). Without it this
   skill has no target and should not run — use plain de-ai instead.
-- A reachable Ollama endpoint with the model pulled. Default `llama3.1:8b` at
-  `http://localhost:11434`. Llama variants are local-pull only; a cloud model
-  is a one-flag swap (`--model glm-5.2:cloud`).
+- A reachable Ollama endpoint with the model pulled, at
+  `http://localhost:11434` by default.
+
+**Model choice (GH-163 bake-off, 10 models on one paragraph with identical
+anchors, judged on voice fidelity plus the full gate):**
+
+| Use | Model | Why |
+|---|---|---|
+| Local default | `gemma4:12b` | best local: faithful near-verbatim pass, no term or claim damage |
+| Cloud, best overall | `gemma4:31b-cloud` | restructures naturally, preserves every term and claim, no flags |
+| Cloud, second opinion | `kimi-k2.6:cloud` | minimal and judicious — edits least, damages nothing |
+
+The two cloud models are complementary: one rewrites well, the other knows
+when not to. `mistral-large-3` editorializes (trips the register scan);
+`glm-5.2` and `deepseek-v4-flash` are safe but flatten deliberate rhythm.
+**`llama3.1:8b` ranked last** — it destroyed a term of art and weakened a
+claim while passing the mechanical gate, which is precisely why the semantic
+half of the gate is not optional.
+
+A first `ollama pull` of a cloud model can fail transiently; an immediate
+retry succeeds.
 
 ```bash
 python3 <skill>/scripts/rewrite.py --check --text /dev/null
@@ -38,6 +56,33 @@ python3 <skill>/scripts/rewrite.py --check --text /dev/null
 
 If this fails, **report it and stop**. The skill never falls back to a Claude
 rewrite: that would defeat the decorrelation it exists for.
+
+## Driver (whole-article orchestration)
+
+`scripts/drive.py` runs the per-paragraph pipeline over a full article and
+assembles the gate-passing rewrites into a sibling `<article>.vr-draft.md`:
+
+```bash
+python3 <skill>/scripts/drive.py --article <path.md> --model gemma4:31b-cloud
+python3 <skill>/scripts/drive.py --article <path.md> --coverage-only   # no model calls
+```
+
+- **Coverage audit is mandatory output.** Every body line is classified
+  (prose / heading / figure / table / code / reference / blockquote / list /
+  rule / blank); any unclassifiable line is reported as a WARNING and
+  `--coverage-only` exits nonzero. Added after a real question — "did the
+  driver skip the first paragraphs?" — that an ad-hoc driver could not answer.
+  Run `--coverage-only` first when in doubt; the paragraph map is the answer.
+- Retries are failure-classified automatically (copy → anti-copy note,
+  number/citation loss → preserve-numbers note, register → banned-vocab note).
+- The driver applies the MECHANICAL gate only. The emitted draft is a set of
+  candidates: run the meaning-entailment review (references/prompts.md) on each
+  accepted paragraph, and de-ai over the assembled file, before treating the
+  draft as accepted.
+- Kept-original paragraphs are listed with their failure category. A kept
+  original is a correct outcome, and the keeps double as an internal control
+  in redistribution experiments (the 2026-07 Pangram run: flagged residue
+  mapped to the kept paragraphs).
 
 ## The pipeline (per paragraph)
 
@@ -52,6 +97,11 @@ python3 <skill>/scripts/retrieve.py --text <paragraph-file> --for <draft> -k 3 >
 ```
 
 Top-k topically nearest exemplar passages, `author-voice` preferred.
+**Retrieval is lexical (tf-idf), so anchors match the author's vocabulary, not
+necessarily the paragraph's subject** — a meta-paragraph about fragmented
+literatures may pull scheduling papers. That is fine and often correct: the
+anchors exist to carry register, not content. Do not treat an off-topic anchor
+as a retrieval failure.
 Retrieval is the de-ai `voice_anchors` implementation imported from the
 sibling skill — built once, imported twice, so the two skills cannot drift.
 
@@ -59,7 +109,7 @@ sibling skill — built once, imported twice, so the two skills cannot drift.
 
 ```bash
 python3 <skill>/scripts/rewrite.py --text <paragraph-file> --anchors anchors.txt \
-  [--model llama3.1:8b] [--endpoint http://localhost:11434] [--temperature 0.7]
+  [--model gemma4:12b] [--endpoint http://localhost:11434] [--temperature 0.7] [--timeout 300]
 ```
 
 **3. Gate — all four checks, fail closed.**
@@ -72,6 +122,7 @@ python3 <skill>/scripts/verify.py --original <paragraph-file> --rewrite <candida
 | Check | Who | Fails on |
 |---|---|---|
 | Citations, numbers, terms | `verify.py` | a key or figure lost, altered, or invented |
+| Citation syntax family | `verify.py` | `[@key]` silently rewritten as `\citep{key}` — the key survives but the build breaks |
 | Anchor similarity | `verify.py` (match-voice shingles) | a long verbatim run copied from an exemplar |
 | Meaning entailment | **Claude**, per references/prompts.md | any claim weakened, added, or re-scoped |
 | Register | de-ai lexical scan on the candidate | banned words — one machine register traded for another |
@@ -79,6 +130,13 @@ python3 <skill>/scripts/verify.py --original <paragraph-file> --rewrite <candida
 `verify.py` exits nonzero on violation so the loop can gate on it directly.
 It is the *mechanical* half only; a clean exit is necessary, not sufficient —
 run the entailment judgment and the de-ai scan before accepting.
+
+**3b. Two-model mode (optional).** Run the same paragraph and anchors through
+both cloud models, gate both candidates, and have the Claude judge pick the
+better rewrite (or keep the original if neither is faithful). The pairing that
+paid off in evaluation is `gemma4:31b-cloud` + `kimi-k2.6:cloud`: when they
+disagree about whether a sentence needs changing at all, the more conservative
+answer is usually right.
 
 **4. Splice or keep.** On a clean gate, accept. Otherwise retry with a
 failure-specific note (`--retry-note`, table in references/prompts.md) up to
@@ -95,8 +153,9 @@ default; applying them directly is opt-in.
 | Setting | Flag | Default |
 |---|---|---|
 | Endpoint | `--endpoint` / `OLLAMA_ENDPOINT` | `http://localhost:11434` |
-| Model | `--model` / `VOICE_REWRITE_MODEL` | `llama3.1:8b` |
+| Model | `--model` / `VOICE_REWRITE_MODEL` | `gemma4:12b` |
 | Temperature | `--temperature` | 0.7 |
+| Timeout (s) | `--timeout` / `VOICE_REWRITE_TIMEOUT` | 300 (cold loads are slow) |
 | Anchors per paragraph | `-k` | 3 |
 | Max copied run (words) | `--max-shared-run` | 8 |
 

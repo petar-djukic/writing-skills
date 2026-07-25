@@ -26,6 +26,7 @@ failure. Keep it concrete — a generic "try again" wastes the attempt.
 | citation lost | `You dropped the citation [@key]. Reproduce every citation key exactly as it appears in the source paragraph.` |
 | number altered/invented | `The number <n> changed. Copy all numbers and units exactly; do not round, convert, or add figures.` |
 | technical term dropped | `You dropped the term <TERM>. Keep domain terms and acronyms as written.` |
+| citation syntax changed | `You rewrote [@key] as \\citep{key}. Reproduce citations in the SAME syntax as the source paragraph — do not convert between pandoc and natbib.` |
 | similarity violation | `You reused a long phrase from an anchor. Write the same content in that register using your own wording.` |
 | register still off (de-ai) | `The result still reads as generic AI prose (<flagged terms>). Follow the anchors' plainer rhythm and concrete vocabulary.` |
 

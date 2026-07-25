@@ -116,11 +116,15 @@ BANNED_WORDS=(
   "nascent"
   "hinges on"
   "lands" "land"
+  "seam" "seams"
 )
 
 # --- Category: AI cliché phrases ---
 AI_PHRASES=(
   "at the heart of"
+  "earns its keep"
+  "earn its keep"
+  "earns their keep"
   # worth-tic family (substack-writing rules; bare forms subsume "it's worth noting")
   "worth noting"
   "worth noticing"

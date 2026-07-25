@@ -11,24 +11,33 @@ unreachable or the model is missing, this exits nonzero with remediation. The
 skill must report that and stop — falling back to a Claude rewrite would
 defeat the decorrelation the pipeline exists for.
 
-Defaults to local llama3.1:8b. A cloud model is a one-flag swap
-(--model glm-5.2:cloud), since Llama variants are local-pull only.
+Defaults to local gemma4:12b (best local in the GH-163 bake-off). A cloud
+model is a one-flag swap (--model gemma4:31b-cloud).
 
 Usage:
   rewrite.py --text <file>|- --anchors <file>|-- [--model llama3.1:8b]
              [--endpoint http://localhost:11434] [--temperature 0.7]
+             [--timeout 300]
              [--retry-note "..."] [--json]
 """
 
 import argparse
 import json
 import os
+import socket
 import sys
 import urllib.error
 import urllib.request
 
 DEFAULT_ENDPOINT = os.environ.get("OLLAMA_ENDPOINT", "http://localhost:11434")
-DEFAULT_MODEL = os.environ.get("VOICE_REWRITE_MODEL", "llama3.1:8b")
+# Defaults chosen by the GH-163 bake-off (10 models, one draft paragraph,
+# same anchors, judged on voice fidelity + gate + register scan):
+# gemma4:12b was the best local; gemma4:31b-cloud the best overall, with
+# kimi-k2.6:cloud a complementary second opinion (it edits least).
+# llama3.1:8b ranked last — it destroyed a term of art and weakened a claim
+# while passing the mechanical gate — and is no longer a default.
+DEFAULT_MODEL = os.environ.get("VOICE_REWRITE_MODEL", "gemma4:12b")
+DEFAULT_TIMEOUT = int(os.environ.get("VOICE_REWRITE_TIMEOUT", "300"))
 
 PROMPT = """You are rewriting one paragraph so it sounds like the author of the anchor passages below. The anchors are the author's own published prose.
 
@@ -68,7 +77,7 @@ def check_server(endpoint, model):
 
 
 def rewrite(paragraph, anchors, endpoint=DEFAULT_ENDPOINT, model=DEFAULT_MODEL,
-            temperature=0.7, retry_note="", timeout=180):
+            temperature=0.7, retry_note="", timeout=DEFAULT_TIMEOUT):
     prompt = PROMPT.format(anchors=anchors, paragraph=paragraph,
                            retry_note=(f"\nRETRY GUIDANCE: {retry_note}\n"
                                        if retry_note else ""))
@@ -83,7 +92,18 @@ def rewrite(paragraph, anchors, endpoint=DEFAULT_ENDPOINT, model=DEFAULT_MODEL,
     try:
         with urllib.request.urlopen(req, timeout=timeout) as r:
             data = json.loads(r.read())
+    except socket.timeout:
+        sys.exit(f"Ollama timed out after {timeout}s on model '{model}'. A cold "
+                 "model load can take minutes (gemma4:12b measured ~210s cold, "
+                 "~96s warm for a 35b). Raise --timeout / VOICE_REWRITE_TIMEOUT, "
+                 "or warm the model first with `ollama run "
+                 f"{model} ''`. voice-rewrite stops here (no Claude fallback).")
     except urllib.error.URLError as e:
+        # a socket timeout can also surface wrapped in URLError
+        if isinstance(getattr(e, "reason", None), socket.timeout):
+            sys.exit(f"Ollama timed out after {timeout}s on model '{model}'. "
+                     "Raise --timeout / VOICE_REWRITE_TIMEOUT, or warm the model "
+                     f"first with `ollama run {model} ''`.")
         sys.exit(f"Ollama request failed: {e.reason}. voice-rewrite stops here "
                  "(no Claude fallback by design).")
     out = (data.get("response") or "").strip()
@@ -100,6 +120,9 @@ def main():
     p.add_argument("--endpoint", default=DEFAULT_ENDPOINT)
     p.add_argument("--model", default=DEFAULT_MODEL)
     p.add_argument("--temperature", type=float, default=0.7)
+    p.add_argument("--timeout", type=int, default=DEFAULT_TIMEOUT,
+                   help="seconds to wait for the model (cold loads are slow; "
+                        "env VOICE_REWRITE_TIMEOUT)")
     p.add_argument("--retry-note", default="",
                    help="guidance added on a retry after a failed gate")
     p.add_argument("--check", action="store_true", help="probe server/model and exit")
@@ -117,7 +140,7 @@ def main():
     paragraph = sys.stdin.read() if args.text == "-" else open(args.text).read()
     anchors = open(args.anchors).read() if args.anchors else "(no anchors provided)"
     out = rewrite(paragraph.strip(), anchors, args.endpoint, args.model,
-                  args.temperature, args.retry_note)
+                  args.temperature, args.retry_note, timeout=args.timeout)
     if args.json:
         print(json.dumps({"model": args.model, "rewrite": out}, indent=2,
                          ensure_ascii=False))

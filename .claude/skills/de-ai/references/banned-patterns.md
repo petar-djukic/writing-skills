@@ -75,6 +75,7 @@ These have legitimate uses but are AI tells in most contexts.
 | comprehensive | Describing actual scope | Describing anything as "a comprehensive X" |
 | robust | Engineering spec with definition | Vague praise |
 | seamless, seamlessly | Never legitimate | — |
+| seam, seams | Literal join (fabric, geology, a real code boundary named as such) | Metaphor: "breaks at a seam", "edit seams", "the seam is X" |
 | innovative | Never self-describe | — |
 | enhance, enhancing | Database/image operations | Vague improvement claim |
 | ecosystem | Actual software ecosystem | Metaphor for "group of things" |
@@ -133,6 +134,7 @@ These multi-word patterns are strong AI signals:
 "the ever-evolving"
 "at its core"
 "stands as"
+"earns its keep"  (metaphor for "is worth the cost" — name the cost instead)
 "remains to be seen"
 "it is worth emphasizing"
 "it is no coincidence that"
