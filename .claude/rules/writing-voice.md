@@ -67,6 +67,13 @@ are additive, never required.
 - **match-voice** — accepts the manifest as a curated exemplar source, so a
   repository without a `references.yaml` corpus can still use persona
   extraction and comparison.
+- **voice-rewrite** — retrieves the same anchors and sends them with the
+  paragraph to a second model family, then gates the candidate on citation and
+  number preservation, meaning entailment, anchor similarity, and register.
+- **do-work** — its Prose workflow reads the manifest and the nearest samples
+  before drafting, and scans the produced prose with de-ai before committing,
+  so a writing repository gets the rule from the workflow rather than from a
+  per-repo note. Repositories without `writing-voice/` are unaffected.
 
 Reference implementation of the directory: `petar-djukic/autogenic-systems`
 (`writing-voice/`, 28 exemplars — 24 `author-voice`, 4 `venue-voice`).
