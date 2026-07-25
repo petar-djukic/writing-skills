@@ -224,6 +224,19 @@ anchors toward heavier polish is an overshoot signal even when every surface
 check passes — the anchors make "too sleek" measurable against something
 concrete instead of a judgment call.
 
+**Which model rewrites.** The steps above keep the rewrite inside this loop:
+Claude flags the passage and Claude rewrites it, with the anchors as its
+target. That is one model grading and fixing its own prose — cheap and usually
+fine, but its output still carries this model's lexical habits, which is
+exactly what a reader detects. When that matters, hand the rewrite to the
+`voice-rewrite` skill instead: it sends the paragraph and the same anchors to
+a different model family (Ollama; local `llama3.1:8b` by default) and Claude
+switches roles from author to judge, gating every candidate on citation and
+number preservation, meaning entailment, anchor-copy similarity, and register.
+Use this skill's rewrite for speed and for passages where the tell is
+structural; use `voice-rewrite` when the prose itself must stop sounding like
+Claude wrote it.
+
 Persona extraction from these exemplars belongs to `match-voice`, which
 accepts the manifest as a curated source; de-ai does not reimplement it.
 
