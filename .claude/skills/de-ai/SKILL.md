@@ -210,7 +210,7 @@ topically nearest exemplar passages and inject them into the rewrite prompt's
 `{voice_anchors}` slot (see rewrite-instructions.md):
 
 ```bash
-python3 .claude/skills/de-ai/scripts/voice_anchors.py anchors --text <passage> --for <file> -k 3
+python3 .claude/skills/de-ai/scripts/voice_anchors.py anchors --text <passage-file>|- --for <file> -k 3
 ```
 
 Retrieval is tf-idf over paragraph-level passages (stdlib, no embeddings),
