@@ -15,19 +15,13 @@
 #                                          references rewritten to .github/skills
 #   .github/copilot-instructions.md        generated, self-contained: the
 #                                          instructions and rules inlined
-#   .codex/AGENTS.md                       generated, self-contained Codex
-#                                          repository instructions
-#   AGENTS.md                               root-level Codex discovery copy of
-#                                          the generated repository instructions
-#   .codex/prompts/<cmd>.md                full workflow per canonical command
-#   .codex/skills/<cmd>/SKILL.md            command workflow exposed as a
-#                                          Codex-discoverable skill
-#   .codex/skills/<name>/**                copied skill trees, with paths
-#                                          rewritten to stay in .codex/
-#   <surface>/pixi.toml, pixi.lock         the pixi environment manifest and
-#                                          lockfile, copied into every surface
-#   <surface>/scripts/ensure-env.sh        the self-locating env preflight,
-#                                          copied into every surface
+#   AGENTS.md                              generated, concise root guidance for
+#                                          Codex: the mandatory workflow plus
+#                                          links to canonical rule files
+#   .agents/skills/<cmd>/SKILL.md          each canonical command as a
+#                                          Codex-discoverable command skill
+#   .agents/skills/<name>/**               copied skill trees, with paths
+#                                          rewritten to stay in .agents/
 #
 # The .github tree is designed to work as a bare symlink: `ln -s .github` into
 # another repository gives Copilot working commands, instructions, and skills
@@ -95,21 +89,6 @@ inline_rules() {
     -e '/<\\!-- Copyright/d' \
     -e 's|\.claude/skills/|.github/skills/|g' \
     -e 's|\.claude/commands/|.github/prompts/|g' \
-    -e 's|\.claude/rules/||g' \
-    -e 's|rules/||g' \
-    -e 's|\.claude/||g' \
-    "$1"
-}
-
-# Inline the instructions/rules for Codex's project guidance file. Codex uses
-# AGENTS.md for durable repository conventions, so all required rules need to
-# be present in the generated document rather than linked from .claude/.
-inline_codex_rules() {
-  sed \
-    -e '/<!-- Copyright/d' \
-    -e '/<\\!-- Copyright/d' \
-    -e 's|\.claude/skills/|.codex/skills/|g' \
-    -e 's|\.claude/commands/|.codex/prompts/|g' \
     -e 's|\.claude/rules/||g' \
     -e 's|rules/||g' \
     -e 's|\.claude/||g' \
@@ -224,105 +203,114 @@ EOF
     done
   } > "$STAGE/.github/copilot-instructions.md"
 
-  # -- .codex: self-contained ---------------------------------------------
-  # Codex reads AGENTS.md for repository guidance. Commands are exposed as
-  # prompt files, while reusable workflows retain their SKILL.md structure.
-  mkdir -p "$STAGE/.codex/prompts" "$STAGE/.codex/skills"
+  # -- Codex: .agents/skills + a concise root AGENTS.md --------------------
+  # Codex discovers repository skills from .agents/skills. Project-local
+  # .codex/prompts is a deprecated prompt format and .codex/skills is not a
+  # discovery location, so neither is generated. AGENTS.md carries durable
+  # repository guidance and links to canonical detail rather than inlining it.
+  mkdir -p "$STAGE/.agents/skills"
 
-  for cmd in "$ROOT/.claude/commands/"*.md; do
-    name="$(basename "$cmd")"
-    sed \
-      -e 's|\.claude/skills/|.codex/skills/|g' \
-      -e 's|\.claude/commands/|.codex/prompts/|g' \
-      -e 's|\.claude/rules/||g' \
-      -e 's|\.claude/|.codex/|g' \
-      "$cmd" > "$STAGE/.codex/prompts/$name"
-  done
-
-  # Codex discovers reusable workflows from SKILL.md directories. Keep the
-  # prompt copies above for direct reference, and also expose every canonical
-  # command as a skill wrapper with the complete workflow inline.
+  # Every canonical command becomes a Codex-discoverable command skill with the
+  # complete workflow inline.
   for cmd in "$ROOT/.claude/commands/"*.md; do
     name="$(basename "$cmd" .md)"
     cdesc="$(extract_description "$cmd")"
-    mkdir -p "$STAGE/.codex/skills/$name"
+    mkdir -p "$STAGE/.agents/skills/$name"
     {
       printf -- '---\nname: "%s"\ndescription: "%s"\n---\n\n' "$name" "$cdesc"
       printf '# %s command\n\n' "$name"
       printf 'Apply this command workflow. Treat any text after its invocation as the command input.\n\n'
       command_body "$cmd" | sed \
-        -e 's|\.claude/skills/|.codex/skills/|g' \
-        -e 's|\.claude/commands/|.codex/prompts/|g' \
+        -e 's|\.claude/skills/|.agents/skills/|g' \
+        -e 's|\.claude/commands/|.agents/skills/|g' \
         -e 's|\.claude/rules/||g' \
-        -e 's|\.claude/|.codex/|g'
-    } > "$STAGE/.codex/skills/$name/SKILL.md"
+        -e 's|\.claude/|.agents/|g'
+    } > "$STAGE/.agents/skills/$name/SKILL.md"
   done
 
+  # Reusable skill trees, with canonical path references rewritten to stay
+  # inside .agents.
   (cd "$ROOT/.claude/skills" && find . -type f ! -path '*/__pycache__/*') | while IFS= read -r rel; do
     local src="$ROOT/.claude/skills/$rel"
-    local dst="$STAGE/.codex/skills/$rel"
+    local dst="$STAGE/.agents/skills/$rel"
     mkdir -p "$(dirname "$dst")"
     sed \
-      -e 's|\.claude/skills/|.codex/skills/|g' \
-      -e 's|\.claude/|.codex/|g' \
+      -e 's|\.claude/skills/|.agents/skills/|g' \
+      -e 's|\.claude/commands/|.agents/skills/|g' \
+      -e 's|\.claude/rules/||g' \
+      -e 's|\.claude/|.agents/|g' \
       "$src" > "$dst"
     if [[ -x "$src" ]]; then chmod +x "$dst"; fi
   done
 
+  # Root AGENTS.md: durable, concise repository guidance. Codex reads this for
+  # repository-wide instructions; task detail lives in the linked canonical
+  # sources and in the discovered skills, not inlined here.
   {
-    cat <<'EOF'
+    cat <<'AGENTSEOF'
 <!-- Generated by scripts/sync-mirrors.sh from the canonical sources — do not edit. -->
 
 # Repository Instructions
 
-This file is generated from the canonical instructions and rules. The source
-of truth is the repository's canonical assistant configuration; regenerate
-the Codex mirror with
-`scripts/sync-mirrors.sh` after changing canonical instructions, commands, or
-skills. Reusable skills are in `.codex/skills/`, and equivalent command
-workflows are in `.codex/prompts/`.
+Assistant configuration is canonical under `.claude/`. Codex discovers this
+repository's skills from `.agents/skills/` (generated). Regenerate every
+surface with `scripts/sync-mirrors.sh`; verify with `--check`.
 
-## Agent instructions
+## Mandatory workflow: issue → worktree → pull request
 
-EOF
-    inline_codex_rules "$ROOT/.claude/instructions.md"
-    local codex_rule
-    for codex_rule in "$ROOT/.claude/rules/"*.md; do
-      echo
-      inline_codex_rules "$codex_rule"
-    done
-  } > "$STAGE/.codex/AGENTS.md"
+All work goes through a GitHub issue and a pull request. Never commit to
+`main` directly.
 
-  cat > "$STAGE/.codex/README.md" <<'EOF'
-<!-- Generated by scripts/sync-mirrors.sh from the canonical sources — do not edit. -->
+1. **File an issue first** — run the `gh-issue-push` skill. It enumerates
+   every file the change touches before drafting, so nothing is missed.
+   (Beads repositories use `bd-issue-push` instead.)
+2. **Pop it into a worktree** — run the `gh-issue-pop` skill. All
+   implementation happens inside the worktree at `../gh-<number>-<slug>`,
+   never in the main checkout, which stays on `main`.
+3. **Do the work** — run the `do-work` skill inside the worktree, once per
+   sub-issue, until the epic is complete. It detects the tracker (GitHub
+   issues or beads) and works either.
+4. **Open the PR** — the pop skill's final phase opens it, records the actual
+   lines of code against the estimate, and closes the issue on merge.
 
-# Codex Configuration
+One issue per logical change; small fixes still need an issue. The only
+exceptions are an emergency hotfix authorized in-session and `exp/*`
+experiment branches, which never merge to `main`.
 
-This is the generated Codex mirror of the canonical assistant configuration.
-Do not edit files here directly. Update the canonical sources, then run
-`scripts/sync-mirrors.sh`; use `scripts/sync-mirrors.sh --check` to verify
-that all mirrors are current.
+## Skills
 
-## Contents
+Reusable skills and one command skill per canonical command are discovered
+from `.agents/skills/`. Command skills carry the complete workflow inline.
 
-- `AGENTS.md` — repository-wide instructions and rules for Codex.
-- `prompts/` — complete equivalents of the canonical command workflows,
-  including `gh-issue-push` and `gh-issue-pop`.
-- `skills/` — reusable skills and one Codex-discoverable command skill per
-  canonical command. All canonical skill references are rewritten to stay
-  inside this directory.
-- `pixi.toml`, `pixi.lock`, and `scripts/ensure-env.sh` — the portable Python
-  environment used by skills that run scripts.
+Python-backed skills run in a pixi environment that ships beside them: run
+`.agents/scripts/ensure-env.sh` once per machine, then invoke scripts with
+`pixi run --manifest-path .agents/pixi.toml python <script>`. API keys
+(`SERPAPI_KEY`, `ANTHROPIC_API_KEY`, `OPENALEX_MAILTO`) come from the
+environment, not from pixi.
 
-The GitHub issue → worktree → pull-request process remains mandatory. Start a
-repository change with the `gh-issue-push` workflow, then use
-`gh-issue-pop` before implementation.
-EOF
+## Conventions
 
-  # Codex discovers repository instructions from the root-level AGENTS.md.
-  # Keep the portable .codex tree complete too, so it can also be symlinked or
-  # copied into another repository without losing its guidance.
-  cp "$STAGE/.codex/AGENTS.md" "$STAGE/AGENTS.md"
+These are summaries; the canonical rule files hold the detail.
+
+- **Git** — issue and PR for every change; work in worktrees; never commit to
+  `main`. See `.claude/rules/git-workflow.md`.
+- **Python** — environments are managed with pixi, never bare pip or
+  virtualenv. See `.claude/rules/pixi-python.md`.
+- **Documentation** — specifications are the source of truth and code serves
+  them; YAML for structured documents, markdown for prose; active voice;
+  observe the forbidden-terms list. See
+  `.claude/rules/documentation-standards.md`.
+- **READMEs** — written as a technical brief: title, thesis, diagram, scope,
+  then build instructions last. See `.claude/rules/readme-format.md`.
+- **Document types** — pick the right external form (concept paper, RFC,
+  specification, invention disclosure) from
+  `.claude/rules/technical-document-types.md`.
+
+Before committing, run the repository's consistency check if one exists
+(`mage audit` or `mage analyze`), and commit after each round of edits rather
+than accumulating changes.
+AGENTSEOF
+  } > "$STAGE/AGENTS.md"
 
   # -- pixi environment ---------------------------------------------------
   # Ship the manifest, lockfile, and preflight into every surface so a
@@ -330,7 +318,7 @@ EOF
   # ensure-env.sh is self-locating and the manifest is surface-agnostic, so
   # no path rewriting is needed (and nothing here references a sibling tree).
   local surface
-  for surface in .cursor .opencode .github .codex; do
+  for surface in .cursor .opencode .github .agents; do
     mkdir -p "$STAGE/$surface/scripts"
     cp "$ROOT/.claude/pixi.toml" "$STAGE/$surface/pixi.toml"
     cp "$ROOT/.claude/pixi.lock" "$STAGE/$surface/pixi.lock"
@@ -352,9 +340,8 @@ AREAS=(
   ".github/prompts"
   ".github/skills"
   ".github/scripts"
-  ".codex/prompts"
-  ".codex/skills"
-  ".codex/scripts"
+  ".agents/skills"
+  ".agents/scripts"
 )
 
 # Single-file artifacts that live at a mirror root (cannot be a --delete area
@@ -362,16 +349,14 @@ AREAS=(
 FILES=(
   "AGENTS.md"
   ".github/copilot-instructions.md"
-  ".codex/AGENTS.md"
-  ".codex/README.md"
   ".cursor/pixi.toml"
   ".cursor/pixi.lock"
   ".opencode/pixi.toml"
   ".opencode/pixi.lock"
   ".github/pixi.toml"
   ".github/pixi.lock"
-  ".codex/pixi.toml"
-  ".codex/pixi.lock"
+  ".agents/pixi.toml"
+  ".agents/pixi.lock"
 )
 
 build_stage
@@ -386,11 +371,12 @@ if [[ -n "$leaks" ]]; then
   exit 1
 fi
 
-# The Codex mirror also has to be usable as a self-contained configuration
-# tree: generated guidance, prompts, and skills may not escape to .claude/.
-leaks="$(grep -rnE '\.claude/' "$STAGE/.codex" 2>/dev/null || true)"
+# Generated Codex skills must be self-contained: a skill tree may not escape
+# to .claude/. (Root AGENTS.md deliberately links canonical rule files, so it
+# is excluded from this check.)
+leaks="$(grep -rnE '\.claude/' "$STAGE/.agents" 2>/dev/null || true)"
 if [[ -n "$leaks" ]]; then
-  echo "ERROR: .codex references the canonical .claude tree:" >&2
+  echo "ERROR: .agents references the canonical .claude tree:" >&2
   echo "$leaks" | sed "s|^$STAGE/||" >&2
   exit 1
 fi
