@@ -51,6 +51,34 @@ detector changes measurable.
 - Every file carries a header comment stating its provenance and label
   rationale.
 
+## Length bands — read these before believing a fire rate
+
+```bash
+python3 run_eval.py --bands
+```
+
+The overall per-detector rates compare whatever is in each class. When the two
+classes differ in length, those rates partly measure length rather than
+authorship, and the report says so: a `length_mismatch` block appears whenever
+the class medians differ by 2x or more.
+
+That is not hypothetical. The first honest run compared a human class with a
+5,889-word median against an ai class at 332 words and reported the difference
+as a false-positive rate. Twenty detectors appeared to exceed the gate. Most
+were measuring length — `topic-sentence-weak` fires on 96% of full papers and
+on 0% of 400-word excerpts of those same papers.
+
+`--bands` samples every document down to 400, 800, 1500, and 2500 words —
+consecutive whole paragraphs, deterministic, skipping documents too short for a
+band rather than padding them — and reports rates per band. Comparing like with
+like is the only way these numbers mean anything.
+
+Read `avg_detectors_fired` across the bands first. If it climbs with length,
+the detectors are counting opportunity rather than evidence, and the
+per-detector rates in the wider bands are inflated. Then read `non_clean_rate`
+per band: that is the fraction of genuinely human prose the skill would flag at
+that length, which is the number a writer actually experiences.
+
 ## The new-detector gate
 
 Before merging a new detector:
