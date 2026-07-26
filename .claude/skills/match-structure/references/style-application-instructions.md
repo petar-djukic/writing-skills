@@ -1,8 +1,8 @@
 # Style application instructions (rewrite mode)
 
-These instructions govern the rewrite mode of the match-voice skill: applying
+These instructions govern the rewrite mode of the match-structure skill: applying
 a voice blueprint (or the corpus voice profile) to a draft. They are read by
-the interactive skill flow and by `match_voice.py --rewrite` — this file is
+the interactive skill flow and by `match_structure.py --rewrite` — this file is
 the single source of truth; do not duplicate its content elsewhere.
 
 Rewrite mode is explicit opt-in. The default skill behavior is to advise;

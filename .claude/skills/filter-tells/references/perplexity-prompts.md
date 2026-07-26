@@ -668,7 +668,7 @@ regressions.
 - Prompt 6 runs after the structural scan (catches the semantic antithesis pairs the `detect_antithesis` regex cannot)
 - Prompt 6b runs alongside Prompt 6 (rhetorical set pieces: allegory sweeps, anadiplosis chains, emphatic anchors, imperative runs, metaphor mirrors)
 - Prompt 0 runs FIRST, before any script — its cold-read verdict must not be anchored by metrics
-- Prompt 7 runs after the structural scan, seeded with the performance/punch/salad/formulae outputs; mandatory when the document has prior de-ai history or Prompt 0 flags register
+- Prompt 7 runs after the structural scan, seeded with the performance/punch/salad/formulae outputs; mandatory when the document has prior filter-tells history or Prompt 0 flags register
 - Prompt 8 runs on the document's opening material (abstract + section openers); mandatory for publication verdicts — cadence detectors cannot see undefined jargon or circular claims
 - Prompt 9 runs seeded with the structural script's paragraph_schema metrics; its Part B composes with Prompt 8 (circularity lives there)
 - Prompts 10-11 are abstract mode: 10 analyzes (always), 11 rebuilds (opt-in, only on a failing verdict), both seeded with abstract-check.py output

@@ -4,8 +4,8 @@
 One parser, imported by every consumer that needs "which lines are prose".
 Divergent splitters mean divergent bugs: a block one parser calls prose and
 another silently skips shifts metrics, anchors, and rewrites in ways nobody
-audits. Lifted out of voice-rewrite's drive.py (GH-167) and kept here because
-de-ai is the skill every other prose skill already imports from.
+audits. Lifted out of match-voice's drive.py (GH-167) and kept here because
+filter-tells is the skill every other prose skill already imports from.
 
 Every body line is classified — prose, heading, figure, figure-caption, table,
 code, reference, blockquote, list, rule, blank. The classification tally is

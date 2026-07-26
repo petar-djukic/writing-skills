@@ -1,228 +1,227 @@
 ---
 name: match-voice
 description: >-
-  Learn the writing voice of the papers in a research corpus and compare a
-  draft against it. Uses the markdown papers fetched by update-references
-  (papers/*.md, keyed by references.yaml). Computes quantitative style
-  metrics (sentence/paragraph distributions, word/phrase/idiom frequencies,
-  per-section profiles) and a qualitative voice profile (how intros open,
-  methodology and results conventions, terminology). Produces a comparison
-  report for the draft, extracts voice persona blueprints from exemplar
-  papers, and can rewrite a draft to match a voice (opt-in, section by
-  section, with a plagiarism similarity guard). Triggers: match voice, learn
-  the voice, compare my writing, voice profile, style profile, does my draft
-  sound like the field, analyze methodology section, results conventions,
-  writing style comparison, mimic this paper, rewrite in the style of, apply
-  the voice, voice persona, exemplar, plagiarism check, similarity check.
+  Rewrite paragraphs of a draft in the author's voice using a second model
+  family served by Ollama, with a verification gate before any text is spliced
+  back. Retrieves voice anchors from the repository's writing-voice/ exemplars,
+  sends paragraph plus anchors to a local (or cloud) Ollama model, then gates
+  the result on citation/number preservation, meaning entailment, anchor
+  similarity, and register. Triggers: voice rewrite, rewrite in my voice,
+  ollama rewrite, rewrite paragraphs, local model rewrite, sound like my
+  earlier papers, rewrite against writing-voice.
 ---
 
-# Match voice (corpus style analysis)
+*Renamed from `voice-rewrite` (2026-07). **The name `match-voice` previously
+belonged to the stylometry skill, now `match-structure`** — if you invoked
+`match-voice` before this date expecting measurement, you want
+`match-structure`. This skill rewrites.*
 
-This skill answers "does my draft read like the field I'm writing for?" It
-learns the voice of the corpus papers — vocabulary, sentence and paragraph
-structure, section structure, common themes, jargon, methodology and results
-conventions — and compares a draft against that profile with evidence.
+# match-voice (Ollama rewrites, Claude judges)
 
-It complements `update-references` (which builds the corpus) and `de-ai`
-(which detects generic AI-writing patterns). `match-voice` defines what this
-field's human writing looks like; do not duplicate de-ai's detectors.
+The rewriting model is deliberately **not** Claude. filter-tells detects and steers
+within the Claude loop (GH-156); this skill hands the rewrite itself to a
+different model family so the prose decorrelates from Claude's own lexical
+fingerprints, instead of Claude grading its own homework. Claude keeps the
+job it is good at: judging whether the result is faithful.
 
-## Where things live
+That division is the point. **Verification is not optional** — an 8B model
+rewriting technical prose will drop a citation, round a number, or quietly
+strengthen a claim. Nothing is spliced into a draft until the gate passes.
 
-- **Corpus:** `<db-dir>/papers/*.md` — the markdown conversions fetched by
-  `update-references`, selected via entries in `references.yaml`. Default
-  selection is entries with `status: summarized` (papers the user actually
-  engaged with); pass `--all` to `style.py corpus` to include every entry
-  with an `md_path`.
-- **Quantitative profile:** `<db-dir>/voice-profile.json`, written by
-  `style.py corpus`. Regenerate only when the corpus changes (the profile
-  records corpus file paths and mtimes — compare before recomputing).
-- **Qualitative profile:** `<db-dir>/voice-profile.md`, written by the model
-  following `references/voice-analysis-instructions.md` Part 1. Same
-  regeneration rule.
-- **Comparison reports:** `<db-dir>/voice-reports/<draft-stem>-voice.md`,
-  following `references/comparison-report-template.md`.
-- **Exemplar blueprints:** `<db-dir>/voice-blueprint-<slug>.md`, extracted
-  from chosen exemplar papers following `voice-analysis-instructions.md`
-  Part 3 (consensus vs idiosyncrasy).
-- **Rewritten drafts:** `<draft-stem>-rewritten.md` next to the draft. The
-  draft itself is never modified.
+## Prerequisites
 
-## Running the scripts
+- A `writing-voice/` directory of exemplars (contract: the repository's
+  writing-voice rule; roles `author-voice` / `venue-voice`). Without it this
+  skill has no target and should not run — use plain filter-tells instead.
+- A reachable Ollama endpoint with the model pulled, at
+  `http://localhost:11434` by default.
 
-The scripts run in the pixi-managed environment that ships beside the skill
-(`pixi.toml` / `pixi.lock` at the agent-directory root). The agent provisions
-it on repo open via `<agent-dir>/scripts/ensure-env.sh`; then the commands
-below use `$RUN` for the wrapper:
+**Model choice (GH-163 bake-off, 10 models on one paragraph with identical
+anchors, judged on voice fidelity plus the full gate):**
 
-```bash
-RUN="pixi run --manifest-path <skill>/../../pixi.toml python"
-```
+| Use | Model | Why |
+|---|---|---|
+| Local default | `gemma4:12b` | best local everywhere: faithful near-verbatim pass, no term or claim damage |
+| Local, 32 GB Apple Silicon | `gemma4:31b-mlx` | the 31b tier without egress (inferred from the cloud row, not separately bake-offed) |
+| Cloud, best overall | `gemma4:31b-cloud` | restructures naturally, preserves every term and claim, no flags |
+| Cloud, second opinion | `kimi-k2.6:cloud` | minimal and judicious — edits least, damages nothing |
 
-This supplies PyYAML and the `anthropic` package, so no `pip install` is
-needed. `match_voice.py` still needs `ANTHROPIC_API_KEY` (or an active
-`ant auth login`) at run time — pixi manages packages, not secrets.
+**Prefer local when the machine can hold the model.** Rewriting operates on
+unpublished draft prose, and the cloud rows send every paragraph off the
+machine to buy quality that a big-memory Mac already has locally. Reach for
+cloud when the memory is not there, or for the second opinion.
 
-## The workflow (interactive)
+The 31b row wants roughly 32 GB of unified memory: an mlx build of that tier
+is a ~20 GB weight file, and context and the rest of the system go on top.
+Measured on an M2 Max with 32 GB, where the comparable `qwen3.6:35b-mlx`
+occupies 21 GB and runs. At 16 GB, stay on `gemma4:12b` (7.6 GB); a model that
+does not fit swaps, and a rewrite that takes minutes per paragraph is a
+rewrite nobody runs. `ollama list` shows the size before you commit to it.
 
-### 1. Locate the corpus
+The two cloud models are complementary: one rewrites well, the other knows
+when not to. `mistral-large-3` editorializes (trips the register scan);
+`glm-5.2` and `deepseek-v4-flash` are safe but flatten deliberate rhythm.
+**`llama3.1:8b` ranked last** — it destroyed a term of art and weakened a
+claim while passing the mechanical gate, which is precisely why the semantic
+half of the gate is not optional.
 
-Find `references.yaml` at or above the working directory. If it does not
-exist, or no entries have `status: summarized` with an existing `md_path`
-file, stop and tell the user to run `update-references` first (and `repair`
-if PDFs exist without markdown).
-
-### 2. Quantitative profiles
-
-```bash
-$RUN <skill>/scripts/style.py --db <db-path> corpus
-```
-
-This writes `voice-profile.json`: aggregated metrics (whole-paper and
-per-section), ranked word/phrase/idiom frequency tables, and jargon (terms
-frequent across multiple corpus papers). Skip if the existing profile's
-recorded corpus files and mtimes are unchanged.
-
-Useful inspection commands:
+A first `ollama pull` of a cloud model can fail transiently; an immediate
+retry succeeds.
 
 ```bash
-$RUN <skill>/scripts/style.py profile <paper.md>     # one paper, full JSON
-$RUN <skill>/scripts/style.py freq <paper.md>        # frequency tables only
+python3 <skill>/scripts/rewrite.py --check --text /dev/null
 ```
 
-### 3. Qualitative profile
+If this fails, **report it and stop**. The skill never falls back to a Claude
+rewrite: that would defeat the decorrelation it exists for.
 
-Read the corpus papers (their `md_path` files) and write `voice-profile.md`
-following **Part 1** of `references/voice-analysis-instructions.md`. Every
-claim carries a quote. The Methodology Conventions and Results Conventions
-sections carry particular weight — they are what a draft's corresponding
-sections get checked against.
+## Driver (whole-article orchestration)
 
-Skip if the profile exists and the corpus is unchanged.
-
-### 4. Compare the draft
+`scripts/drive.py` runs the per-paragraph pipeline over a full article and
+assembles the gate-passing rewrites into a sibling `<article>.vr-draft.md`:
 
 ```bash
-$RUN <skill>/scripts/style.py --db <db-path> compare <draft.md>
+python3 <skill>/scripts/drive.py --article <path.md> --model gemma4:31b-cloud
+python3 <skill>/scripts/drive.py --article <path.md> --coverage-only   # no model calls
 ```
 
-This emits the quantitative diff: metric deltas (whole-paper and
-per-section, methodology and results included), over/underused terms
-relative to corpus rates, idiom usage differences, and missing sections.
+- **Coverage audit is mandatory output.** Every body line is classified
+  (prose / heading / figure / table / code / reference / blockquote / list /
+  rule / blank); any unclassifiable line is reported as a WARNING and
+  `--coverage-only` exits nonzero. Added after a real question — "did the
+  driver skip the first paragraphs?" — that an ad-hoc driver could not answer.
+  Run `--coverage-only` first when in doubt; the paragraph map is the answer.
+- Retries are failure-classified automatically (copy → anti-copy note,
+  number/citation loss → preserve-numbers note, register → banned-vocab note).
+- The driver applies the MECHANICAL gate only. The emitted draft is a set of
+  candidates: run the meaning-entailment review (references/prompts.md) on each
+  accepted paragraph, and filter-tells over the assembled file, before treating the
+  draft as accepted.
+- Kept-original paragraphs are listed with their failure category. A kept
+  original is a correct outcome, and the keeps double as an internal control
+  in redistribution experiments (the 2026-07 Pangram run: flagged residue
+  mapped to the kept paragraphs).
 
-Then write the comparison report following **Part 2** of
-`voice-analysis-instructions.md` and the structure of
-`comparison-report-template.md`. Interpret the numbers, quote draft and
-corpus side by side, check methodology/results conventions one by one, and
-give directions rather than rewritten text.
+## The pipeline (per paragraph)
 
-### 5. Report back
+Paragraph is the unit of work. The skill never restructures across
+paragraphs.
 
-Summarize: the verdict (close match / partial / divergent), the two or
-three highest-impact changes, and the report path.
-
-## Exemplar blueprints (mimic a specific paper or venue)
-
-When the user wants to mimic specific papers rather than the corpus average
-("mimic these two ICML papers"), extract a voice persona blueprint following
-**Part 3** of `voice-analysis-instructions.md`: one mini-blueprint per
-exemplar (sentence mechanics, lexicon and tone, signposting and transitions,
-formatting quirks — every claim quoted, never summarizing content), then a
-synthesis separating **Consensus** (shared across exemplars — venue
-convention) from **Idiosyncrasy** (one author's habit, flagged per source).
-Save as `voice-blueprint-<slug>.md`. A single exemplar skips synthesis and
-is marked entirely single-source.
-
-## Rewrite mode (opt-in)
-
-The default behavior is to advise. When the user explicitly asks to rewrite
-("apply this voice to my draft", "rewrite my intro in the corpus voice"),
-follow `references/style-application-instructions.md` exactly: section by
-section, few-shot exemplar excerpts of the same section type, consensus
-patterns only unless the user asks to mimic an author, and the critical
-rules — never touch data, equations, numbers, or citations; never copy
-exemplar phrasing; output to `<draft-stem>-rewritten.md`.
-
-After every rewrite run both checks from the instructions file:
-
-1. Content preservation — citations and numbers, per section.
-2. Similarity guard:
+**1. Retrieve anchors.**
 
 ```bash
-$RUN <skill>/scripts/style.py similarity <draft-stem>-rewritten.md \
-  --against <exemplar1.md> <exemplar2.md> --baseline <draft.md>
+python3 <skill>/scripts/retrieve.py --text <paragraph-file> --for <draft> -k 3 --json > anchors.json
+python3 <skill>/scripts/retrieve.py --text <paragraph-file> --for <draft> -k 3 > anchors.txt
 ```
 
-Any flagged match is phrasing the rewrite lifted from a source — report it;
-the author must rephrase or quote it. The similarity check is also useful
-standalone when the user asks to "check my draft for plagiarism against the
-corpus" (omit `--baseline`).
+Top-k topically nearest exemplar passages, `author-voice` preferred.
+**Retrieval is lexical (tf-idf), so anchors match the author's vocabulary, not
+necessarily the paragraph's subject** — a meta-paragraph about fragmented
+literatures may pull scheduling papers. That is fine and often correct: the
+anchors exist to carry register, not content. Do not treat an off-topic anchor
+as a retrieval failure.
+Retrieval is the filter-tells `voice_anchors` implementation imported from the
+sibling skill — built once, imported twice, so the two skills cannot drift.
 
-## Headless mode
-
-`match_voice.py` runs every mode without an interactive session, assembling
-prompts from this skill's own `references/` files (single source of truth)
-and calling `claude-opus-4-8` with adaptive thinking and streaming. Stable
-content blocks (corpus, blueprint) are prompt-cached.
+**2. Rewrite.**
 
 ```bash
-# Compare a draft against the corpus profile (one API call)
-$RUN <skill>/scripts/match_voice.py <draft.md> --db <db-path>
-
-# Extract a blueprint from exemplars (one call each + synthesis)
-$RUN <skill>/scripts/match_voice.py --db <db-path> \
-  --exemplar lee-meta-harness-2026 --exemplar path/to/other.md --name icml
-
-# Rewrite a draft with the latest blueprint (one call per section)
-$RUN <skill>/scripts/match_voice.py <draft.md> --db <db-path> --rewrite
-
-# Extract and rewrite in one run; --mimic also applies idiosyncrasies
-$RUN <skill>/scripts/match_voice.py <draft.md> --exemplar <paper> --rewrite --mimic
+python3 <skill>/scripts/rewrite.py --text <paragraph-file> --anchors anchors.txt \
+  [--model gemma4:12b] [--endpoint http://localhost:11434] [--temperature 0.7] [--timeout 300]
 ```
 
-Exemplars are file paths or citation ids resolved through `references.yaml`.
-After a rewrite the script verifies content preservation (citations,
-numbers, per section) and runs the similarity guard against every source
-paper with the original draft as baseline; flagged passages are listed in
-the JSON summary and a warning is printed. Reports land in
-`<db-dir>/voice-reports/`; usage stats print to stdout.
+**3. Gate — all four checks, fail closed.**
 
-Requires `ANTHROPIC_API_KEY` (or an active `ant auth login` profile) at run
-time; the `anthropic` package itself comes from the pixi environment. Suitable
-for CI, cron, or a mage target.
+```bash
+python3 <skill>/scripts/verify.py --original <paragraph-file> --rewrite <candidate> \
+  --anchors-json anchors.json
+```
 
-## Exemplar sources
+| Check | Who | Fails on |
+|---|---|---|
+| Citations, numbers, terms | `verify.py` | a key or figure lost, altered, or invented |
+| Citation syntax family | `verify.py` | `[@key]` silently rewritten as `\citep{key}` — the key survives but the build breaks |
+| Anchor similarity | `verify.py` (match-structure shingles) | a long verbatim run copied from an exemplar |
+| Meaning entailment | **Claude**, per references/prompts.md | any claim weakened, added, or re-scoped |
+| Register | filter-tells lexical scan on the candidate | banned words — one machine register traded for another |
 
-Two sources of exemplars are accepted:
+`verify.py` exits nonzero on violation so the loop can gate on it directly.
+It is the *mechanical* half only; a clean exit is necessary, not sufficient —
+run the entailment judgment and the filter-tells scan before accepting.
 
-- **`references.yaml` corpus** (default) — the papers fetched by
-  `update-references`, selected with `--db`.
-- **`writing-voice/manifest.yaml`** — a curated exemplar directory carried by
-  the repository (contract: the repository's writing-voice rule; roles
-  `author-voice` / `venue-voice`). Use it when a repository has no fetched
-  corpus, or when the target voice is the author's own prior work rather than
-  a field's literature. Point the profile/compare commands at the exemplar
-  files listed in the manifest (`writing-voice/<file>` per entry, preferring
-  `author-voice`); the metrics and persona extraction are unchanged — only the
-  input set differs.
+**3b. Two-model mode (optional).** Run the same paragraph and anchors through
+both cloud models, gate both candidates, and have the Claude judge pick the
+better rewrite (or keep the original if neither is faithful). The pairing that
+paid off in evaluation is `gemma4:31b-cloud` + `kimi-k2.6:cloud`: when they
+disagree about whether a sentence needs changing at all, the more conservative
+answer is usually right.
 
-de-ai delegates persona extraction from a `writing-voice/` directory here
-rather than reimplementing it; it uses the directory directly only for its
-baseline profile and anchor retrieval.
+**4. Splice or keep.** On a clean gate, accept. Otherwise retry with a
+failure-specific note (`--retry-note`, table in references/prompts.md) up to
+N times (default 2), then **keep the original paragraph and record why**. A
+kept original is a correct outcome; expect a meaningful reject rate from an 8B
+model and do not assume success.
 
-## Consumers
+**5. Report.** A per-paragraph table: accepted / retried / kept-original, with
+gate failures by category. Rewrites are proposed as a diff for review by
+default; applying them directly is opt-in.
 
-The de-ai skill consumes `voice-profile.json` as a detector input: its
-structural scan accepts `--voice-profile=<path>` and reports a `voice_distance`
-block (z-scores against this profile's `metrics`/`metrics_std`), flagging
-drafts that pass de-ai's named checks but sit far from the corpus voice. The
-profile is read as a plain file — no cross-skill import.
+## Configuration
+
+| Setting | Flag | Default |
+|---|---|---|
+| Endpoint | `--endpoint` / `OLLAMA_ENDPOINT` | `http://localhost:11434` |
+| Model | `--model` / `MATCH_VOICE_MODEL` | `gemma4:12b` |
+| Temperature | `--temperature` | 0.7 |
+| Timeout (s) | `--timeout` / `MATCH_VOICE_TIMEOUT` | 300 (cold loads are slow) |
+| Anchors per paragraph | `-k` | 3 |
+| Max copied run (words) | `--max-shared-run` | 8 |
+
+## Did it work? (optional external check)
+
+This skill has had no outcome measure. The gate proves a candidate preserved
+citations, numbers, and meaning; it cannot tell you whether the prose stopped
+reading as machine-written. filter-tells's detectors cannot settle it either — they
+are the denylist the rewrite was steering around, so their silence is close to
+tautological.
+
+An external detector answers it from outside. Scan, rewrite, scan again:
+
+```bash
+python3 <filter-tells>/scripts/pangram_report.py payload --article draft.md
+python3 <filter-tells>/scripts/pangram.py --text draft.payload.txt --json > before.json
+# ... run the rewrite ...
+python3 <filter-tells>/scripts/pangram_report.py payload --article draft.md
+python3 <filter-tells>/scripts/pangram.py --text draft.payload.txt --json > after.json
+python3 <filter-tells>/scripts/pangram_report.py report --response after.json \
+    --spans draft.payload.spans.json --baseline before.json
+```
+
+Two things to know before starting. The baseline must be captured **before**
+the rewrite — there is no reconstructing it afterwards, and discovering that
+later means the comparison is simply unavailable. And a full comparison costs
+two scans against a free tier of four a day.
+
+This uploads the draft to a third party that retains it, which is the opposite
+of the local-first reason this skill exists. It asks per document, every time;
+see the upload rule in the `writing-voice/` directory rule. Without a key, skip
+it — the pipeline is unchanged and still worth running.
+
+The still-flagged paragraph list is the useful output: it is the worklist for
+another pass, pointing at the passages the rewrite did not fix.
+
+## Relationship to the other prose skills
+
+- **filter-tells** detects the tells and, with `writing-voice/`, steers its own
+  rewrites toward the same anchors. Use filter-tells when Claude should do the
+  rewriting; use this skill when you want a different model's prose.
+- **match-structure** owns voice profiling and the similarity guard this skill
+  reuses for the copy check.
+- Run filter-tells over the finished draft afterward regardless — a local model's
+  output is not exempt from the tells.
 
 ## Dependencies
 
-Both scripts run in the pixi environment (see "Running the scripts"), which
-supplies PyYAML and — for `match_voice.py` — the `anthropic` package;
-`style.py` is otherwise pure stdlib. No `pip install` is needed. The corpus
-must have been fetched by `update-references` with markdown conversion
-(issue #37) — plain-text legacy corpora work but lose section detection
-quality.
+The pixi environment (PyYAML) plus a reachable Ollama. Retrieval and the
+similarity guard import their implementations from the sibling filter-tells and
+match-structure skills, which every agent surface carries.

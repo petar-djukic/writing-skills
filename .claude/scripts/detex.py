@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""LaTeX -> prose preprocessing for the prose skills (de-ai, match-voice,
+"""LaTeX -> prose preprocessing for the prose skills (filter-tells, match-structure,
 audit-references).
 
 The prose skills tokenize sentences, count burstiness, grep for banned words,
@@ -17,7 +17,7 @@ Citations are replaced with a stable token so sentence shape survives:
   keep_cites=True:            -> "[CITE:p:a,b]" / "[CITE:t:a]"  (audit-references
                                  parses these back to keys + sentence context)
 
-This module is canonical in de-ai/scripts and copied verbatim into the other
+This module is canonical in filter-tells/scripts and copied verbatim into the other
 skills (skills are mirrored independently, so they cannot share an import).
 Stdlib only.
 """

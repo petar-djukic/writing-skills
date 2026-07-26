@@ -1,4 +1,4 @@
-# voice-rewrite Prompts
+# match-voice Prompts
 
 Two model families, two jobs. **Ollama rewrites; Claude judges.** The rewrite
 prompt below is the one `rewrite.py` sends to the local model. The entailment
@@ -28,7 +28,7 @@ failure. Keep it concrete — a generic "try again" wastes the attempt.
 | technical term dropped | `You dropped the term <TERM>. Keep domain terms and acronyms as written.` |
 | citation syntax changed | `You rewrote [@key] as \\citep{key}. Reproduce citations in the SAME syntax as the source paragraph — do not convert between pandoc and natbib.` |
 | similarity violation | `You reused a long phrase from an anchor. Write the same content in that register using your own wording.` |
-| register still off (de-ai) | `The result still reads as generic AI prose (<flagged terms>). Follow the anchors' plainer rhythm and concrete vocabulary.` |
+| register still off (filter-tells) | `The result still reads as generic AI prose (<flagged terms>). Follow the anchors' plainer rhythm and concrete vocabulary.` |
 
 After the configured number of retries, keep the original paragraph and record
 the failure. A kept original is a correct outcome, not an error — an 8B model
@@ -67,9 +67,9 @@ For DRIFTED, quote the specific span and say which direction failed.
 Do not accept a rewrite that reads better but claims differently — that is the
 failure mode this whole pipeline exists to prevent.
 
-## Register check (de-ai)
+## Register check (filter-tells)
 
-The last gate step runs the de-ai lexical scan on the candidate. A rewrite that
+The last gate step runs the filter-tells lexical scan on the candidate. A rewrite that
 preserves meaning but arrives full of banned words has traded one machine
 register for another. Treat hard flags as a gate failure; treat candidate
 categories (editorializing, reader-directive, meta-narration) as advisory and

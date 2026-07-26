@@ -71,7 +71,7 @@ The rewrite optimizes in one direction: remove AI patterns, omit needless words.
 
 **Fragment-adjacency check.** After rewriting, scan for clipped fragments (under ~5 words). If two of them land in adjacent paragraphs or at consecutive section boundaries ("Five commands, installed once." / "One task, start to finish."), restore breath to one — expand it back into a full sentence. Stacked snaps are their own machine signature.
 
-**Burstiness floor.** Track `sentence_length_std` (the structural script reports it) across passes. If a rewrite pass *lowers* it, treat that as a warning, not progress — you have flattened rhythm toward uniformity, the exact tell the scan flags in the other direction. The metric should hold or rise through de-ai passes; a drop means you compressed texture the author wanted.
+**Burstiness floor.** Track `sentence_length_std` (the structural script reports it) across passes. If a rewrite pass *lowers* it, treat that as a warning, not progress — you have flattened rhythm toward uniformity, the exact tell the scan flags in the other direction. The metric should hold or rise through filter-tells passes; a drop means you compressed texture the author wanted.
 
 ### 4. Specific Fix Strategies
 

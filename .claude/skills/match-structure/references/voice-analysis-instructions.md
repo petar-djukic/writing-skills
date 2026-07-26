@@ -1,8 +1,8 @@
 # Voice analysis instructions
 
-These instructions drive the qualitative half of the match-voice skill. They
+These instructions drive the qualitative half of the match-structure skill. They
 are read by the interactive skill flow (Claude Code) and by the headless
-`match_voice.py` driver — this file is the single source of truth; do not
+`match_structure.py` driver — this file is the single source of truth; do not
 duplicate its content elsewhere.
 
 The task has two products: a corpus voice profile, and a draft comparison

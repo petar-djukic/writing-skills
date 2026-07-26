@@ -366,7 +366,7 @@ def split_paragraphs(text: str) -> list:
     """Split into paragraphs (separated by blank lines).
 
     NOT the canonical extractor. That is md_paragraphs.py in this directory,
-    which classifies every line and reports what it skipped; voice-rewrite's
+    which classifies every line and reports what it skipped; match-voice's
     drive.py imports it. This one stays separate for two reasons (GH-167):
 
     - It runs on already-flattened text, including detexed LaTeX, where the
@@ -904,11 +904,11 @@ def detect_coinage(file_proses: list, min_count: int = 2) -> list:
 
 
 def voice_distance(file_proses: list, profile_path: str) -> dict:
-    """Compare the draft's rhythm metrics against a match-voice corpus profile.
+    """Compare the draft's rhythm metrics against a match-structure corpus profile.
 
     Positive-specification check (GH-121): the denylist detectors catch named
     tells; distance from the target corpus catches unnamed ones. Reads the
-    voice-profile.json that match-voice's `style.py corpus` writes (a plain
+    voice-profile.json that match-structure's `style.py corpus` writes (a plain
     file — no cross-skill import; skills are mirrored independently). Compares
     the three metrics this script can compute in the profile's terms; the full
     comparison (passive/hedges/citations/vocabulary) is `style.py compare`.
@@ -965,7 +965,7 @@ def voice_distance(file_proses: list, profile_path: str) -> dict:
         "corpus_papers": profile.get("papers"),
         "metrics": comparisons,
         "deviating": deviating,
-        "note": "rhythm metrics only; run match-voice style.py compare for the full profile",
+        "note": "rhythm metrics only; run match-structure style.py compare for the full profile",
     }
 
 
@@ -1662,7 +1662,7 @@ def main():
     # --- Undefined coinage candidates (advisory; for the semantic pass) ---
     coinage = detect_coinage(file_proses)
 
-    # --- Voice distance vs a match-voice corpus profile (optional) ---
+    # --- Voice distance vs a match-structure corpus profile (optional) ---
     vdist = voice_distance(file_proses, voice_profile) if voice_profile else None
 
     # --- Abstract/introduction opener duplication (cross-document) ---

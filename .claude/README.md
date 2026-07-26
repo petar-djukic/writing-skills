@@ -17,8 +17,8 @@ This directory contains custom instructions and rules for the Claude Code agent.
 │   └── technical-document-types.md
 ├── skills/                   # Model-invoked skills (not mirrored as commands)
 │   ├── audit-references/
-│   ├── de-ai/
-│   ├── match-voice/
+│   ├── filter-tells/
+│   ├── match-structure/
 │   ├── patent-disclosure/
 │   └── update-references/
 └── commands/                 # Command templates for common workflows
@@ -97,4 +97,4 @@ This setup is mirrored across assistant surfaces:
 
 ## Python environment
 
-The skills' Python dependencies are managed by [pixi](https://pixi.sh/). `pixi.toml` and `pixi.lock` live at the root of each agent directory (canonical in `.claude/`, copied into the mirrors by `sync-mirrors.sh`) so the environment travels when a directory is symlinked into a target repository. `scripts/ensure-env.sh` is a self-locating preflight: on repo open it verifies pixi is installed (installing it if absent, unless `SKILL_ENV_NO_INSTALL` is set), then materializes the locked environment. Run skill scripts through it with `pixi run --manifest-path <agent-dir>/pixi.toml python <script>`. `.pixi/` (the materialized environment) is gitignored. The de-ai detectors are bash and Python stdlib, so they run without provisioning.
+The skills' Python dependencies are managed by [pixi](https://pixi.sh/). `pixi.toml` and `pixi.lock` live at the root of each agent directory (canonical in `.claude/`, copied into the mirrors by `sync-mirrors.sh`) so the environment travels when a directory is symlinked into a target repository. `scripts/ensure-env.sh` is a self-locating preflight: on repo open it verifies pixi is installed (installing it if absent, unless `SKILL_ENV_NO_INSTALL` is set), then materializes the locked environment. Run skill scripts through it with `pixi run --manifest-path <agent-dir>/pixi.toml python <script>`. `.pixi/` (the materialized environment) is gitignored. The filter-tells detectors are bash and Python stdlib, so they run without provisioning.

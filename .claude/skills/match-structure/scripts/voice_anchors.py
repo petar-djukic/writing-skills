@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""writing-voice/ support for de-ai: baseline profile and anchor retrieval.
+"""writing-voice/ support for filter-tells: baseline profile and anchor retrieval.
 
 The `writing-voice/` contract is documented in the repository rule of the same
 name. This script implements the two mechanical halves:
@@ -15,7 +15,7 @@ Retrieval is tf-idf cosine over paragraph-level passages — stdlib only, no
 embeddings dependency. author-voice exemplars are preferred; venue-voice fills
 in when the author has no near passage.
 
-Profile computation reuses match-voice's style.py (imported from the sibling
+Profile computation reuses match-structure's style.py (imported from the sibling
 skill directory, which is present in every mirrored surface) rather than
 duplicating the metric definitions.
 
@@ -104,7 +104,7 @@ def _style_module(script_dir: str):
         import style  # noqa: F401
         return style
     except ImportError as e:
-        sys.exit(f"could not import match-voice style.py from {sibling}: {e}")
+        sys.exit(f"could not import match-structure style.py from {sibling}: {e}")
 
 
 def _fingerprint(paths):
@@ -245,7 +245,7 @@ def cmd_anchors(args):
 
 
 def main():
-    p = argparse.ArgumentParser(description="writing-voice support for de-ai")
+    p = argparse.ArgumentParser(description="writing-voice support for filter-tells")
     sub = p.add_subparsers(dest="cmd", required=True)
 
     d = sub.add_parser("discover", help="find writing-voice/ from a file")

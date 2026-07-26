@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Headless voice driver for the match-voice skill.
+"""Headless voice driver for the match-structure skill.
 
 Three modes, composable:
 
@@ -20,10 +20,10 @@ references/ files — the same files the interactive skill uses — so there is
 exactly one source of truth.
 
 Usage:
-    match_voice.py DRAFT.md                          # compare
-    match_voice.py --exemplar P1 --exemplar P2       # extract blueprint
-    match_voice.py DRAFT.md --rewrite                # rewrite w/ latest blueprint
-    match_voice.py DRAFT.md --exemplar P1 --rewrite  # extract + rewrite
+    match_structure.py DRAFT.md                          # compare
+    match_structure.py --exemplar P1 --exemplar P2       # extract blueprint
+    match_structure.py DRAFT.md --rewrite                # rewrite w/ latest blueprint
+    match_structure.py DRAFT.md --exemplar P1 --rewrite  # extract + rewrite
 
 Requires: ANTHROPIC_API_KEY (or an active `ant auth login` profile),
 the `anthropic` package, and PyYAML.
@@ -146,7 +146,7 @@ def extract_blueprint(client, exemplars, db_dir, name=None):
     for ex_id, path in exemplars:
         text = read(path)
         system = (
-            "You are the exemplar-extraction stage of the match-voice skill. "
+            "You are the exemplar-extraction stage of the match-structure skill. "
             "Follow Part 3 Stage 1 of the instructions below: produce a "
             "mini-blueprint for the single paper provided, quoting evidence "
             "for every claim. Do not summarize the content; analyze how it "
@@ -174,7 +174,7 @@ def extract_blueprint(client, exemplars, db_dir, name=None):
         joined = "\n\n---\n\n".join(
             f"# Mini-blueprint: {ex_id}\n\n{mini}" for ex_id, mini in minis)
         system = (
-            "You are the synthesis stage of the match-voice skill. Follow "
+            "You are the synthesis stage of the match-structure skill. Follow "
             "Part 3 Stage 2 of the instructions below: merge the "
             "mini-blueprints into one consensus blueprint with explicit "
             "Consensus and Idiosyncrasy sections (idiosyncrasies flagged "
@@ -355,7 +355,7 @@ def run_compare(client, args, db_dir):
     print(f"Corpus: {n_papers} papers; comparing {args.draft}", file=sys.stderr)
 
     system = (
-        "You are the qualitative analysis layer of the match-voice skill. "
+        "You are the qualitative analysis layer of the match-structure skill. "
         "Follow the instructions and report template below exactly. "
         "Produce ONLY the comparison report markdown (Part 2), using the "
         "corpus papers to ground every claim with quotes.\n\n"

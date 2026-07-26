@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Quantitative style analyzer for the match-voice skill.
+"""Quantitative style analyzer for the match-structure skill.
 
 Computes measurable style metrics over markdown papers: sentence and
 paragraph distributions, passive voice, hedging, frequency tables of words
@@ -120,7 +120,7 @@ def split_sentences(text):
 def split_paragraphs(text):
     """Paragraph chunks for style measurement and anchor retrieval.
 
-    Deliberately not de-ai's md_paragraphs.py, the canonical extractor for
+    Deliberately not filter-tells's md_paragraphs.py, the canonical extractor for
     "which lines of this document are prose" (GH-167). The jobs differ: that
     one maps paragraphs back to source line ranges so a rewrite can be spliced
     in, while this one whitespace-flattens exemplar text into comparable
@@ -253,6 +253,12 @@ def read_prose(path):
     with open(path) as f:
         text = f.read()
     if path.endswith(".tex"):
+        # One detex, at the shared scripts root (GH-196). This skill carried a
+        # third byte-identical copy until the rename pass found it.
+        _shared = os.path.normpath(os.path.join(
+            os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", "scripts"))
+        if _shared not in sys.path:
+            sys.path.insert(0, _shared)
         import detex
         text = detex.detex(text)[0]
     return text
@@ -316,7 +322,7 @@ def mean_of(dicts, key):
 
 
 def std_of(dicts, key):
-    """Population std across papers, so consumers (de-ai voice-distance)
+    """Population std across papers, so consumers (filter-tells voice-distance)
     can compute z-scores instead of unscaled deltas."""
     vals = [d[key] for d in dicts if d and key in d]
     if len(vals) < 2:

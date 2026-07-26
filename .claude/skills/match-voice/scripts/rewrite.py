@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Ollama client for voice-rewrite: rewrite paragraphs against voice anchors.
+"""Ollama client for match-voice: rewrite paragraphs against voice anchors.
 
 The rewriting model is deliberately NOT Claude. Claude judges (verify.py plus
 the entailment check in the skill loop); a second model family produces the
@@ -38,8 +38,8 @@ DEFAULT_ENDPOINT = os.environ.get("OLLAMA_ENDPOINT", "http://localhost:11434")
 # kimi-k2.6:cloud a complementary second opinion (it edits least).
 # llama3.1:8b ranked last — it destroyed a term of art and weakened a claim
 # while passing the mechanical gate — and is no longer a default.
-DEFAULT_MODEL = os.environ.get("VOICE_REWRITE_MODEL", "gemma4:12b")
-DEFAULT_TIMEOUT = int(os.environ.get("VOICE_REWRITE_TIMEOUT", "300"))
+DEFAULT_MODEL = os.environ.get("MATCH_VOICE_MODEL", "gemma4:12b")
+DEFAULT_TIMEOUT = int(os.environ.get("MATCH_VOICE_TIMEOUT", "300"))
 
 PROMPT = """You are rewriting one paragraph so it sounds like the author of the anchor passages below. The anchors are the author's own published prose.
 
@@ -66,7 +66,7 @@ def check_server(endpoint, model):
     except urllib.error.URLError as e:
         return False, (f"Ollama unreachable at {endpoint} ({e.reason}). "
                        "Start it with `ollama serve`, or set --endpoint / "
-                       "OLLAMA_ENDPOINT. voice-rewrite does not fall back to "
+                       "OLLAMA_ENDPOINT. match-voice does not fall back to "
                        "Claude: that would defeat its purpose.")
     except Exception as e:  # noqa: BLE001
         return False, f"Ollama check failed at {endpoint}: {e}"
@@ -97,16 +97,16 @@ def rewrite(paragraph, anchors, endpoint=DEFAULT_ENDPOINT, model=DEFAULT_MODEL,
     except socket.timeout:
         sys.exit(f"Ollama timed out after {timeout}s on model '{model}'. A cold "
                  "model load can take minutes (gemma4:12b measured ~210s cold, "
-                 "~96s warm for a 35b). Raise --timeout / VOICE_REWRITE_TIMEOUT, "
+                 "~96s warm for a 35b). Raise --timeout / MATCH_VOICE_TIMEOUT, "
                  "or warm the model first with `ollama run "
-                 f"{model} ''`. voice-rewrite stops here (no Claude fallback).")
+                 f"{model} ''`. match-voice stops here (no Claude fallback).")
     except urllib.error.URLError as e:
         # a socket timeout can also surface wrapped in URLError
         if isinstance(getattr(e, "reason", None), socket.timeout):
             sys.exit(f"Ollama timed out after {timeout}s on model '{model}'. "
-                     "Raise --timeout / VOICE_REWRITE_TIMEOUT, or warm the model "
+                     "Raise --timeout / MATCH_VOICE_TIMEOUT, or warm the model "
                      f"first with `ollama run {model} ''`.")
-        sys.exit(f"Ollama request failed: {e.reason}. voice-rewrite stops here "
+        sys.exit(f"Ollama request failed: {e.reason}. match-voice stops here "
                  "(no Claude fallback by design).")
     out = (data.get("response") or "").strip()
     # models sometimes wrap the answer in quotes or a lead-in line
@@ -124,7 +124,7 @@ def main():
     p.add_argument("--temperature", type=float, default=0.7)
     p.add_argument("--timeout", type=int, default=DEFAULT_TIMEOUT,
                    help="seconds to wait for the model (cold loads are slow; "
-                        "env VOICE_REWRITE_TIMEOUT)")
+                        "env MATCH_VOICE_TIMEOUT)")
     p.add_argument("--retry-note", default="",
                    help="guidance added on a retry after a failed gate")
     p.add_argument("--check", action="store_true", help="probe server/model and exit")

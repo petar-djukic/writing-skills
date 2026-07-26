@@ -176,5 +176,5 @@ counted them as fired detectors, which is where the residual length ramp lived
 and "orthogonal" is an ai-cliche pattern that is also the core vocabulary of
 OFDM papers). run_eval now reports issue-driving detectors and candidate
 signals in separate tables; HUMAN_FIRE_GATE governs the former. The lists
-themselves are unchanged — on AI-era drafts, which is what de-ai actually
+themselves are unchanged — on AI-era drafts, which is what filter-tells actually
 reviews, they remain the cheapest first pass.

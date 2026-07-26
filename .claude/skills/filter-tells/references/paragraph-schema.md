@@ -52,5 +52,5 @@ Topic-sentence-first is the dominant convention in scientific prose, not a
 law — essays and narrative sections legitimately delay the topic. The
 mechanical proxies (topic_overlap, cohesion, subject_churn,
 anaphoric-opener) are advisory; the schema prompt adjudicates. When a
-match-voice corpus profile exists for the venue, use its per-section
+match-structure corpus profile exists for the venue, use its per-section
 topic-sentence rate as the threshold instead of the defaults.

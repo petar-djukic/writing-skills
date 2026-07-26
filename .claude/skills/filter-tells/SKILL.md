@@ -1,12 +1,22 @@
 ---
-name: de-ai
-description: 'Detect and fix AI writing patterns recursively. Use when: reviewing text for AI tells, cleaning AI-generated drafts, checking for CoT leakage, measuring text perplexity and burstiness, making text sound human, fixing opening diversity. Triggers: de-ai, ai detection, ai writing, perplexity, burstiness, CoT leakage, humanize text, opening diversity, sentence starts.'
+name: filter-tells
+description: 'Detect and fix AI writing patterns recursively. Use when: reviewing text for AI tells, cleaning AI-generated drafts, checking for CoT leakage, measuring text perplexity and burstiness, making text sound human, fixing opening diversity. Triggers: filter-tells, ai detection, ai writing, perplexity, burstiness, CoT leakage, humanize text, opening diversity, sentence starts.'
 argument-hint: 'Path to markdown file to analyze and fix'
 ---
 
-# De-AI: Recursive AI Writing Detection and Correction
+# filter-tells: AI Writing Detection and Correction
 
-Detects AI writing patterns at three layers (lexical, structural, semantic) and recursively rewrites flagged passages until they pass all checks.
+Detects mechanically, removes editorially, and hands voice restoration to
+`match-voice`. Three detection layers — lexical, structural, semantic — flag
+passages; Claude then rewrites them under the convergence rules below, and
+re-scans. There is no deterministic strip: a banned word is a one-word swap,
+but a cadence tell needs the sentence rewritten, and that is judgment.
+
+Filtering leaves prose that is *neutral* — no tells, but no voice either. When
+the passage has to sound like the author, that is `match-voice`'s job.
+
+*Renamed from `de-ai` (2026-07). The old name implied the skill only removed;
+it detects, and the removal is editorial.*
 
 ## Standing Warning: Scripts Are Blind to Rhetorical Patterns
 
@@ -22,7 +32,7 @@ Partial exception: `detect-structural.py` now has a `detect_antithesis` check th
 
 A `clean` or `minor-issues` verdict from the structural script means the surface checks passed. It does **not** mean the prose is in voice. Step 3 (semantic analysis by Opus) is the only layer that catches the rhetorical AI tells the scripts still miss. Skipping Step 3 produces false-negative reports.
 
-The blindness runs in **both directions**. The scripts flag the bland AI direction (low burstiness, repetitive openings). Text iteratively rewritten against these very detectors overshoots into the opposite register — uniformly maximal polish, epigram-closing paragraphs, coined formulae, word salads — and passes every surface check while reading as obviously machine-made ("the LinkedIn voice"). The structural script now emits overshoot metrics (`plain_sentence_rate`, `punch_clustering`, `salad_rate`, repeated formulae, `suspicious-overshoot` verdict), but the judgment lives in Prompt 0 (cold read) and Prompt 7 (overshoot assessment). A `minor-issues` verdict on a document with prior de-ai history deserves MORE suspicion, not less.
+The blindness runs in **both directions**. The scripts flag the bland AI direction (low burstiness, repetitive openings). Text iteratively rewritten against these very detectors overshoots into the opposite register — uniformly maximal polish, epigram-closing paragraphs, coined formulae, word salads — and passes every surface check while reading as obviously machine-made ("the LinkedIn voice"). The structural script now emits overshoot metrics (`plain_sentence_rate`, `punch_clustering`, `salad_rate`, repeated formulae, `suspicious-overshoot` verdict), but the judgment lives in Prompt 0 (cold read) and Prompt 7 (overshoot assessment). A `minor-issues` verdict on a document with prior filter-tells history deserves MORE suspicion, not less.
 
 **Do not infer voice quality from the structural script's verdict label.** Voice is a judgment, not a statistic.
 
@@ -51,7 +61,7 @@ Run Prompt 0 from [perplexity-prompts.md](./references/perplexity-prompts.md) on
 Run the lexical detection script to find banned words, AI clichés, false emphasis, narrative-pivot frames, and mechanical transitions:
 
 ```bash
-bash .claude/skills/de-ai/scripts/detect-lexical.sh <file-or-dir> [file-or-dir ...]
+bash .claude/skills/filter-tells/scripts/detect-lexical.sh <file-or-dir> [file-or-dir ...]
 ```
 
 Accepts a single file, multiple files, or directories (scans `*.md` recursively).
@@ -75,7 +85,7 @@ Candidates do not fail the scan. Instead, carry them forward to Step 3 (semantic
 Run the structural detection script to measure burstiness, parallelism, paragraph uniformity, and density metrics:
 
 ```bash
-python3 .claude/skills/de-ai/scripts/detect-structural.py <file-or-dir> [file-or-dir ...]
+python3 .claude/skills/filter-tells/scripts/detect-structural.py <file-or-dir> [file-or-dir ...]
 ```
 
 Accepts a single file, multiple files, or directories (scans `*.md` recursively).
@@ -96,8 +106,8 @@ Review the metrics output. Key signals:
 **Voice distance (positive check — catches unnamed tells).** When a voice corpus exists — a `references.yaml` with summarized papers at or above the working directory, or one the user names — build/refresh the profile and pass it to the scan:
 
 ```bash
-python3 .claude/skills/match-voice/scripts/style.py --db <db> corpus   # writes voice-profile.json
-python3 .claude/skills/de-ai/scripts/detect-structural.py <files> --voice-profile=<db-dir>/voice-profile.json
+python3 .claude/skills/match-structure/scripts/style.py --db <db> corpus   # writes voice-profile.json
+python3 .claude/skills/filter-tells/scripts/detect-structural.py <files> --voice-profile=<db-dir>/voice-profile.json
 ```
 
 The named detectors are a denylist — a tell must be known to be caught. Distance from the target corpus is the complement: a new wrinkle is a deviation from human-corpus statistics whether or not anyone has named it yet. The `voice_distance` block reports z-scores for the rhythm metrics; for the full comparison (passive/hedges/citations/vocabulary), run `style.py --db <db> compare <draft>`. **Verdict rule: a document that passes every named check but sits far from the corpus profile (any |z| ≥ 2) is NOT clean** — report "passes named checks; voice-distance high" and route to Step 3 with the deviating metrics (and their direction) as seeds. No corpus available → skip this check with a one-line note; everything else behaves as before.
@@ -116,7 +126,7 @@ Load the prompts from [perplexity-prompts.md](./references/perplexity-prompts.md
 2. **Burstiness Assessment** (Prompt 2) — Confirm structural findings with semantic judgment
 3. **Cross-Sentence Surprise** (Prompt 3) — Detect absence of genuine thought progression
 4. **CoT Leakage Detection** (Prompt 4) — Find reasoning scaffolding that regex missed, including bridge sentences at paragraph boundaries. For each candidate, Prompt 4 applies the removal test: delete the sentence, check whether the paragraph loses information. True leaks are flagged for deletion; CoT-style wording on real content is flagged for rewording.
-5. **Overshoot Assessment** (Prompt 7) — mandatory when the document has prior de-ai history, when Prompt 0 flags register, or when the structural verdict is `suspicious-overshoot`. Seeded with the script's performance/punch/salad/formulae outputs; applies the removal test to punch candidates and the second-read test to salad candidates.
+5. **Overshoot Assessment** (Prompt 7) — mandatory when the document has prior filter-tells history, when Prompt 0 flags register, or when the structural verdict is `suspicious-overshoot`. Seeded with the script's performance/punch/salad/formulae outputs; applies the removal test to punch candidates and the second-read test to salad candidates.
 6. **Antithesis / Negation-Flip Enumeration** (Prompt 6) — run with **Prompt 6b** (rhetorical set pieces).
 7. **Definedness and Circularity** (Prompt 8) — mandatory for publication verdicts. Enumerates undefined substantive terms (marketing jargon like "frontier models" is human register — the cadence detectors cannot see it), circular opening claims (predicate restating premise), and quantity mismatches ("the costs compound" supported only by error-rate data). Runs on the abstract and section openers — but widens to the whole document and becomes mandatory for a working or specification document another session will execute.
 7b. **Empty-Phrase Enumeration** (Prompt 8b) — the compressed-conversation class: coined bigrams used as if defined, metaphors substituting for a mechanism, editorializing adjectives, slogans standing in for claims. Seed with the structural script's `coinage_candidates` and the lexical `editorializing`, `reader-directive` (invented discourse / reader-mind narration), and `meta-narration` (self-referential layout clauses) hits, then apply the cold-reader test. Documented in banned-patterns.md. Note: these classes live in short units (leads, goal statements, captions) that fall under detect-structural.py's too-short floor, so lexical owns them — a `too-short` structural verdict is not a clean bill.
@@ -179,28 +189,28 @@ Anything the independent evaluator flags goes back through Step 4. A rewrite is 
 A writing repository may carry a `writing-voice/` directory of exemplar
 samples — the contract is in the repository's writing-voice rule (manifest
 schema, `author-voice`/`venue-voice` roles, discovery). When one is
-discoverable from the file under review, de-ai measures against it and steers
+discoverable from the file under review, filter-tells measures against it and steers
 rewrites toward it. **Absent, everything below is skipped and behavior is
 exactly as before** — voice features are additive.
 
 **1. Discover.**
 
 ```bash
-python3 .claude/skills/de-ai/scripts/voice_anchors.py discover <file>
+python3 .claude/skills/filter-tells/scripts/voice_anchors.py discover <file>
 ```
 
 **2. Baseline profile.** Build (or refresh) a style profile over the
 exemplars, then feed it to the structural scan as the baseline:
 
 ```bash
-python3 .claude/skills/de-ai/scripts/voice_anchors.py profile --for <file>
-python3 .claude/skills/de-ai/scripts/detect-structural.py <file> \
+python3 .claude/skills/filter-tells/scripts/voice_anchors.py profile --for <file>
+python3 .claude/skills/filter-tells/scripts/detect-structural.py <file> \
   --voice-profile=<repo>/writing-voice/.voice-profile.json
 ```
 
 The `voice_distance` block then reports each metric as a distance from the
 author's own register rather than only against fixed thresholds. (This is the
-same mechanism GH-121 added for a match-voice corpus profile — one baseline
+same mechanism GH-121 added for a match-structure corpus profile — one baseline
 flag, two sources, no second overlapping option.) The profile is cached in
 `writing-voice/.voice-profile.json` and rebuilt only when a sample's mtime
 changes; `--force` overrides.
@@ -210,7 +220,7 @@ topically nearest exemplar passages and inject them into the rewrite prompt's
 `{voice_anchors}` slot (see rewrite-instructions.md):
 
 ```bash
-python3 .claude/skills/de-ai/scripts/voice_anchors.py anchors --text <passage-file>|- --for <file> -k 3
+python3 .claude/skills/filter-tells/scripts/voice_anchors.py anchors --text <passage-file>|- --for <file> -k 3
 ```
 
 Retrieval is tf-idf over paragraph-level passages (stdlib, no embeddings),
@@ -229,30 +239,30 @@ Claude flags the passage and Claude rewrites it, with the anchors as its
 target. That is one model grading and fixing its own prose — cheap and usually
 fine, but its output still carries this model's lexical habits, which is
 exactly what a reader detects. When that matters, hand the rewrite to the
-`voice-rewrite` skill instead: it sends the paragraph and the same anchors to
+`match-voice` skill instead: it sends the paragraph and the same anchors to
 a different model family (Ollama; local `gemma4:12b` by default) and Claude
 switches roles from author to judge, gating every candidate on citation and
 number preservation, meaning entailment, anchor-copy similarity, and register.
 Use this skill's rewrite for speed and for passages where the tell is
-structural; use `voice-rewrite` when the prose itself must stop sounding like
+structural; use `match-voice` when the prose itself must stop sounding like
 Claude wrote it.
 
-Persona extraction from these exemplars belongs to `match-voice`, which
-accepts the manifest as a curated source; de-ai does not reimplement it.
+Persona extraction from these exemplars belongs to `match-structure`, which
+accepts the manifest as a curated source; filter-tells does not reimplement it.
 
 ## Paragraph extraction (shared)
 
 `scripts/md_paragraphs.py` is the canonical markdown paragraph extractor for
-the prose skills, and lives here because de-ai is what the others already
+the prose skills, and lives here because filter-tells is what the others already
 import from. It classifies every body line — prose, heading, figure,
 figure-caption, table, code, reference, blockquote, list, rule, blank — and
 returns prose blocks with the source line ranges a rewrite can be spliced back
-into. `voice-rewrite/scripts/drive.py` imports it rather than carrying its own
+into. `match-voice/scripts/drive.py` imports it rather than carrying its own
 parser (GH-167); a sibling import works because every agent surface carries
 the full skill set.
 
 ```bash
-python3 .claude/skills/de-ai/scripts/md_paragraphs.py <file.md> [--json] [--coverage-only]
+python3 .claude/skills/filter-tells/scripts/md_paragraphs.py <file.md> [--json] [--coverage-only]
 ```
 
 `--coverage-only` prints the classification tally, which is the answer to "did
@@ -261,7 +271,7 @@ the driver skip paragraphs, or does the document just not have any there?"
 Two splitters stay separate on purpose, each with the reason recorded at its
 definition: `detect-structural.py` runs on flattened text including detexed
 LaTeX and its boundaries are baked into the eval baseline, and
-`match-voice/scripts/style.py` chunks exemplars for comparison and never needs
+`match-structure/scripts/style.py` chunks exemplars for comparison and never needs
 line fidelity.
 
 ## External check (Pangram — optional, uploads the document)
@@ -278,10 +288,10 @@ directory rule. A key in the environment is not consent. No key, or a declined
 prompt, means skip and say so — never substitute a local result for it.
 
 ```bash
-python3 <de-ai>/scripts/pangram.py --check                      # key + reachability, spends nothing
-python3 <de-ai>/scripts/pangram_report.py payload --article <file.md>   # prose-only payload + span map
-python3 <de-ai>/scripts/pangram.py --text <file>.payload.txt --json > before.json
-python3 <de-ai>/scripts/pangram_report.py report --response before.json --spans <file>.payload.spans.json
+python3 <filter-tells>/scripts/pangram.py --check                      # key + reachability, spends nothing
+python3 <filter-tells>/scripts/pangram_report.py payload --article <file.md>   # prose-only payload + span map
+python3 <filter-tells>/scripts/pangram.py --text <file>.payload.txt --json > before.json
+python3 <filter-tells>/scripts/pangram_report.py report --response before.json --spans <file>.payload.spans.json
 ```
 
 Add `--baseline before.json` after a rewrite to report what moved. The baseline
@@ -338,7 +348,7 @@ run encounters one. Standards: `references/abstract-standards.md`.
 
 1. Mechanical checks:
    ```bash
-   python3 .claude/skills/de-ai/scripts/abstract-check.py <paper.md> \
+   python3 .claude/skills/filter-tells/scripts/abstract-check.py <paper.md> \
      --body <results.md> <other-chapters.md...> --limit 200
    ```
    Locates the abstract (LaTeX environment, front matter, heading, or
@@ -395,8 +405,8 @@ failed phrasing). Then verify: abstract-check.py traceability must pass
 For in-progress drafts where you want a fast surface-pass without burning model calls:
 
 ```bash
-bash .claude/skills/de-ai/scripts/detect-lexical.sh <file-or-dir>
-python3 .claude/skills/de-ai/scripts/detect-structural.py <file-or-dir> --json
+bash .claude/skills/filter-tells/scripts/detect-lexical.sh <file-or-dir>
+python3 .claude/skills/filter-tells/scripts/detect-structural.py <file-or-dir> --json
 ```
 
 Quick Mode is for working drafts. It is **not** valid for a publication verdict. Quick Mode catches the surface-detectable patterns. The rhetorical patterns that account for most of the AI signal are invisible to the scripts and require Step 3. Do not report a verdict based on Quick Mode output alone.

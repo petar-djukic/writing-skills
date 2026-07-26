@@ -1,4 +1,4 @@
-# de-ai Eval Corpus and Calibration Harness
+# filter-tells Eval Corpus and Calibration Harness
 
 Ground truth for the two detection scripts. Without labels, the suite is
 unfalsifiable: we cannot measure false-positive rates on human writing or tell
@@ -15,7 +15,7 @@ detector changes measurable.
 
   ```bash
   cd ~/GITHUB/<a-writing-repo>
-  python3 <de-ai>/eval/run_eval.py
+  python3 <filter-tells>/eval/run_eval.py
   ```
 
   This matters because `.claude/` is a symlink into the shared skills repo. A

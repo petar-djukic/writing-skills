@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""abstract-check.py — mechanical checks for de-ai's abstract mode.
+"""abstract-check.py — mechanical checks for filter-tells's abstract mode.
 
 Locates the abstract, counts words against the venue limit, and runs the
 content-traceability check: every number in the abstract must appear in the

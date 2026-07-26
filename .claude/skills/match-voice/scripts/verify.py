@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Verification gate for voice-rewrite. Fails closed.
+"""Verification gate for match-voice. Fails closed.
 
 An 8B model rewriting prose WILL sometimes drop a citation, round a number, or
 paraphrase a term of art. This script is the mechanical half of the gate; the
@@ -13,7 +13,7 @@ Checks:
   numbers    every number (with its unit when attached) must survive
   terms      acronyms and technical tokens from the original must survive
   similarity n-gram overlap against the anchor passages, so the model does not
-             simply copy the exemplars (reuses match-voice's shingle guard)
+             simply copy the exemplars (reuses match-structure's shingle guard)
 
 Exit: 0 clean, 1 violations (the loop retries or keeps the original), 2 usage.
 
@@ -87,7 +87,7 @@ def _acronyms(text):
 
 
 def _similarity(rewrite_text, anchors_json, max_shared_run):
-    """Longest verbatim run shared with any anchor (reuses match-voice)."""
+    """Longest verbatim run shared with any anchor (reuses match-structure)."""
     if not anchors_json or not os.path.exists(anchors_json):
         return None
     data = json.load(open(anchors_json))
@@ -96,7 +96,7 @@ def _similarity(rewrite_text, anchors_json, max_shared_run):
         return None
     sibling = os.path.normpath(
         os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                     "..", "..", "match-voice", "scripts"))
+                     "..", "..", "match-structure", "scripts"))
     if sibling not in sys.path:
         sys.path.insert(0, sibling)
     try:
@@ -168,12 +168,12 @@ def verify(original, rewritten, anchors_json=None, max_shared_run=8):
         "findings": findings,
         "similarity": sim,
         "note": "mechanical gate only — Claude must still judge bidirectional "
-                "entailment and run the de-ai lexical scan before splicing",
+                "entailment and run the filter-tells lexical scan before splicing",
     }
 
 
 def main():
-    p = argparse.ArgumentParser(description="voice-rewrite verification gate")
+    p = argparse.ArgumentParser(description="match-voice verification gate")
     p.add_argument("--original", required=True)
     p.add_argument("--rewrite", required=True)
     p.add_argument("--anchors-json", help="retrieve.py --json output, for the copy guard")

@@ -98,11 +98,11 @@ specific revision required, and iterate.
 
 ### 5. Prose pass
 
-Run the `de-ai` skill on the finished disclosure. The overlap is real:
-marketing vocabulary ("revolutionary", "cutting-edge") fails both de-ai's
+Run the `filter-tells` skill on the finished disclosure. The overlap is real:
+marketing vocabulary ("revolutionary", "cutting-edge") fails both filter-tells's
 venue-jargon check and this skill's own style rules; undefined coinages
 fail both Prompt 8 and the claim-support check. Fix what both flag once.
-The register sweep (step 3b) is complementary, not redundant: de-ai does
+The register sweep (step 3b) is complementary, not redundant: filter-tells does
 not flag "asks", "hands to", or "lets" — those are unremarkable in
 articles and only wrong in the patent register.
 
@@ -116,4 +116,4 @@ element with thin support, detectability concerns).
 
 None beyond the repo's standard tooling. Prior-art literature search uses
 `update-references` (PyYAML; arXiv needs no key, Scholar needs the
-SerpAPI key). The prose pass uses `de-ai`.
+SerpAPI key). The prose pass uses `filter-tells`.

@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Pangram AI-detection client — the one measurement from outside our denylist.
 
-Every other de-ai detector was written by reading model output and writing down
+Every other filter-tells detector was written by reading model output and writing down
 what it does. That makes "the detectors stopped firing" a circular answer to
-"did the rewrite work?" — de-ai grading its own homework. Pangram has never seen
+"did the rewrite work?" — filter-tells grading its own homework. Pangram has never seen
 our rules, so its verdict is evidence rather than an echo.
 
 A Pangram result is an input to judgment, never a verdict. See the Verdict
@@ -98,7 +98,7 @@ def resolve_key(explicit=None, start_path=None):
     except s.SecretsError as e:
         raise PangramError(
             f"{e}\nWithout a key, skip the external check — do not substitute "
-            f"a de-ai result for it.")
+            f"a filter-tells result for it.")
 
 
 def _request(path, key, payload=None, timeout=30):

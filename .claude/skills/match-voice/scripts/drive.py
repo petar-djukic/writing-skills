@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
-"""drive.py — orchestrate the voice-rewrite pipeline over a whole article.
+"""drive.py — orchestrate the match-voice pipeline over a whole article.
 
 Stages per prose paragraph: retrieve anchors -> rewrite (Ollama) -> gate
-(verify.py mechanical checks + de-ai lexical scan), with failure-classified
+(verify.py mechanical checks + filter-tells lexical scan), with failure-classified
 retries. Assembles gate-passing rewrites into a sibling draft file.
 
 The driver applies the MECHANICAL gate only. Meaning entailment is a judgment
 call and stays with the reviewing model (references/prompts.md); the emitted
 draft is a set of candidates, not an accepted result.
 
-Paragraph extraction and the coverage audit come from de-ai's
+Paragraph extraction and the coverage audit come from filter-tells's
 md_paragraphs.py, the canonical extractor shared by the prose skills: every
 body line is classified (prose / heading / figure / table / code / reference /
 blockquote / list / rule / blank), and a nonempty unaccounted list means the
@@ -23,7 +23,7 @@ Usage:
 import argparse, json, os, re, subprocess, sys, tempfile
 
 SK = os.path.dirname(os.path.abspath(__file__))
-DEAI = os.path.normpath(os.path.join(SK, "..", "..", "de-ai", "scripts", "detect-lexical.sh"))
+DEAI = os.path.normpath(os.path.join(SK, "..", "..", "filter-tells", "scripts", "detect-lexical.sh"))
 
 COPY_NOTE = ("Write the paragraph entirely in your own words. The example passages are a "
              "STYLE guide only — do NOT reuse any run of more than a few words from them. "
@@ -66,7 +66,7 @@ def parse_paragraphs(path, min_words):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--article", required=True)
-    ap.add_argument("--model", default=os.environ.get("VOICE_REWRITE_MODEL", "gemma4:12b"))
+    ap.add_argument("--model", default=os.environ.get("MATCH_VOICE_MODEL", "gemma4:12b"))
     ap.add_argument("--endpoint", default=os.environ.get("OLLAMA_ENDPOINT", "http://localhost:11434"))
     ap.add_argument("--out", help="draft path (default: <article>.vr-draft.md)")
     ap.add_argument("--retries", type=int, default=2)
@@ -94,7 +94,7 @@ def main():
             print(f"  p{n:02d} L{s:>4} {w:>4}w {tag:10} | {txt[:60]}")
         sys.exit(1 if unaccounted else 0)
 
-    work = tempfile.mkdtemp(prefix="voice-rewrite-")
+    work = tempfile.mkdtemp(prefix="match-voice-")
     results = []
     for n, (s, e, txt) in enumerate(paras, 1):
         rec = {"n": n, "lines": [s, e], "words": len(txt.split()), "orig": txt}
@@ -170,7 +170,7 @@ def main():
             print(f"  kept p{r['n']:02d} (L{r['lines'][0]}): {why}")
     print("\nMechanical gate only. Before accepting the draft: run the meaning-"
           "entailment review (references/prompts.md) on each accepted paragraph, "
-          "and de-ai over the assembled file.")
+          "and filter-tells over the assembled file.")
 
 
 if __name__ == "__main__":

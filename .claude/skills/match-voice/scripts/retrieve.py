@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Anchor-passage retrieval for voice-rewrite.
+"""Anchor-passage retrieval for match-voice.
 
 Built once, imported twice: the retrieval implementation lives in the stylometry
 skill's voice_anchors.py (GH-156) and this is a thin wrapper that adds the
@@ -24,7 +24,7 @@ import sys
 def _voice_anchors():
     sibling = os.path.normpath(
         os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                     "..", "..", "match-voice", "scripts"))
+                     "..", "..", "match-structure", "scripts"))
     if sibling not in sys.path:
         sys.path.insert(0, sibling)
     try:
@@ -59,7 +59,7 @@ def main():
         ref = args.for_file or (args.text if args.text != "-" else os.getcwd())
         voice_dir = va.discover(ref)
         if not voice_dir:
-            sys.exit(f"no writing-voice/ found from {ref}; voice-rewrite requires "
+            sys.exit(f"no writing-voice/ found from {ref}; match-voice requires "
                      "exemplars (see the writing-voice contract)")
 
     passage = sys.stdin.read() if args.text == "-" else open(args.text).read()

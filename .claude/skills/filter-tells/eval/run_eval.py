@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Calibration harness for de-ai's two scripts against the labeled eval corpus.
+"""Calibration harness for filter-tells's two scripts against the labeled eval corpus.
 
 Runs detect-lexical.sh and detect-structural.py over eval/human/ and eval/ai/,
 aggregates per-detector hit rates on each class, and reports suite-level
@@ -69,7 +69,7 @@ def human_from_writing_voice(start=None, role="author-voice"):
     instead of the text.
     """
     stylo = os.path.normpath(os.path.join(os.path.dirname(HERE), "..",
-                                          "match-voice", "scripts"))
+                                          "match-structure", "scripts"))
     if stylo not in sys.path:
         sys.path.insert(0, stylo)
     try:
