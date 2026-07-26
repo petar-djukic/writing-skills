@@ -815,10 +815,19 @@ run_on_file() {
   # is the document's default voice, not an occasional flourish. All
   # occurrences are listed above either way so a rewrite pass knows what to
   # starve out.
+  #
+  # Counted with -o piped through wc, not with -c (GH-242). `grep -c` counts
+  # matching LINES, and a markdown paragraph is one long line, so three
+  # flourishes in one paragraph scored as one. Bundling -o with -c does not
+  # dependably fix it: the answer varies by grep implementation, and on this
+  # machine (ugrep 7.5.0) the same `-ioc` call returned occurrences from a
+  # shell and lines from inside this script. A density that depends on which
+  # grep is installed is not a measurement. -E matches scan_candidates above,
+  # so a pattern written with alternation counts the way it is listed.
   local ornate_total=0
   for pattern in "${ORNATE_REGISTER[@]}"; do
     local c
-    c=$(grep -ioc "$pattern" "$FILE" 2>/dev/null || true)
+    c=$({ grep -ioE "$pattern" "$FILE" 2>/dev/null || true; } | wc -l | tr -d ' ')
     [[ -n "$c" ]] && ornate_total=$((ornate_total + c))
   done
   local file_words
