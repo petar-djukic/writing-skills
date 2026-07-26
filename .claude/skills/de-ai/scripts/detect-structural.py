@@ -29,6 +29,7 @@ Exit codes: 0 = clean, 1 = issues found, 2 = usage error
 import sys
 import re
 import json
+import math
 import difflib
 import statistics
 from pathlib import Path
@@ -99,6 +100,15 @@ def extract_prose(text: str) -> str:
     in_frontmatter = False
 
     for i, line in enumerate(lines):
+        # Everything after a references/bibliography heading is citation data,
+        # not prose. PDF conversions emit it as plain text ("R EFERENCES" with
+        # OCR letter-spacing, "[1]" alone on a line, "vol. 39, no." fragments),
+        # which the sentence splitter shreds into pseudo-sentences — 29 of the
+        # remaining antithesis "pairs" in the GH-188 audit were bibliography
+        # debris. Markdown-heading references were already skipped via "#".
+        if re.match(r"^\s*R\s?E\s?F\s?E\s?R\s?E\s?N\s?C\s?E\s?S\s*$|^\s*(References|REFERENCES|Bibliography|BIBLIOGRAPHY)\s*$", line.strip()):
+            break
+
         # Frontmatter
         if i == 0 and line.strip() == "---":
             in_frontmatter = True
@@ -129,6 +139,19 @@ def extract_prose(text: str) -> str:
 
         # Skip numbered reference-list entries: "[1] Author (2026). ..."
         if re.match(r"^\s*\[\d+\]\s", line):
+            continue
+
+        # Skip figure/table captions and numbered section headings from PDF
+        # conversion ("Fig. 6.", "TABLE II", "1. Network Beacon Schedule.").
+        # These are not sentences: in the GH-188 audit, 42 of 44 antithesis
+        # "pairs" on one converted paper were caption lines read as clipped
+        # antithesis fragments. Match conservatively — short, heading-shaped
+        # lines only — so a real paragraph that happens to open with a number
+        # survives (it will be longer than 8 words).
+        s = line.strip()
+        if re.match(r"^(Fig\.?|Figure|Table|TABLE|Algorithm|Listing)\s*\.?\s*[0-9IVX]", s):
+            continue
+        if re.match(r"^\d+(\.\d+)*\.?\s+[A-Z]", s) and len(s.split()) <= 8 and not s.endswith((",", ";")):
             continue
 
         prose_lines.append(line)
@@ -190,6 +213,20 @@ _RESTART = {"it", "it's", "that", "that's", "this", "they", "they're", "those",
 # Demonstrative restarts that carry the flip even in a LONG completion:
 # "The problem wasn't the AI. It was my lack of structure around how I worked."
 _STRONG_RESTART = {"it", "it's", "that's", "this"}
+
+
+def length_scaled_min(word_count: int, per_1000: float, floor: int) -> int:
+    """Minimum evidence for a whole-document count, scaled to document length.
+
+    Presence-style detectors used to fire on one hit anywhere, so a 12,000-word
+    paper had ~24x the chance of tripping one as a 500-word draft, with no more
+    evidence per word — measured on the author's own corpus as 6.0 detectors
+    fired at 400 words climbing to 10.7 at 2,500 (GH-186/GH-187). per_1000 is
+    chosen per detector so behaviour at ~500 words, where the thresholds were
+    tuned, is unchanged; floor keeps short documents from becoming
+    hypersensitive (one hit in 200 words is 5/1000w and still just one hit).
+    """
+    return max(floor, math.ceil(per_1000 * word_count / 1000))
 
 
 def detect_antithesis(sentences_all: list) -> list:
@@ -766,6 +803,14 @@ def repeated_formulae(file_proses: list, min_count: int = 3) -> list:
     """
     gram_counts = Counter()
     gram_files = {}
+    # A fixed count of 3 inevitably arrives in 12,000 words of technical prose
+    # (any domain term is a 4-gram there) and rarely can in 400. Scale the
+    # floor to the text actually scanned; at ~500-2000 words nothing changes.
+    total_wc = sum(len(prose.split()) for _, prose in file_proses)
+    # 1.5/1000w only bit past 2,000 words and the band data still ramped
+    # (0.29 at 400 w -> 1.0 at 1500 w); 4-gram repetition opportunity grows
+    # faster than the floor did. 3.0 keeps <=700-word behaviour identical.
+    min_count = max(min_count, math.ceil(3.0 * total_wc / 1000))
     for fname, prose in file_proses:
         tokens = re.findall(r"[a-z][a-z'-]*", prose.lower())
         seen_here = Counter()
@@ -817,6 +862,12 @@ def detect_coinage(file_proses: list, min_count: int = 2) -> list:
     counts = Counter()
     files = {}
     defined = set()
+    # Same length scaling as repeated_formulae: two uses of a bigram in 400
+    # words is a coinage candidate; two uses in 12,000 words is vocabulary.
+    # (This does not fix coinage's matched-length misfires — that is GH-188 —
+    # it only stops long documents inflating the candidate list further.)
+    total_wc = sum(len(prose.split()) for _, prose in file_proses)
+    min_count = max(min_count, math.ceil(1.0 * total_wc / 1000))
     for fname, prose in file_proses:
         for sent in split_sentences_all(prose):
             has_def = bool(_DEF_MARKERS.search(sent))
@@ -1018,6 +1069,7 @@ def analyze(text: str, threshold_name: str = "medium") -> dict:
     thresholds = THRESHOLDS[threshold_name]
     prose = extract_prose(text)
     issues = []
+    advisory = []   # GH-188: real signals with no class-separating threshold
     metrics = {}
 
     if len(prose.split()) < 50:
@@ -1075,12 +1127,20 @@ def analyze(text: str, threshold_name: str = "medium") -> dict:
     # --- Parallelism ---
     openings = get_sentence_openings(sentences)
     parallelism_issues = detect_parallelism(openings, thresholds["parallelism_max_repeats"])
-    issues.extend(parallelism_issues)
+    metrics["parallelism_runs"] = len(parallelism_issues)
+    # Runs are local evidence, but opportunity scales with sentence count:
+    # "We derive... We prove..." somewhere in 12,000 words is convention, not
+    # a tell. Density-gated to the same 1-run-per-500-words the threshold was
+    # tuned at.
+    if len(parallelism_issues) >= length_scaled_min(word_count, 2.0, 1):
+        issues.extend(parallelism_issues)
 
     # --- Frame-level parallelism (varied surface, repeated frame) ---
     frame_issues = detect_frame_parallelism(sentences)
-    issues.extend(frame_issues)
     metrics["frame_parallelism_runs"] = len(frame_issues)
+    # Same density gate as surface parallelism, same reasoning.
+    if len(frame_issues) >= length_scaled_min(word_count, 2.0, 1):
+        issues.extend(frame_issues)
 
     # --- Tail-echo parallelism (varied heads, mirrored endings) ---
     # Advisory, not a hard issue: the GH-123 noise audit found tail overlap
@@ -1101,23 +1161,43 @@ def analyze(text: str, threshold_name: str = "medium") -> dict:
     )
     sentences_all = split_sentences_all(prose_no_lists)
     antithesis_issues = detect_antithesis(sentences_all)
-    issues.extend(antithesis_issues)
     metrics["antithesis_pairs"] = len(antithesis_issues)
+    # Each pair is an issue, and the verdict counts issues — so "zero
+    # tolerance" made five scattered pairs in a long paper read as likely-ai
+    # on volume alone. The pairs still land in metrics either way; they become
+    # issues when their density matches what one pair in ~500 words means.
+    if len(antithesis_issues) >= length_scaled_min(word_count, 2.0, 1):
+        issues.extend(antithesis_issues)
 
     # --- Opening diversity ---
     if len(openings) >= 5:
         first_words = [o.split()[0] if o.split() else "" for o in openings]
-        unique_ratio = len(set(first_words)) / len(first_words)
+        # A whole-document unique ratio decays with sentence count by Zipf
+        # alone — 40 sentences reuse "The" more often than 10 do — which made
+        # this fire on 100% of full papers vs 67% of short excerpts of the
+        # same prose. Scoring fixed-size windows and averaging measures the
+        # local monotony the detector is actually after; a short document is
+        # one window and behaves exactly as before.
+        W = 40
+        windows = [first_words[i:i + W] for i in range(0, len(first_words), W)]
+        if len(windows) > 1 and len(windows[-1]) < W // 2:
+            windows[-2].extend(windows[-1])
+            windows.pop()
+        unique_ratio = sum(len(set(w)) / len(w) for w in windows) / len(windows)
         metrics["opening_diversity"] = round(unique_ratio, 2)
 
         if unique_ratio < thresholds["opening_diversity_min"]:
-            # Find the most repeated openings
+            # Advisory since GH-188: measured on the author corpus, human
+            # papers median 0.51 and the ai fixtures 0.60 — overlapping ranges
+            # and the WRONG direction, so no threshold separates the classes.
+            # Sentence-opening monotony is real in AI prose but also the
+            # register of technical writing ("The... The... We..."); the
+            # semantic pass judges it with context the ratio cannot carry.
             counter = Counter(first_words)
             top = counter.most_common(3)
-            issues.append({
+            advisory.append({
                 "type": "low-opening-diversity",
                 "detail": f"Only {unique_ratio:.0%} of sentences start with unique words. Most common: {top}",
-                "severity": "medium",
                 "metric": unique_ratio,
             })
 
@@ -1318,7 +1398,11 @@ def analyze(text: str, threshold_name: str = "medium") -> dict:
                                    "mean_cohesion", "mean_subject_churn",
                                    "low_topic_paragraphs")
         }
-        if len(schema["low_topic_paragraphs"]) >= 3:
+        # Three weak openings out of six paragraphs is a pattern; three out
+        # of a hundred is a paper. The absolute 3 made this fire on 96% of
+        # full-length papers and 0% of 400-word excerpts of the same prose.
+        topic_weak_min = max(3, math.ceil(0.4 * schema["paragraphs_scored"]))
+        if len(schema["low_topic_paragraphs"]) >= topic_weak_min:
             issues.append({
                 "type": "topic-sentence-weak",
                 "detail": (f"{len(schema['low_topic_paragraphs'])} paragraphs open "
@@ -1418,22 +1502,27 @@ def analyze(text: str, threshold_name: str = "medium") -> dict:
         metrics["salad_rate_per_100"] = salad["salad_rate_per_100"]
         metrics["hyphen_compound_per_500w"] = salad["hyphen_compound_per_500w"]
         if salad["salad_rate_per_100"] > thresholds["salad_rate_max"]:
-            issues.append({
+            # Advisory since GH-188: human papers median 7.9 per 100 vs ai 7.2
+            # — identical distributions on the available corpus. Technical
+            # prose stacks noun compounds by nature; the components list still
+            # feeds the semantic pass.
+            advisory.append({
                 "type": "word-salad-heavy",
                 "detail": (f"{salad['salad_rate_per_100']:.1f} salad sentences per 100 "
                            f"(threshold: <{thresholds['salad_rate_max']}). Sentences stack "
-                           "content words without function-word joints; unpack them."),
-                "severity": "high",
+                           "content words with few connectives."),
                 "metric": salad["salad_rate_per_100"],
                 "candidates": salad["salad_candidates"],
             })
         if salad["hyphen_compound_per_500w"] > thresholds["hyphen_compound_max"]:
-            issues.append({
+            # Advisory since GH-188: human papers reach 24.8 per 500 w against
+            # an ai max of 13 — multi-hop, cross-layer, time-slot IS the
+            # vocabulary of the field. No separating threshold exists.
+            advisory.append({
                 "type": "hyphen-compound-heavy",
                 "detail": (f"{salad['hyphen_compound_per_500w']:.1f} hyphenated compounds per 500 words "
                            f"(threshold: <{thresholds['hyphen_compound_max']}). Each coined compound "
                            "is a packed relative clause; expand them."),
-                "severity": "medium",
                 "metric": salad["hyphen_compound_per_500w"],
             })
 
@@ -1461,7 +1550,8 @@ def analyze(text: str, threshold_name: str = "medium") -> dict:
     metrics["sentence_count"] = len(sentences)
     metrics["paragraph_count"] = len(paragraphs)
 
-    return {"issues": issues, "metrics": metrics, "verdict": verdict,
+    return {"issues": issues, "advisory": advisory, "metrics": metrics,
+            "verdict": verdict,
             "tail_echo_candidates": result_extra_tail_echo}
 
 

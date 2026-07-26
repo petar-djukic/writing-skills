@@ -611,7 +611,7 @@ scan_patterns() {
         local lineno="${line%%:*}"
         local content="${line#*:}"
         if [[ "$JSON_MODE" == "--json" ]]; then
-          RESULTS+=("{\"line\": $lineno, \"category\": \"$category\", \"pattern\": \"$(echo "$pattern" | sed 's/"/\\"/g')\", \"text\": \"$(echo "$content" | sed 's/"/\\"/g' | head -c 200)\"}")
+          RESULTS+=("{\"line\": $lineno, \"category\": \"$category\", \"pattern\": \"$(echo "$pattern" | tr -d '\000-\010\013\014\016-\037' | sed 's/\\/\\\\/g; s/"/\\"/g')\", \"text\": \"$(echo "$content" | tr -d '\000-\010\013\014\016-\037' | sed 's/\\/\\\\/g; s/"/\\"/g' | head -c 200)\"}")
         else
           printf "  L%-4s [%s] %s\n" "$lineno" "$pattern" "$(echo "$content" | head -c 120)"
         fi
@@ -637,7 +637,7 @@ scan_candidates() {
         local lineno="${line%%:*}"
         local content="${line#*:}"
         if [[ "$JSON_MODE" == "--json" ]]; then
-          RESULTS+=("{\"line\": $lineno, \"category\": \"$category\", \"severity\": \"candidate\", \"pattern\": \"$(echo "$pattern" | sed 's/"/\\"/g')\", \"text\": \"$(echo "$content" | sed 's/"/\\"/g' | head -c 200)\"}")
+          RESULTS+=("{\"line\": $lineno, \"category\": \"$category\", \"severity\": \"candidate\", \"pattern\": \"$(echo "$pattern" | tr -d '\000-\010\013\014\016-\037' | sed 's/\\/\\\\/g; s/"/\\"/g')\", \"text\": \"$(echo "$content" | tr -d '\000-\010\013\014\016-\037' | sed 's/\\/\\\\/g; s/"/\\"/g' | head -c 200)\"}")
         else
           printf "  L%-4s [%s] %s\n" "$lineno" "$pattern" "$(echo "$content" | head -c 120)"
         fi
@@ -676,7 +676,7 @@ run_on_file() {
     if echo "$tail_text" | grep -iq "$pattern"; then
       ISSUES_FOUND=1
       if [[ "$JSON_MODE" == "--json" ]]; then
-        RESULTS+=("{\"line\": -1, \"category\": \"chat-residue-tail\", \"pattern\": \"$(echo "$pattern" | sed 's/"/\\"/g')\", \"text\": \"match within final 3 lines — near-certain assistant sign-off\"}")
+        RESULTS+=("{\"line\": -1, \"category\": \"chat-residue-tail\", \"pattern\": \"$(echo "$pattern" | tr -d '\000-\010\013\014\016-\037' | sed 's/\\/\\\\/g; s/"/\\"/g')\", \"text\": \"match within final 3 lines — near-certain assistant sign-off\"}")
       else
         printf "  CRITICAL: \"%s\" appears in the FINAL 3 LINES — near-certain assistant sign-off. Delete it.\n" "$pattern"
       fi
@@ -729,7 +729,7 @@ run_on_file() {
     if [[ "$distinct" -ge 2 ]]; then
       ISSUES_FOUND=1
       if [[ "$JSON_MODE" == "--json" ]]; then
-        RESULTS+=("{\"line\": $lineno, \"category\": \"ordinal-sequence\", \"pattern\": \"First,/Second,/...\", \"text\": \"$(echo "$line" | sed 's/"/\\"/g' | head -c 160)\"}")
+        RESULTS+=("{\"line\": $lineno, \"category\": \"ordinal-sequence\", \"pattern\": \"First,/Second,/...\", \"text\": \"$(echo "$line" | tr -d '\000-\010\013\014\016-\037' | sed 's/\\/\\\\/g; s/"/\\"/g' | head -c 160)\"}")
       else
         printf "  L%-4s [%s distinct ordinals] %s\n" "$lineno" "$distinct" "$(echo "$line" | head -c 120)"
       fi
@@ -820,7 +820,12 @@ run_on_file() {
   if [[ "$JSON_MODE" == "--json" ]]; then
     echo "["
     local first=true
-    for r in "${RESULTS[@]}"; do
+    # ${RESULTS[@]+...}: bash 3.2 (macOS default) treats expanding an EMPTY
+    # array as unbound under set -u, so a document with zero lexical hits —
+    # the cleanest possible input — crashed here with exit 1. The eval then
+    # excluded those documents as failures (GH-190), silently biasing every
+    # rate against clean prose. Found by GH-190's failure diagnostics.
+    for r in ${RESULTS[@]+"${RESULTS[@]}"}; do
       if [[ "$first" == "true" ]]; then
         echo "  $r"
         first=false

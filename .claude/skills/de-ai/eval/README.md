@@ -79,6 +79,16 @@ per-detector rates in the wider bands are inflated. Then read `non_clean_rate`
 per band: that is the fraction of genuinely human prose the skill would flag at
 that length, which is the number a writer actually experiences.
 
+## Detectors vs candidates
+
+The report carries two tables. `detectors` are issue-emitting checks — they
+drive verdicts, and `HUMAN_FIRE_GATE` governs them. `candidate_rates` are
+advisory signals: lexical grep categories and the `*_candidates` blocks, which
+are prompts for the semantic pass by contract and never touch a verdict. They
+get no gate; a candidate at 1.00 on human prose is a statement about the
+corpus register, not a broken detector. Counting the two together is how the
+harness once reported 20 detectors "over the gate" (GH-182/GH-188).
+
 ## The new-detector gate
 
 Before merging a new detector:

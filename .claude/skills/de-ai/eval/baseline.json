@@ -1,37 +1,76 @@
 {
   "classes": {
     "human": {
-      "files": 0,
-      "verdicts": {}
+      "files": 24,
+      "measured": 24,
+      "detector_failures": {},
+      "verdicts": {
+        "BinSediq-2011-optimized-nonuniform-constellation-rearrangement-for-cooperative-scholar-binsediq-2011-tvt-constellation.md": "clean",
+        "Chen-2022-machine-learning-enabled-iot-security-open-issues-and-scholar-chen-2022-apt-iot-survey.md": "suspicious",
+        "Chen-2024-machine-learning-enabled-hybrid-intrusion-detection-system-scholar-chen-2024-hybrid-ids.md": "clean",
+        "Djukic-2004-minimum-energy-reliable-multipath-ad-scholar-djukic-2004-min-energy-manuscript.md": "suspicious-overshoot",
+        "Djukic-2005-maximum-network-lifetime-in-fault-tolerant-scholar-djukic-2005-globecom-sensor-lifetime.md": "clean",
+        "Djukic-2006-80216-mcf-for-80211a-based-scholar-djukic-2006-qbsc-mcf.md": "minor-issues",
+        "Djukic-2006-80216-mesh-networks-overview-scholar-djukic-2006-80216-mesh-overview.md": "minor-issues",
+        "Djukic-2006-reliable-packet-transmissions-in-multipath-routed-scholar-djukic-2006-tmc-reliable-multipath.md": "clean",
+        "Djukic-2007-centralized-scheduling-algorithms-for-80216-mesh-scholar-djukic-2007-wimax-mobilefi-centralized.md": "clean",
+        "Djukic-2007-distributed-link-scheduling-for-tdma-mesh-networks-scholar-djukic-2007-icc-distributed-scheduling.md": "clean",
+        "Djukic-2007-link-scheduling-for-minimum-delay-in-spatial-scholar-djukic-2007-infocom-min-delay.md": "suspicious-overshoot",
+        "Djukic-2007-quality-of-service-provisioning-for-multi-scholar-djukic-2007-itc-multiservice-qos.md": "clean",
+        "Djukic-2007-towards-guaranteed-qos-in-mesh-networks-scholar-djukic-2007-icdcsw-wimax-emulation.md": "clean",
+        "Djukic-2009-delay-aware-link-scheduling-for-multi-hop-scholar-djukic-2009-ton-delay-aware.md": "minor-issues",
+        "Djukic-2009-user-centric-rrm-and-optimizable-protocol-scholar-djukic-2009-wwrf-user-centric.md": "minor-issues",
+        "Djukic-2011-advanced-radio-access-networks-for-lte-scholar-djukic-2011-advanced-ran-chapter.md": "clean",
+        "Djukic-2011-localization-for-electromagnetic-radio-underwater-sensor-scholar-djukic-2011-sensorcomm-em-localization.md": "minor-issues",
+        "Djukic-2011-on-threshold-selection-for-principal-component-based-scholar-djukic-2011-cnsr-pca-threshold.md": "minor-issues",
+        "Djukic-2012-soft-tdmac-a-software-based-80211-overlay-scholar-djukic-2012-tmc-soft-tdmac.md": "minor-issues",
+        "Kredo-2009-stump-exploiting-position-diversity-in-the-scholar-kredo-2009-infocom-stump.md": "suspicious",
+        "Sharifian-2010-generalized-proportionally-fair-scheduling-for-multi-scholar-sharifian-2010-vtcspring-gpf.md": "minor-issues",
+        "Sharifian-2010-max-min-fair-resource-allocation-for-multiuser-scholar-sharifian-2010-vtcfall-maxmin.md": "minor-issues",
+        "Sharifian-2010-mixed-time-scale-generalized-fair-scheduling-for-scholar-sharifian-2010-globecom-mixed-timescale.md": "clean",
+        "Wu-2008-determining-80211-link-quality-with-passive-scholar-wu-2008-iswcs-link-quality.md": "minor-issues"
+      },
+      "length": {
+        "n": 24,
+        "median": 5889,
+        "min": 2573,
+        "max": 20330
+      },
+      "source": {
+        "source": "/Users/pdiddy/GITHUB/idea-factory/substack/writing-voice",
+        "role": "author-voice",
+        "files": 24,
+        "years": [
+          2004,
+          2024
+        ],
+        "warning": "1 sample(s) dated after 2022 are in the human class: chen-2024-hybrid-ids (2024). Post-2022 prose may carry AI diction, which makes it circular as ground truth. Left in \u2014 curating the corpus is the curator's call."
+      }
     },
     "ai": {
       "files": 4,
+      "measured": 4,
+      "detector_failures": {},
       "verdicts": {
         "bland-assistant-article.md": "likely-ai",
         "overshoot-linkedin-article.md": "likely-ai",
         "reader-psychology-meta.md": "likely-ai",
-        "spec-compressed-conversation.md": "likely-ai"
+        "spec-compressed-conversation.md": "suspicious"
+      },
+      "length": {
+        "n": 4,
+        "median": 332,
+        "min": 212,
+        "max": 413
       }
     }
   },
   "detectors": {
-    "ai-cliche": {
-      "human": {
-        "fired": 0,
-        "of": 0,
-        "rate": null
-      },
-      "ai": {
-        "fired": 2,
-        "of": 4,
-        "rate": 0.5
-      }
-    },
     "antithesis-elliptical": {
       "human": {
         "fired": 0,
-        "of": 0,
-        "rate": null
+        "of": 24,
+        "rate": 0.0
       },
       "ai": {
         "fired": 2,
@@ -41,9 +80,9 @@
     },
     "antithesis-fragment": {
       "human": {
-        "fired": 0,
-        "of": 0,
-        "rate": null
+        "fired": 2,
+        "of": 24,
+        "rate": 0.08
       },
       "ai": {
         "fired": 1,
@@ -51,11 +90,23 @@
         "rate": 0.25
       }
     },
+    "antithesis-long-completion": {
+      "human": {
+        "fired": 1,
+        "of": 24,
+        "rate": 0.04
+      },
+      "ai": {
+        "fired": 0,
+        "of": 4,
+        "rate": 0.0
+      }
+    },
     "antithesis-negation": {
       "human": {
         "fired": 0,
-        "of": 0,
-        "rate": null
+        "of": 24,
+        "rate": 0.0
       },
       "ai": {
         "fired": 1,
@@ -65,9 +116,9 @@
     },
     "antithesis-noun-restart": {
       "human": {
-        "fired": 0,
-        "of": 0,
-        "rate": null
+        "fired": 1,
+        "of": 24,
+        "rate": 0.04
       },
       "ai": {
         "fired": 1,
@@ -75,35 +126,23 @@
         "rate": 0.25
       }
     },
-    "banned-word": {
+    "antithesis-reverse": {
       "human": {
-        "fired": 0,
-        "of": 0,
-        "rate": null
-      },
-      "ai": {
         "fired": 1,
-        "of": 4,
-        "rate": 0.25
-      }
-    },
-    "coinage_candidates": {
-      "human": {
-        "fired": 0,
-        "of": 0,
-        "rate": null
+        "of": 24,
+        "rate": 0.04
       },
       "ai": {
-        "fired": 3,
+        "fired": 0,
         "of": 4,
-        "rate": 0.75
+        "rate": 0.0
       }
     },
     "colon-heavy": {
       "human": {
-        "fired": 0,
-        "of": 0,
-        "rate": null
+        "fired": 5,
+        "of": 24,
+        "rate": 0.21
       },
       "ai": {
         "fired": 2,
@@ -114,56 +153,20 @@
     "contrast-flip-heavy": {
       "human": {
         "fired": 0,
-        "of": 0,
-        "rate": null
+        "of": 24,
+        "rate": 0.0
       },
       "ai": {
         "fired": 1,
         "of": 4,
         "rate": 0.25
-      }
-    },
-    "cot-candidate": {
-      "human": {
-        "fired": 0,
-        "of": 0,
-        "rate": null
-      },
-      "ai": {
-        "fired": 3,
-        "of": 4,
-        "rate": 0.75
       }
     },
     "dash-heavy": {
       "human": {
-        "fired": 0,
-        "of": 0,
-        "rate": null
-      },
-      "ai": {
         "fired": 1,
-        "of": 4,
-        "rate": 0.25
-      }
-    },
-    "editorializing": {
-      "human": {
-        "fired": 0,
-        "of": 0,
-        "rate": null
-      },
-      "ai": {
-        "fired": 1,
-        "of": 4,
-        "rate": 0.25
-      }
-    },
-    "false-emphasis": {
-      "human": {
-        "fired": 0,
-        "of": 0,
-        "rate": null
+        "of": 24,
+        "rate": 0.04
       },
       "ai": {
         "fired": 1,
@@ -174,32 +177,20 @@
     "frame-parallelism": {
       "human": {
         "fired": 0,
-        "of": 0,
-        "rate": null
+        "of": 24,
+        "rate": 0.0
       },
       "ai": {
         "fired": 1,
         "of": 4,
         "rate": 0.25
-      }
-    },
-    "hyphen-compound-heavy": {
-      "human": {
-        "fired": 0,
-        "of": 0,
-        "rate": null
-      },
-      "ai": {
-        "fired": 3,
-        "of": 4,
-        "rate": 0.75
       }
     },
     "low-burstiness": {
       "human": {
         "fired": 0,
-        "of": 0,
-        "rate": null
+        "of": 24,
+        "rate": 0.0
       },
       "ai": {
         "fired": 1,
@@ -207,83 +198,35 @@
         "rate": 0.25
       }
     },
-    "low-opening-diversity": {
+    "ordinal-walkthrough": {
       "human": {
-        "fired": 0,
-        "of": 0,
-        "rate": null
+        "fired": 2,
+        "of": 24,
+        "rate": 0.08
       },
       "ai": {
+        "fired": 0,
+        "of": 4,
+        "rate": 0.0
+      }
+    },
+    "punch-clustered": {
+      "human": {
         "fired": 3,
-        "of": 4,
-        "rate": 0.75
-      }
-    },
-    "meta-narration": {
-      "human": {
-        "fired": 0,
-        "of": 0,
-        "rate": null
+        "of": 24,
+        "rate": 0.12
       },
       "ai": {
-        "fired": 1,
-        "of": 4,
-        "rate": 0.25
-      }
-    },
-    "narrative-pivot-candidate": {
-      "human": {
         "fired": 0,
-        "of": 0,
-        "rate": null
-      },
-      "ai": {
-        "fired": 1,
         "of": 4,
-        "rate": 0.25
-      }
-    },
-    "ornate-register": {
-      "human": {
-        "fired": 0,
-        "of": 0,
-        "rate": null
-      },
-      "ai": {
-        "fired": 2,
-        "of": 4,
-        "rate": 0.5
-      }
-    },
-    "reader-directive": {
-      "human": {
-        "fired": 0,
-        "of": 0,
-        "rate": null
-      },
-      "ai": {
-        "fired": 1,
-        "of": 4,
-        "rate": 0.25
-      }
-    },
-    "tail_echo_candidates": {
-      "human": {
-        "fired": 0,
-        "of": 0,
-        "rate": null
-      },
-      "ai": {
-        "fired": 2,
-        "of": 4,
-        "rate": 0.5
+        "rate": 0.0
       }
     },
     "topic-sentence-weak": {
       "human": {
-        "fired": 0,
-        "of": 0,
-        "rate": null
+        "fired": 5,
+        "of": 24,
+        "rate": 0.21
       },
       "ai": {
         "fired": 4,
@@ -293,9 +236,9 @@
     },
     "tricolon-heavy": {
       "human": {
-        "fired": 0,
-        "of": 0,
-        "rate": null
+        "fired": 1,
+        "of": 24,
+        "rate": 0.04
       },
       "ai": {
         "fired": 2,
@@ -306,20 +249,250 @@
     "uniform-paragraphs": {
       "human": {
         "fired": 0,
-        "of": 0,
-        "rate": null
+        "of": 24,
+        "rate": 0.0
       },
       "ai": {
         "fired": 4,
         "of": 4,
         "rate": 1.0
       }
+    }
+  },
+  "candidate_rates": {
+    "ai-cliche": {
+      "human": {
+        "fired": 23,
+        "of": 24,
+        "rate": 0.96
+      },
+      "ai": {
+        "fired": 2,
+        "of": 4,
+        "rate": 0.5
+      }
+    },
+    "banned-word": {
+      "human": {
+        "fired": 14,
+        "of": 24,
+        "rate": 0.58
+      },
+      "ai": {
+        "fired": 1,
+        "of": 4,
+        "rate": 0.25
+      }
+    },
+    "coinage_candidates": {
+      "human": {
+        "fired": 24,
+        "of": 24,
+        "rate": 1.0
+      },
+      "ai": {
+        "fired": 3,
+        "of": 4,
+        "rate": 0.75
+      }
+    },
+    "cot-candidate": {
+      "human": {
+        "fired": 24,
+        "of": 24,
+        "rate": 1.0
+      },
+      "ai": {
+        "fired": 3,
+        "of": 4,
+        "rate": 0.75
+      }
+    },
+    "cot-structural": {
+      "human": {
+        "fired": 3,
+        "of": 24,
+        "rate": 0.12
+      },
+      "ai": {
+        "fired": 0,
+        "of": 4,
+        "rate": 0.0
+      }
+    },
+    "editorializing": {
+      "human": {
+        "fired": 5,
+        "of": 24,
+        "rate": 0.21
+      },
+      "ai": {
+        "fired": 1,
+        "of": 4,
+        "rate": 0.25
+      }
+    },
+    "false-emphasis": {
+      "human": {
+        "fired": 11,
+        "of": 24,
+        "rate": 0.46
+      },
+      "ai": {
+        "fired": 1,
+        "of": 4,
+        "rate": 0.25
+      }
+    },
+    "hyphen-compound-heavy": {
+      "human": {
+        "fired": 13,
+        "of": 24,
+        "rate": 0.54
+      },
+      "ai": {
+        "fired": 3,
+        "of": 4,
+        "rate": 0.75
+      }
+    },
+    "low-opening-diversity": {
+      "human": {
+        "fired": 23,
+        "of": 24,
+        "rate": 0.96
+      },
+      "ai": {
+        "fired": 3,
+        "of": 4,
+        "rate": 0.75
+      }
+    },
+    "mechanical-transition": {
+      "human": {
+        "fired": 19,
+        "of": 24,
+        "rate": 0.79
+      },
+      "ai": {
+        "fired": 0,
+        "of": 4,
+        "rate": 0.0
+      }
+    },
+    "meta-narration": {
+      "human": {
+        "fired": 1,
+        "of": 24,
+        "rate": 0.04
+      },
+      "ai": {
+        "fired": 1,
+        "of": 4,
+        "rate": 0.25
+      }
+    },
+    "narrative-pivot": {
+      "human": {
+        "fired": 2,
+        "of": 24,
+        "rate": 0.08
+      },
+      "ai": {
+        "fired": 0,
+        "of": 4,
+        "rate": 0.0
+      }
+    },
+    "narrative-pivot-candidate": {
+      "human": {
+        "fired": 0,
+        "of": 24,
+        "rate": 0.0
+      },
+      "ai": {
+        "fired": 1,
+        "of": 4,
+        "rate": 0.25
+      }
+    },
+    "ordinal-sequence": {
+      "human": {
+        "fired": 1,
+        "of": 24,
+        "rate": 0.04
+      },
+      "ai": {
+        "fired": 0,
+        "of": 4,
+        "rate": 0.0
+      }
+    },
+    "ornate-register": {
+      "human": {
+        "fired": 15,
+        "of": 24,
+        "rate": 0.62
+      },
+      "ai": {
+        "fired": 2,
+        "of": 4,
+        "rate": 0.5
+      }
+    },
+    "reader-directive": {
+      "human": {
+        "fired": 0,
+        "of": 24,
+        "rate": 0.0
+      },
+      "ai": {
+        "fired": 1,
+        "of": 4,
+        "rate": 0.25
+      }
+    },
+    "repeated_formulae": {
+      "human": {
+        "fired": 4,
+        "of": 24,
+        "rate": 0.17
+      },
+      "ai": {
+        "fired": 0,
+        "of": 4,
+        "rate": 0.0
+      }
+    },
+    "tail_echo_candidates": {
+      "human": {
+        "fired": 24,
+        "of": 24,
+        "rate": 1.0
+      },
+      "ai": {
+        "fired": 2,
+        "of": 4,
+        "rate": 0.5
+      }
+    },
+    "venue-jargon": {
+      "human": {
+        "fired": 1,
+        "of": 24,
+        "rate": 0.04
+      },
+      "ai": {
+        "fired": 0,
+        "of": 4,
+        "rate": 0.0
+      }
     },
     "word-salad-heavy": {
       "human": {
-        "fired": 0,
-        "of": 0,
-        "rate": null
+        "fired": 18,
+        "of": 24,
+        "rate": 0.75
       },
       "ai": {
         "fired": 2,
@@ -334,9 +507,18 @@
       "of": 4
     },
     "human_clean": {
-      "count": 0,
-      "of": 0,
-      "note": "human corpus empty \u2014 populate eval/human/ (see README); false-positive rates unmeasured until then"
+      "count": 20,
+      "of": 24
     }
-  }
+  },
+  "length_mismatch": {
+    "human_median": 5889,
+    "ai_median": 332,
+    "ratio": 17.7,
+    "note": "class medians differ by 17.7x (human 5889, ai 332). Overall per-detector rates below are not a false-positive rate \u2014 they partly measure length. Use the length_bands section, which compares like with like."
+  },
+  "human_gate_exceeded": [
+    "colon-heavy",
+    "topic-sentence-weak"
+  ]
 }
