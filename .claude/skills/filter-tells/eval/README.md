@@ -27,6 +27,29 @@ detector changes measurable.
 - `human/` — an optional local override, used only when it contains files. Left
   empty on purpose. Anything placed here is published with the skills, so use
   it only for prose you would publish anyway.
+- **AI documents can come from the repository too.** `run_eval.py` walks up for
+  `BACKGROUND/ai-corpus.yaml`, a manifest the repository owner writes listing
+  which directories hold generated text. Only what it lists is used — an agent
+  never guesses, because a person vouching for the label is the whole value of
+  the class. Read in place, never copied; the baseline records paths, counts,
+  and length statistics, never text.
+
+  ```yaml
+  provenance: ai-generated, lightly edited   # raw vs edited changes what the rates mean
+  designated_by: <who>
+  min_words: 200                             # reference lists and stubs are not prose samples
+  directories:
+    - path: reference-architecture
+      label: ai
+  exclude:
+    - '**/*-full.md'                         # concatenations distort length and carry seams
+  ```
+
+  When the manifest is present its documents become the ai class and the
+  fixtures are held out, counted separately. The fixtures each exist to trip
+  one detector class, so averaging them into a rate over real documents would
+  weight those particular tells by construction.
+
 - `ai/` — unedited model drafts, each labeled in a header comment (generator,
   date, register, "never edited"). Seeded with three Claude-generated samples
   covering the known registers: bland assistant, overshoot ("LinkedIn voice"),
