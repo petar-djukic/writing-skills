@@ -38,23 +38,32 @@ number.
 ## Procedure
 
 ```bash
-python3 <tighten-style>/scripts/check_style.py <file> [--json] [--rule TS-01,TS-05]
+python3 <tighten-style>/scripts/check_style.py <file> [--json]     # findings, rule-keyed
+python3 <tighten-style>/scripts/tighten.py --article <file>        # the rewrite, via Ollama
+python3 <tighten-style>/scripts/tighten.py --article <file> --check-only   # plan without model calls
 ```
 
-1. **Run the checker.** It covers the layers a script can honestly carry:
-   deterministic transforms, lexical lists, measured densities.
-2. **Read for the judgment rules it cannot see** — TS-06 (related words
-   together), TS-07 (emphatic end position), TS-09 (concrete over abstract),
-   TS-11 (sentences in consequent order). These are most of the value on prose
-   that is already lexically clean.
-3. **Check each rule's exception before changing anything.** A finding is a
-   prompt to look. TS-15's term-of-art exception is load-bearing: `critical
-   section` and `key exchange` stay.
-4. **Rewrite**, then re-run. Stop when findings stop falling, or at the density
-   floor, whichever comes first.
-5. **Gate the result.** Compression is where meaning goes missing, so run
-   `match-voice`'s verify step: citations, numbers, terms, and meaning must
-   survive.
+1. **Run the checker** for the findings and the reading pass for the judgment
+   rules (TS-06, TS-07, TS-09, TS-11) it cannot see.
+2. **Run the tightener for the rewriting.** It selects the instead→do pairs
+   for the rules each paragraph fired, prompts the second model family with
+   the pairs — never the rule prose — and gates every candidate with
+   match-voice's verify step. Paragraphs that fail the gate keep their
+   original text.
+3. **Read the register markers it prints** (passive, agentive, nominalization,
+   connectives, before → after). Rising markers on a shrinking draft mean the
+   pass moved toward the assistant register, which is the failure this design
+   exists to prevent.
+4. **Do not tighten by hand-applying the rules with the drafting model.**
+   GH-222 measured what that does: a paper excerpt moved from distance 26.1 to
+   6.5 from the AI-draft fingerprint under a faithful rules pass, overshooting
+   the draft's own passive rate. The rules read as instructions by an
+   instruction-tuned model ARE that model's register. The catalog stays for
+   understanding and for the checker; the pairs are its delivery.
+
+The stopping rules are unchanged: the author-density floor, and never touching
+quotations, normative text, citations, or numbers — now enforced by the gate
+rather than by discipline.
 
 ## Where the rules are enforced
 
