@@ -154,9 +154,15 @@ def ai_from_manifest(start=None):
     d = os.path.abspath(start or os.getcwd())
     manifest = None
     while True:
-        cand = os.path.join(d, "BACKGROUND", "ai-corpus.yaml")
-        if os.path.isfile(cand):
-            manifest = cand
+        # Root first: the corpus may sit under a gitignored directory (third-
+        # party material), and the designation should be trackable even when
+        # the documents are not. Paths resolve relative to the manifest.
+        for rel in ("ai-corpus.yaml", os.path.join("BACKGROUND", "ai-corpus.yaml")):
+            cand = os.path.join(d, rel)
+            if os.path.isfile(cand):
+                manifest = cand
+                break
+        if manifest:
             break
         parent = os.path.dirname(d)
         if parent == d:

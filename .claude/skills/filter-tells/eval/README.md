@@ -27,12 +27,16 @@ detector changes measurable.
 - `human/` — an optional local override, used only when it contains files. Left
   empty on purpose. Anything placed here is published with the skills, so use
   it only for prose you would publish anyway.
-- **AI documents can come from the repository too.** `run_eval.py` walks up for
-  `BACKGROUND/ai-corpus.yaml`, a manifest the repository owner writes listing
+- **AI documents can come from the repository too.** `run_eval.py` walks up for `ai-corpus.yaml`
+  (repo root, or under `BACKGROUND/`), a manifest the repository owner writes listing
   which directories hold generated text. Only what it lists is used — an agent
   never guesses, because a person vouching for the label is the whole value of
   the class. Read in place, never copied; the baseline records paths, counts,
   and length statistics, never text.
+
+  Put it at the repo root when the corpus lives under a gitignored directory —
+  the designation should be tracked even when the documents are not. Paths
+  resolve relative to the manifest.
 
   ```yaml
   provenance: ai-generated, lightly edited   # raw vs edited changes what the rates mean
