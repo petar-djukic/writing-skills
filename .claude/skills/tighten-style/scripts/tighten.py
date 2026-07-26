@@ -70,6 +70,26 @@ def _mods():
     return md_paragraphs, register_markers, pairs_mod, check_style
 
 
+def _sentence_stats(text):
+    """Compute sentence_length_mean and sentence_length_stdev from prose text."""
+    sents = [s.strip() for s in re.split(r"(?<=[.!?])\s+(?=[A-Z(\[])", text)
+             if len(s.strip()) > 2]
+    if not sents:
+        return 0.0, 0.0
+    lengths = [len(re.findall(r"\w+", s)) for s in sents]
+    mean = sum(lengths) / len(lengths)
+    var = sum((x - mean) ** 2 for x in lengths) / len(lengths)
+    return mean, var ** 0.5
+
+
+def _doc_sentence_stats(lines):
+    """Sentence stats over a full document (list of lines), prose only."""
+    md_paragraphs, _, _, _ = _mods()
+    r = md_paragraphs.parse("\n".join(lines))
+    prose = " ".join(txt for _, _, txt in r.paragraphs)
+    return _sentence_stats(prose)
+
+
 def pangram_scan(path, work, tag):
     """Build prose-only payload and scan. Same path as drive.py's pangram_scan.
 
@@ -131,6 +151,9 @@ def main():
                     help="report per-paragraph rule findings; no model calls")
     ap.add_argument("--pangram", action="store_true",
                     help="run external detector before/after (requires key)")
+    ap.add_argument("--sent-floor", nargs=2, type=float, metavar=("MEAN", "SD"),
+                    help="minimum sentence_length_mean and stdev; reverts "
+                         "candidates that push below this floor")
     a = ap.parse_args()
 
     md_paragraphs, rm, _, cs = _mods()
@@ -215,10 +238,37 @@ def main():
             break
 
     # Splice accepted candidates, bottom-up so line numbers hold.
-    for rec in sorted([r for r in results if r.get("cand")],
-                      key=lambda r: -r["lines"][0]):
+    tightened = [r for r in results if r.get("cand")]
+    for rec in sorted(tightened, key=lambda r: -r["lines"][0]):
         s, e = rec["lines"]
         out_lines[s - 1:e] = [rec["cand"]]
+
+    # Post-hoc floor: revert candidates that push sentence stats below the
+    # human band. Reverts largest-shortening paragraphs first.
+    reverted = 0
+    if a.sent_floor and tightened:
+        floor_mean, floor_sd = a.sent_floor
+        cur_mean, cur_sd = _doc_sentence_stats(out_lines)
+        # Sort by shortening magnitude (words lost), largest first.
+        by_shortening = sorted(
+            tightened,
+            key=lambda r: r["words"] - len(r["cand"].split()),
+            reverse=True)
+        for rec in by_shortening:
+            if cur_mean >= floor_mean and cur_sd >= floor_sd:
+                break
+            s, e = rec["lines"]
+            orig_text = "\n".join(parsed.lines[s - 1:e])
+            out_lines[s - 1:e] = parsed.lines[s - 1:e]
+            del rec["cand"]
+            rec["status"] = "reverted-floor"
+            reverted += 1
+            cur_mean, cur_sd = _doc_sentence_stats(out_lines)
+        if reverted:
+            print(f"  sent-floor reverts: {reverted} "
+                  f"(floor: mean={floor_mean}, sd={floor_sd}, "
+                  f"final: mean={cur_mean:.1f}, sd={cur_sd:.1f})")
+
     with open(out, "w", encoding="utf-8") as f:
         f.write("\n".join(out_lines))
     with open(os.path.join(work, "results.json"), "w") as f:
