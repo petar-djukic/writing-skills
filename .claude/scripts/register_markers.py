@@ -93,11 +93,26 @@ def markers_file(path):
     return markers(_prose(path))
 
 
-def distance(a, b):
-    """Euclidean distance between two per_1000 vectors — the GH-220 ranking
-    statistic (larger = farther from the reference register)."""
+# Typical magnitudes differ by an order of magnitude between markers, so a raw
+# Euclidean distance is really a nominalization distance. Scaling by these puts
+# each axis on comparable footing. Measured across the reference corpora:
+# nominalization runs 20-90 per 1000 words, passive 2-20, the rest 0-5.
+_SCALE = {"passive": 10.0, "agentive": 3.0, "nominalization": 40.0,
+          "connectives": 3.0}
+
+
+def distance(a, b, scaled=True):
+    """Distance between two per_1000 vectors (larger = farther apart).
+
+    Scaled by default. Unscaled, this statistic is dominated by whichever
+    marker carries the biggest absolute number: in the GH-229 A/B it reported
+    the similarity arm as closer to the author's original while that arm had
+    nearly DOUBLED the passive rate and the tag arm had held it — the verdict
+    came entirely from nominalization noise an order of magnitude larger.
+    """
     keys = ("passive", "agentive", "nominalization", "connectives")
-    return round(sum((a["per_1000"][k] - b["per_1000"][k]) ** 2
+    return round(sum(((a["per_1000"][k] - b["per_1000"][k])
+                      / (_SCALE[k] if scaled else 1.0)) ** 2
                      for k in keys) ** 0.5, 3)
 
 

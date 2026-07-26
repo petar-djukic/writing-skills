@@ -97,7 +97,7 @@ def _is_ignored(path):
             inside = subprocess.run(
                 ["git", "rev-parse", "--is-inside-work-tree"],
                 cwd=os.path.dirname(os.path.abspath(path)) or ".",
-                capture_output=True, text=True, timeout=5)
+                capture_output=True, text=True, errors="replace", timeout=5)
         except (OSError, subprocess.SubprocessError):
             return None
         return False if inside.stdout.strip() == "true" else None

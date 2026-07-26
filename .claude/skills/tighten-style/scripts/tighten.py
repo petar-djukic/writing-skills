@@ -52,7 +52,12 @@ PARAGRAPH:
 
 
 def run(cmd, **kw):
-    return subprocess.run(cmd, capture_output=True, text=True, **kw)
+    # errors="replace": a single non-UTF-8 byte from any child would
+    # otherwise raise UnicodeDecodeError and take down the whole run.
+    # Measured (GH-229): a published article with smart quotes killed
+    # both arms of an A/B before either produced a line.
+    return subprocess.run(cmd, capture_output=True, text=True,
+                          errors="replace", **kw)
 
 
 def _mods():

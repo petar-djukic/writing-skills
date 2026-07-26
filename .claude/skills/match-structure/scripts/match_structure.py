@@ -313,7 +313,7 @@ def rewrite_draft(client, draft_path, blueprint_path, source_papers, mimic):
 def run_style(args_list):
     result = subprocess.run(
         [sys.executable, STYLE_PY] + args_list,
-        capture_output=True, text=True,
+        capture_output=True, text=True, errors="replace",
     )
     if result.returncode != 0:
         sys.exit(f"style.py failed: {result.stderr.strip()}")
