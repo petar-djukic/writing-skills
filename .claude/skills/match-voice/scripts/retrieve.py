@@ -44,6 +44,28 @@ def render(anchors):
     return "\n\n".join(out)
 
 
+def warn_inert(va, voice_dir, role, stratum, tags):
+    """Say so when a selection flag excludes nothing on this corpus.
+
+    A filter that removes no sample is not steering anything, and a caller
+    trusting it as the register control gets the register it was trying to avoid
+    (GH-234). Cheap to detect: compare the filtered pool against the pool with
+    that one dimension dropped.
+    """
+    pre = (True if stratum == "pre-ai" else False if stratum == "ai-era" else None)
+    n = len(va.sample_paths(voice_dir, role=role, pre_ai=pre, tags=tags))
+    for name, kw in (
+            (f"--stratum {stratum}" if stratum else None,
+             dict(role=role, pre_ai=None, tags=tags)),
+            (f"--role {role}" if role else None,
+             dict(role=None, pre_ai=pre, tags=tags)),
+            (f"--tags {','.join(tags)}" if tags else None,
+             dict(role=role, pre_ai=pre, tags=None))):
+        if name and len(va.sample_paths(voice_dir, **kw)) == n:
+            print(f"note: {name} selects the whole pool ({n} exemplars) — it is "
+                  f"not filtering anything here", file=sys.stderr)
+
+
 def main():
     p = argparse.ArgumentParser(description="retrieve voice anchors for a passage")
     p.add_argument("--text", required=True, help="file with the passage, or -")
@@ -68,8 +90,10 @@ def main():
                      "exemplars (see the writing-voice contract)")
 
     passage = sys.stdin.read() if args.text == "-" else open(args.text).read()
+    tags = args.tags.split(",") if args.tags else None
+    warn_inert(va, voice_dir, args.role, args.stratum, tags)
     got = va.anchors(voice_dir, passage, k=args.k, role=args.role,
-                     tags=(args.tags.split(",") if args.tags else None),
+                     tags=tags,
                      pre_ai=(True if args.stratum == "pre-ai"
                              else False if args.stratum == "ai-era" else None))
     if args.json:

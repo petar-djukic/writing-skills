@@ -47,7 +47,8 @@ evidence of the wrong thing.
 The cause of that run was anchors, not the objective: retrieval was showing the
 model IEEE papers for a punchy blog post (GH-216). Fix the anchors and the
 objective is reachable without the failure mode — which is why the driver now
-prints the exemplar mix before it starts.
+reports the anchors it selected, not merely the pool it selected them from,
+before it starts.
 
 There is deliberately **no automatic quality gate on the Pangram number**. One
 run is not a threshold, and inventing one from it would be the overfitting
@@ -90,21 +91,45 @@ rewrite: that would defeat the decorrelation it exists for.
 
 ## Steering the anchors
 
-The driver prints the exemplar mix **before** rewriting anything:
+The driver reports both the pool and the anchors retrieval actually chose,
+**before** rewriting anything:
 
 ```
-anchors: 52 exemplars from .../writing-voice
-         {'author-voice': 24, 'venue-voice': 28}
+anchors: 52 exemplars available from .../writing-voice
+         pool {'author-voice': 24, 'venue-voice': 28}
+         selected 15 anchors over 5 of 27 paragraphs
+         roles {'author-voice': 11, 'venue-voice': 4}
+         top sources Djukic-2009-rrm.md x4, Djukic-2005-lifetime.md x3, ...
 ```
 
-Read that line. An all-`author-voice` mix behind a draft that wants punch is
-the GH-215 failure, and it costs a whole rewrite to discover afterwards.
+Read the `selected` block, not the `pool` line. They answer different questions
+and only the second one predicts the output: the pool says what retrieval *may*
+reach, the selection says what it *chose*. A pool of 22 author-voice against 91
+venue-voice looks healthy and still hands a how-to paragraph two IEEE papers out
+of three anchors — the GH-215 failure on a corpus assembled to prevent it, which
+is why the pool line alone could not catch it (GH-233).
+
+The pre-run block samples the first few paragraphs and says so. For the real
+selection over every paragraph, with no model called and no draft written:
+
+```bash
+python3 <skill>/scripts/drive.py --article draft.md --dry-run
+```
+
+Judge on sources as well as roles. `{'venue-voice': 2, 'author-voice': 1}` reads
+balanced while every anchor is a paper.
+
+A flag that filters nothing is reported as inert rather than left to look like a
+control — `--stratum pre-ai` on a corpus whose diction-eligible samples are all
+pre-AI is a no-op, and following it as the register control produces the
+register it was meant to avoid (GH-234, idea-factory#355).
 
 | you want | flags |
 |---|---|
 | default — nearest passages, author-voice weighted | none |
-| diction-safe only (exclude AI-era samples) | `--stratum pre-ai` |
-| **punch: the pre-AI peer essays** | `--role venue-voice --stratum pre-ai` |
+| diction-safe only (exclude AI-era samples) | `--stratum pre-ai` — inert, and reported as such, when the corpus holds no AI-era diction samples |
+| **punch: the pre-AI peer essays** | `--role venue-voice --anchor-tags clipped` |
+| see the real selection before spending tokens | `--dry-run` |
 | **register that topic will not find** | `--anchor-tags economics` |
 | shape references, deliberately | `--anchor-tags structure-only` |
 | a specific corpus | `--voice-dir <path>` |

@@ -138,45 +138,130 @@ def anchor_flags(a):
     return f
 
 
-def anchor_provenance(a, article):
-    """Print which exemplars the anchors will be drawn from, BEFORE rewriting.
+PREVIEW_PARAGRAPHS = 5
 
-    The whole failure in GH-215 was invisible until the operator ran retrieve.py
-    by hand after a 25-paragraph rewrite and found every anchor was an IEEE
-    paper. Printing the mix first costs nothing and makes that obvious.
-    """
+
+def _voice_anchors_module():
     stylo = os.path.normpath(os.path.join(SK, "..", "..", "match-structure", "scripts"))
     if stylo not in sys.path:
         sys.path.insert(0, stylo)
     try:
         import voice_anchors as va
+        return va
     except ImportError:
+        return None
+
+
+def _selection(a):
+    """(pre_ai, tags) as voice_anchors wants them, from the parsed flags."""
+    pre = (True if a.stratum == "pre-ai"
+           else False if a.stratum == "ai-era" else None)
+    return pre, (a.anchor_tags.split(",") if a.anchor_tags else None)
+
+
+def inert_filters(va, d, a):
+    """Which anchor-selection flags remove nothing on THIS corpus.
+
+    A filter that excludes no sample is not a control, and an operator following
+    a document that calls it one gets the failure it was supposed to prevent
+    (GH-234: `--stratum pre-ai` on a corpus deepened until every diction-eligible
+    sample is pre-AI). Reported by name, at the point it is applied.
+    """
+    pre, tags = _selection(a)
+    n = len(va.sample_paths(d, role=a.role, pre_ai=pre, tags=tags))
+    out = []
+    if a.stratum and len(va.sample_paths(d, role=a.role, pre_ai=None, tags=tags)) == n:
+        out.append(f"stratum={a.stratum}")
+    if a.role and len(va.sample_paths(d, role=None, pre_ai=pre, tags=tags)) == n:
+        out.append(f"role={a.role}")
+    if tags and len(va.sample_paths(d, role=a.role, pre_ai=pre, tags=None)) == n:
+        out.append(f"tags={a.anchor_tags}")
+    return out
+
+
+def realized_mix(va, d, a, paras, limit=None):
+    """Run retrieval for real and report what it SELECTED, not what was available.
+
+    The pool line cannot catch a bad selection (GH-233). On a corpus that is 80%
+    venue-voice, a how-to paragraph still drew two IEEE papers out of three
+    anchors — the GH-215 failure, on a pool assembled to prevent it, with a mix
+    line that showed nothing wrong because nothing about the pool was wrong.
+
+    Returns (roles, sources, sampled, total) where sampled is how many
+    paragraphs were actually retrieved for. A sampled count reported as if it
+    were complete would be the same defect this function exists to fix, so the
+    caller prints it.
+    """
+    pre, tags = _selection(a)
+    chosen = paras if limit is None else paras[:limit]
+    roles, sources = Counter(), Counter()
+    for _s, _e, txt in chosen:
+        for x in va.anchors(d, txt, k=3, role=a.role, pre_ai=pre, tags=tags):
+            roles[x.get("role", "?")] += 1
+            sources[x.get("file", "?")] += 1
+    return roles, sources, len(chosen), len(paras)
+
+
+def anchor_provenance(a, article, paras, full=False):
+    """Print the anchor pool AND the realized selection, BEFORE rewriting.
+
+    Two different questions, and only the second one predicts the output: the
+    pool says what retrieval may reach, the selection says what it chose. GH-215
+    was invisible until an operator re-ran retrieval by hand after a
+    25-paragraph rewrite; GH-233 was invisible because the pool was reported
+    instead of the selection. Both are cheap to answer up front.
+
+    Returns the discovered voice directory, or None when there is none.
+    """
+    va = _voice_anchors_module()
+    if va is None:
         print("anchors: match-structure not importable — cannot report the mix",
               file=sys.stderr)
-        return
+        return None
     d = a.voice_dir or va.discover(article)
     if not d:
         print("anchors: no writing-voice/ found — the rewrite has no target "
               "register; run plain filter-tells instead", file=sys.stderr)
-        return
-    pre = (True if a.stratum == "pre-ai"
-           else False if a.stratum == "ai-era" else None)
-    tags = a.anchor_tags.split(",") if a.anchor_tags else None
+        return None
+
+    pre, tags = _selection(a)
     paths = va.sample_paths(d, role=a.role, pre_ai=pre, tags=tags)
     mix = Counter(r for _, r in paths)
     filt = " ".join(x for x in (f"role={a.role}" if a.role else "",
                                 f"stratum={a.stratum}" if a.stratum else "",
                                 f"tags={a.anchor_tags}" if a.anchor_tags else "") if x)
-    print(f"anchors: {len(paths)} exemplars from {d}")
-    print(f"         {dict(mix)}{'  [' + filt + ']' if filt else ''}")
+    print(f"anchors: {len(paths)} exemplars available from {d}")
+    print(f"         pool {dict(mix)}{'  [' + filt + ']' if filt else ''}")
+
+    for name in inert_filters(va, d, a):
+        print(f"         INERT FILTER {name} selects the whole pool — it is not "
+              f"steering anything on this corpus", file=sys.stderr)
+
     if not paths:
         print("         NOTHING MATCHES THE FILTER — every rewrite will run "
               "without anchors", file=sys.stderr)
-    elif mix.get("author-voice", 0) == len(paths) and not a.role:
-        # The GH-215 shape: an all-papers corpus behind a draft that may not
-        # want academic register.
-        print("         all author-voice; if this draft wants punch rather than "
-              "precision, try --stratum pre-ai", file=sys.stderr)
+        return d
+    if not paras:
+        return d
+
+    roles, sources, sampled, total = realized_mix(
+        va, d, a, paras, None if full else PREVIEW_PARAGRAPHS)
+    scope = ("every paragraph" if sampled == total
+             else f"{sampled} of {total} paragraphs")
+    print(f"         selected {sum(roles.values())} anchors over {scope}")
+    print(f"         roles {dict(roles)}")
+    top = ", ".join(f"{f} x{n}" for f, n in sources.most_common(5))
+    print(f"         top sources {top}")
+
+    # Roles alone hide the GH-215 shape: {'venue-voice': 2, 'author-voice': 1}
+    # looks balanced while every anchor is an IEEE paper. Judge on what was
+    # chosen, which is why this warning moved off the pool.
+    picked = sum(roles.values())
+    if picked and roles.get("author-voice", 0) * 2 >= picked and not a.role:
+        print("         MOSTLY author-voice anchors were SELECTED; if this draft "
+              "wants punch rather than precision, select the register explicitly "
+              "with --role venue-voice and/or --anchor-tags", file=sys.stderr)
+    return d
 
 
 def restore_full_bold(original, candidate):
@@ -224,10 +309,16 @@ def main():
                          "that fits is not the one topically nearest")
     ap.add_argument("--stratum", choices=["pre-ai", "ai-era"],
                     help="pre-ai restricts anchors to diction-safe samples "
-                         "across roles — use it when the draft needs punch and "
-                         "the corpus is mostly papers")
+                         "across roles. Inert on a corpus whose diction-eligible "
+                         "samples are all pre-AI — the run says so when it is. "
+                         "To steer register, reach for --role/--anchor-tags")
     ap.add_argument("--coverage-only", action="store_true",
                     help="parse + coverage audit only; no model calls")
+    ap.add_argument("--dry-run", action="store_true",
+                    help="run retrieval for EVERY paragraph, report the anchors "
+                         "it selects, and exit without calling the model. The "
+                         "pre-run line samples a few paragraphs; this is the "
+                         "whole article")
     ap.add_argument("--pangram", action="store_true",
                     help="measure the rewrite against an external detector. "
                          "UPLOADS this article and the draft to a third party "
@@ -238,7 +329,10 @@ def main():
     art = os.path.abspath(a.article)
     out = a.out or re.sub(r"\.md$", ".vr-draft.md", art)
     lines, fm_close, paras, coverage, unaccounted = parse_paragraphs(art, a.min_words)
-    anchor_provenance(a, art)
+    # Long enough to be rewritten is the same bar the loop uses, so the reported
+    # selection is the selection the run would actually make.
+    rewritable = [p for p in paras if len(p[2].split()) >= a.min_words]
+    anchor_provenance(a, art, rewritable, full=a.dry_run)
 
     from collections import Counter
     cats = Counter(coverage.values())
@@ -252,6 +346,10 @@ def main():
             w = len(txt.split())
             tag = "short-skip" if w < a.min_words else "rewrite"
             print(f"  p{n:02d} L{s:>4} {w:>4}w {tag:10} | {txt[:60]}")
+        sys.exit(1 if unaccounted else 0)
+    if a.dry_run:
+        print("\ndry run: anchors above are the real selection for every "
+              "rewritable paragraph. No model was called and no draft written.")
         sys.exit(1 if unaccounted else 0)
 
     work = tempfile.mkdtemp(prefix="match-voice-")
