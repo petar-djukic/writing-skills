@@ -64,14 +64,13 @@ class PangramError(Exception):
 
 
 def _secrets_module():
-    """The shared credential loader at the surface root (GH-184).
+    """The shared credential loader (GH-184), a sibling since GH-212.
 
-    Path computed relatively, never written out: skills are copied between
-    agent surfaces with their paths rewritten, and a literal surface name here
-    would trip the .github self-containment guard.
+    Path computed from __file__, never written out: this tree is copied between
+    agent surfaces, and a literal surface name would trip the .github
+    self-containment guard.
     """
-    root = os.path.normpath(os.path.join(
-        os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", "scripts"))
+    root = os.path.dirname(os.path.abspath(__file__))
     if root not in sys.path:
         sys.path.insert(0, root)
     import credentials as _s

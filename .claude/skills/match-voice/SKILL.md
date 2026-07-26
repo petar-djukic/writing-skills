@@ -61,6 +61,7 @@ assembles the gate-passing rewrites into a sibling `<article>.vr-draft.md`:
 ```bash
 python3 <skill>/scripts/drive.py --article <path.md> --model gemma4:31b-cloud
 python3 <skill>/scripts/drive.py --article <path.md> --coverage-only   # no model calls
+python3 <skill>/scripts/drive.py --article <path.md> --pangram         # + before/after, uploads
 ```
 
 - **Coverage audit is mandatory output.** Every body line is classified
@@ -79,6 +80,9 @@ python3 <skill>/scripts/drive.py --article <path.md> --coverage-only   # no mode
   original is a correct outcome, and the keeps double as an internal control
   in redistribution experiments (the 2026-07 Pangram run: flagged residue
   mapped to the kept paragraphs).
+- `--pangram` measures whether the rewrite worked, and is the only way to get
+  the comparison — see [Did it work?](#did-it-work-the---pangram-measurement)
+  below for what it costs and what it discloses.
 
 ## The pipeline (per paragraph)
 
@@ -154,39 +158,46 @@ default; applying them directly is opt-in.
 | Timeout (s) | `--timeout` / `MATCH_VOICE_TIMEOUT` | 300 (cold loads are slow) |
 | Anchors per paragraph | `-k` | 3 |
 | Max copied run (words) | `--max-shared-run` | 8 |
+| External check | `--pangram` | off (the flag is the consent) |
 
-## Did it work? (optional external check)
+## Did it work? (the --pangram measurement)
 
-This skill has had no outcome measure. The gate proves a candidate preserved
-citations, numbers, and meaning; it cannot tell you whether the prose stopped
-reading as machine-written. filter-tells's detectors cannot settle it either — they
-are the denylist the rewrite was steering around, so their silence is close to
-tautological.
-
-An external detector answers it from outside. Scan, rewrite, scan again:
+The gate proves a candidate preserved citations, numbers, and meaning. It
+cannot tell you whether the prose stopped reading as machine-written, and
+filter-tells cannot settle that either — its detectors are the denylist the
+rewrite was steering around, so their silence is close to tautological. An
+external detector answers from outside, and the driver runs it:
 
 ```bash
-python3 <filter-tells>/scripts/pangram_report.py payload --article draft.md
-python3 <filter-tells>/scripts/pangram.py --text draft.payload.txt --json > before.json
-# ... run the rewrite ...
-python3 <filter-tells>/scripts/pangram_report.py payload --article draft.md
-python3 <filter-tells>/scripts/pangram.py --text draft.payload.txt --json > after.json
-python3 <filter-tells>/scripts/pangram_report.py report --response after.json \
-    --spans draft.payload.spans.json --baseline before.json
+python3 <skill>/scripts/drive.py --article draft.md --pangram
 ```
 
-Two things to know before starting. The baseline must be captured **before**
-the rewrite — there is no reconstructing it afterwards, and discovering that
-later means the comparison is simply unavailable. And a full comparison costs
-two scans against a free tier of four a day.
+It scans the article before touching a paragraph, scans the assembled draft at
+the end, and reports `fraction_ai` before → after with the paragraphs that
+moved. That ordering is why the measurement lives in the driver rather than in
+a procedure to follow afterwards: **the baseline cannot be reconstructed once
+the paragraphs are replaced**, so a run started without the flag can never be
+measured later. Decide before the run, not after reading the draft.
 
-This uploads the draft to a third party that retains it, which is the opposite
-of the local-first reason this skill exists. It asks per document, every time;
-see the upload rule in the `writing-voice/` directory rule. Without a key, skip
-it — the pipeline is unchanged and still worth running.
+**Passing the flag is the consent**, and it is asked for per document. The
+scan uploads the article and the draft to a third party that retains both —
+the opposite of the local-first reason this skill exists — so the driver never
+uploads on its own, not even with a key sitting in the environment. See the
+upload rule in the `writing-voice/` directory rule before answering. A full
+comparison costs two scans against a free tier of four a day.
 
-The still-flagged paragraph list is the useful output: it is the worklist for
-another pass, pointing at the passages the rewrite did not fix.
+Without the flag, or without a key, the driver runs unchanged and says the
+check was skipped. That is the normal state, not a degraded one; if the
+baseline scan fails the second one is not spent either.
+
+The still-flagged paragraph list is the useful output: the worklist for
+another pass, pointing at the passages the rewrite did not fix. Read it as
+evidence and not a verdict — filter-tells's Verdict Validity Rules apply here
+too, and a favourable number certifies nothing on its own.
+
+The two scripts underneath, `<agent-dir>/scripts/pangram.py` and
+`pangram_report.py`, sit at the shared scripts root. filter-tells invokes the
+same pair for a point-in-time reading; neither skill owns them.
 
 ## Relationship to the other prose skills
 

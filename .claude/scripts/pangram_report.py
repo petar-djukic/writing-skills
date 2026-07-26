@@ -48,7 +48,7 @@ FLAG_SCORE = 0.5
 
 
 def _md_paragraphs():
-    shared = os.path.normpath(os.path.join(SK, "..", "..", "..", "scripts"))
+    shared = SK                      # a sibling at the shared root since GH-212
     if shared not in sys.path:
         sys.path.insert(0, shared)
     try:

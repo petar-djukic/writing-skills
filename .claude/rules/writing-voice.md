@@ -69,7 +69,9 @@ are additive, never required.
   extraction and comparison.
 - **match-voice** — retrieves the same anchors and sends them with the
   paragraph to a second model family, then gates the candidate on citation and
-  number preservation, meaning entailment, anchor similarity, and register.
+  number preservation, meaning entailment, anchor similarity, and register. Its
+  driver carries the before/after Pangram measurement, since the baseline can
+  only be captured before the rewrite starts.
 - **do-work** — its Prose workflow reads the manifest and the nearest samples
   before drafting, and scans the produced prose with filter-tells before committing,
   so a writing repository gets the rule from the workflow rather than from a
