@@ -47,6 +47,23 @@ API_BASE = "https://api.semanticscholar.org/graph/v1"
 USER_AGENT = "update-references-skill/1.0"
 FIELDS = "title,authors,year,venue,abstract,openAccessPdf,externalIds,citationCount,url"
 
+_ENV = {"semantic_scholar": "SEMANTIC_SCHOLAR_API_KEY"}
+
+
+def _resolve_key(service, explicit):
+    """--api-key, else the env var, else .secrets/ in the working repo (GH-184)."""
+    root = os.path.normpath(os.path.join(
+        os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", "scripts"))
+    if root not in sys.path:
+        sys.path.insert(0, root)
+    try:
+        import credentials as _s
+    except ImportError:
+        return explicit or os.environ.get(_ENV[service])
+    try:
+        return _s.resolve(service, explicit=explicit, required=False)
+    except _s.SecretsError as e:
+        sys.exit(str(e))
 
 def load_db(path):
     if not os.path.exists(path):
@@ -202,7 +219,7 @@ def _dedupe_status(rec, by_title, by_arxiv):
 
 
 def cmd_search(args):
-    api_key = args.api_key or os.environ.get("SEMANTIC_SCHOLAR_API_KEY")
+    api_key = _resolve_key("semantic_scholar", args.api_key)
     results = semantic_search(args.query, api_key, args.max, args.year)
     entries = load_db(args.db)
     by_title = index_by_title(entries)
@@ -228,7 +245,7 @@ def cmd_search(args):
 
 
 def cmd_fetch(args):
-    api_key = args.api_key or os.environ.get("SEMANTIC_SCHOLAR_API_KEY")
+    api_key = _resolve_key("semantic_scholar", args.api_key)
     if not args.paper_id and not args.title:
         sys.exit("--paper-id or --title is required")
 

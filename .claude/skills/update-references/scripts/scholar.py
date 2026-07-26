@@ -45,6 +45,23 @@ except ImportError:
 SERPAPI_URL = "https://serpapi.com/search.json"
 USER_AGENT = "update-references-skill/1.0"
 
+_ENV = {"serpapi": "SERPAPI_KEY"}
+
+
+def _resolve_key(service, explicit):
+    """--api-key, else the env var, else .secrets/ in the working repo (GH-184)."""
+    root = os.path.normpath(os.path.join(
+        os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", "scripts"))
+    if root not in sys.path:
+        sys.path.insert(0, root)
+    try:
+        import credentials as _s
+    except ImportError:
+        return explicit or os.environ.get(_ENV[service])
+    try:
+        return _s.resolve(service, explicit=explicit, required=False)
+    except _s.SecretsError as e:
+        sys.exit(str(e))
 
 def load_db(path):
     if not os.path.exists(path):
@@ -167,7 +184,7 @@ def scholar_search(query, api_key, max_results=10):
 
 
 def cmd_search(args):
-    api_key = args.api_key or os.environ.get("SERPAPI_KEY")
+    api_key = _resolve_key("serpapi", args.api_key)
     if not api_key:
         sys.exit("SerpAPI key required. Pass --api-key or set SERPAPI_KEY.")
     results = scholar_search(args.query, api_key, args.max)
@@ -191,7 +208,7 @@ def cmd_search(args):
 
 
 def cmd_fetch(args):
-    api_key = args.api_key or os.environ.get("SERPAPI_KEY")
+    api_key = _resolve_key("serpapi", args.api_key)
     if not args.title:
         sys.exit("--title is required")
 

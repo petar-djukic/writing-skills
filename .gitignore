@@ -3,3 +3,7 @@
 .pixi/
 **/.pixi/
 __pycache__/
+
+# Local credentials, symlinked in per-machine. Never committed — this repo is public.
+.secrets
+.secrets/

@@ -106,10 +106,16 @@ def main():
             urllib.request.urlopen = saved
 
         # 6. Missing key names both ways to supply one, and says to skip rather
-        #    than substitute.
+        #    than substitute. start_path is an isolated empty directory: since
+        #    GH-184 the lookup also searches .secrets/ upward, and without
+        #    pinning it this assertion would pass or fail depending on what
+        #    happens to sit above the checkout on a given machine.
         pg._request = orig
         os.environ.pop("PANGRAM_API_KEY", None)
-        m = expect_error(lambda: pg.resolve_key(None), "PANGRAM_API_KEY", "no key")
+        import tempfile
+        with tempfile.TemporaryDirectory() as empty:
+            m = expect_error(lambda: pg.resolve_key(None, start_path=empty),
+                             "PANGRAM_API_KEY", "no key")
         assert "--api-key" in m and "skip" in m.lower()
 
         # 7. Empty text is refused locally — never spend a call to be told no.

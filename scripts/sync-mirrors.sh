@@ -322,8 +322,19 @@ AGENTSEOF
     mkdir -p "$STAGE/$surface/scripts"
     cp "$ROOT/.claude/pixi.toml" "$STAGE/$surface/pixi.toml"
     cp "$ROOT/.claude/pixi.lock" "$STAGE/$surface/pixi.lock"
-    cp "$ROOT/.claude/scripts/ensure-env.sh" "$STAGE/$surface/scripts/ensure-env.sh"
-    chmod +x "$STAGE/$surface/scripts/ensure-env.sh"
+    # Every shared script, not a hardcoded filename: naming one file meant the
+    # next script added to .claude/scripts/ was silently missing from all four
+    # surfaces, and the skills that import it fell back to whatever else
+    # answered to that name (GH-184, credentials.py).
+    local f base
+    for f in "$ROOT/.claude/scripts/"*; do
+      [ -f "$f" ] || continue
+      base="$(basename "$f")"
+      cp "$f" "$STAGE/$surface/scripts/$base"
+      case "$base" in
+        *.sh|*.py) chmod +x "$STAGE/$surface/scripts/$base" ;;
+      esac
+    done
   done
 }
 
