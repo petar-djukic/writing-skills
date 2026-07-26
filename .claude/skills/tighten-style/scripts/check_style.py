@@ -89,6 +89,7 @@ TERM_OF_ART_HINTS = (
     "public key", "private key", "key management", "primary key", "foreign key",
     "robust statistics", "robust control", "robust estimator", "key performance",
     "api key", "a key", "no key", "the key", "key is", "keys", "key file",
+    "whose key", "key does not", "key/value", "by key", "sort key",
 )
 
 # TS-14: abbreviation defined on first use in a section.
@@ -99,7 +100,11 @@ ABBREV_SKIP = {"AI", "API", "CPU", "GPU", "RAM", "URL", "HTTP", "HTTPS", "JSON",
                # Repo vocabulary: universal here, so flagging it measures house
                # style rather than undefined jargon.
                "PR", "PRD", "PRDS", "LOC", "README", "VISION", "WT", "CI", "CLI",
-               "SDK", "MCP", "OS", "UI", "UX", "TODO", "NDA", "OCR", "PDFS"}
+               "SDK", "MCP", "OS", "UI", "UX", "TODO", "NDA", "OCR", "PDFS",
+               # Filename placeholders and language keywords are not
+               # abbreviations: prd[NNN], SELECT ALL, git HEAD.
+               "NN", "NNN", "N", "XX", "YYYY", "ALL", "HEAD", "MAIN", "EOF",
+               "GET", "POST", "PUT", "JSON5", "UTC"}
 
 
 def load_prose(path):
