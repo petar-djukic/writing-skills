@@ -62,7 +62,8 @@ python3 <tighten-style>/scripts/check_style.py <file> [--json] [--rule TS-01,TS-
 |---|---|---|
 | deterministic | TS-14 | rewrite it |
 | lexical | TS-01, TS-03, TS-05, TS-08, TS-15 | propose; context can excuse |
-| metric | TS-02, TS-04, TS-10, TS-12, TS-13, TS-16 | flag; a reader decides |
+| per-sentence | TS-02 (agentive passive, or 2+ bare), TS-04 (3+ nominalizations) | propose; the rules' own exceptions apply |
+| metric | TS-04 doc-level, TS-10, TS-12, TS-13, TS-16 | flag; a reader decides |
 | judgment | TS-06, TS-07, TS-09, TS-11 | flag and explain; never auto-fix |
 
 Metric rules delegate to `match-structure`, which already measures passive
@@ -86,7 +87,10 @@ the cadence is the problem and TS-12 does not apply.
 
 ## What the checker will not tell you
 
-It reads lists and densities. It cannot tell whether a paragraph earns its
+It reads lists, densities, and now the per-sentence passive and
+nominalization shapes (GH-223 — a paragraph of textbook passives once returned
+zero findings while the description promised "restore the active voice"). It
+still cannot tell whether a paragraph earns its
 place in the argument, whether the concrete detail is the *right* detail, or
 whether a hedge is honest calibration or evasion. On prose that is already
 lexically clean — which the author's own tends to be — nearly all the

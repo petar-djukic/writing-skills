@@ -43,6 +43,8 @@ Result = namedtuple("Result",
 # "**Figure" is a caption, not prose, but only after the code-fence and blank
 # checks have run.
 _CATEGORY_TESTS = (
+    # Both spellings: some files carry the bang escaped ("<\!--").
+    ("comment", lambda s: s.startswith(("<!--", "<\\!--"))),
     ("heading", lambda s: s.startswith("#")),
     ("figure", lambda s: s.startswith("![")),
     ("table", lambda s: s.startswith("|")),
@@ -55,12 +57,19 @@ _CATEGORY_TESTS = (
 
 
 def _front_matter_close(lines):
-    """Index of the closing `---` of front matter, else 0."""
+    """Index of the closing `---` of front matter, else -1.
+
+    -1, not 0: the body loop starts at fm_close + 1, and returning 0 for "no
+    front matter" silently skipped the FIRST LINE of every document that did
+    not open with ---. Unnoticed for the extractor's whole life because
+    documents usually open with a heading, which is skipped anyway; found by a
+    one-line GH-223 control file that parsed to zero paragraphs.
+    """
     if lines and lines[0].strip() == "---":
         for i in range(1, len(lines)):
             if lines[i].strip() == "---":
                 return i
-    return 0
+    return -1
 
 
 def parse(text: str) -> Result:
