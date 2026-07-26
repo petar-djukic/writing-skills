@@ -143,7 +143,8 @@ def _sweep_dry_run(voice_dir, articles, arms, k, out_path):
         print(f"\nledger: {out_path} ({len(lg.trials)} trials)")
 
 
-def _sweep_full(voice_dir, articles, arms, n, model, out_path, tighten):
+def _sweep_full(voice_dir, articles, arms, n, model, out_path, tighten,
+                sent_floor=None):
     """Full sweep: runs drive.py then tighten.py per (article, arm), captures
     register markers and structural metrics. Requires Ollama."""
     rm = _register_markers()
@@ -199,6 +200,9 @@ def _sweep_full(voice_dir, articles, arms, n, model, out_path, tighten):
                 tight_out = draft.replace(".md", ".tight.md")
                 tcmd = [sys.executable, tighten_py, "--article", draft,
                         "--model", model, "--out", tight_out]
+                if sent_floor:
+                    tcmd += ["--sent-floor", str(sent_floor[0]),
+                             str(sent_floor[1])]
                 tr = _run(tcmd)
                 if tr.returncode == 0 and os.path.exists(tight_out):
                     draft = tight_out
@@ -298,7 +302,7 @@ def cmd_sweep(args):
         _sweep_dry_run(voice_dir, articles, arms, args.k, out_path)
     else:
         _sweep_full(voice_dir, articles, arms, args.n, args.model, out_path,
-                    tighten)
+                    tighten, sent_floor=args.sent_floor)
 
 
 # --- rank --------------------------------------------------------------------
@@ -464,6 +468,8 @@ def main():
                     help="retrieval only — no model, no cost")
     sw.add_argument("--no-tighten", action="store_true",
                     help="skip the tighten step (rank on raw voice draft)")
+    sw.add_argument("--sent-floor", nargs=2, type=float, metavar=("MEAN", "SD"),
+                    help="pass --sent-floor to tighten.py (minimum sentence stats)")
     sw.set_defaults(func=cmd_sweep)
 
     rk = sub.add_parser("rank", help="score arms on register composite")

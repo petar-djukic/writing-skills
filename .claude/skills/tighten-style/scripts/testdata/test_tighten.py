@@ -114,6 +114,38 @@ def main():
         out = run_main(["--article", art, "--check-only"], forbidden)
         assert "L" in out, out
 
+        # 6. _sentence_stats computes mean and stdev correctly.
+        text = "The quick brown fox jumps over the lazy dog. A short one."
+        mean, sd = tn._sentence_stats(text)
+        assert abs(mean - 6.0) < 0.01, f"mean={mean}"
+        assert sd > 0, f"sd={sd}"
+        m2, s2 = tn._sentence_stats("")
+        assert m2 == 0.0 and s2 == 0.0
+
+        # 7. --sent-floor reverts candidates that push below the floor.
+        #    Stub returns a very short rewrite — floor should revert it.
+        def shorten(prompt, **kw):
+            return "Cache expires early."
+
+        art4 = os.path.join(tmp, "d.md")
+        long_para = ("The distributed scheduling algorithm coordinates "
+                     "independent nodes across the network by exchanging "
+                     "short control messages at regular intervals. "
+                     "Each node maintains a local view of available "
+                     "capacity and makes autonomous decisions about "
+                     "which tasks to accept based on current load.")
+        with open(art4, "w") as f:
+            f.write(f"# T\n\n{long_para}\n")
+
+        out4 = os.path.join(tmp, "o4.md")
+        out_txt = run_main(["--article", art4, "--out", out4,
+                            "--sent-floor", "20", "10", "--retries", "0"],
+                           shorten)
+        result = open(out4).read()
+        assert "distributed scheduling" in result, (
+            "floor should revert the too-short candidate")
+        assert "reverted-floor" in out_txt or "Cache expires" not in result
+
         print("test_tighten: all assertions passed (no server)")
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
