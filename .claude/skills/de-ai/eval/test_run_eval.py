@@ -84,6 +84,36 @@ def main():
         assert list(ev.LENGTH_BANDS) == sorted(ev.LENGTH_BANDS)
         assert ev.LENGTH_BANDS[0] <= 500
 
+        # 10. A crashed detector raises DetectorFailure rather than returning a
+        #     fake result. This is GH-190: an "error" verdict used to enter the
+        #     denominator as a measured document with zero findings, dragging
+        #     every rate down with nothing in the output saying so.
+        import subprocess as sp
+        real_run = sp.run
+
+        class Dead:
+            returncode = 137          # what a SIGKILLed subprocess reports
+            stdout = ""               # empty stdout is the observed failure shape
+            stderr = "Killed: 9"
+
+        sp.run = lambda *a, **k: Dead()
+        try:
+            for fn, name in ((lambda: ev.run_structural("x.md"), "structural"),
+                             (lambda: ev.run_lexical("x.md"), "lexical")):
+                try:
+                    fn()
+                    raise AssertionError(f"{name}: crashed subprocess did not raise")
+                except ev.DetectorFailure as e:
+                    assert "137" in str(e), f"{name}: exit code missing from {e}"
+                    assert "Killed" in str(e), f"{name}: stderr missing from {e}"
+        finally:
+            sp.run = real_run
+
+        # 11. The failure message is diagnosable but bounded — last stderr line,
+        #     truncated, so a Python traceback does not flood the report.
+        f = ev.DetectorFailure("t", 1, "line1\nline2\n" + "x" * 500)
+        assert "line1" not in str(f) and str(f).index("x" * 10) and len(f.stderr) <= 200
+
         print("test_run_eval: all assertions passed (no corpus, no detectors)")
     finally:
         shutil.rmtree(tmp, ignore_errors=True)

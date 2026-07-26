@@ -116,15 +116,30 @@ def human_from_writing_voice(start=None, role="author-voice"):
     return sorted(files), meta
 
 
+class DetectorFailure(Exception):
+    """The detector did not run. Distinct from "ran and found nothing".
+
+    A crashed subprocess used to be recorded as a measured document with an
+    empty finding set, which silently dragged every rate down. Since GH-187 and
+    GH-188 are judged by before/after rate comparisons, a handful of those turns
+    noise into a verdict.
+    """
+
+    def __init__(self, tool, returncode, stderr):
+        self.tool, self.returncode = tool, returncode
+        self.stderr = (stderr or "").strip().split("\n")[-1][:200]
+        super().__init__(f"{tool} exited {returncode}: {self.stderr or 'no stderr'}")
+
+
 def run_lexical(path):
-    """Set of lexical categories that fired on the file."""
+    """Set of lexical categories that fired. Raises DetectorFailure if it did not run."""
     r = subprocess.run(
         ["bash", os.path.join(SCRIPTS, "detect-lexical.sh"), path, "--json"],
         capture_output=True, text=True)
     try:
         hits = json.loads(r.stdout)
     except json.JSONDecodeError:
-        return set()
+        raise DetectorFailure("detect-lexical.sh", r.returncode, r.stderr)
     return {h["category"] for h in hits if isinstance(h, dict)}
 
 
@@ -137,7 +152,7 @@ def run_structural(path):
     try:
         d = json.loads(r.stdout)
     except json.JSONDecodeError:
-        return "error", set()
+        raise DetectorFailure("detect-structural.py", r.returncode, r.stderr)
     if isinstance(d, list):
         d = d[0]
     fired = {i["type"] for i in d.get("issues", [])}
@@ -222,6 +237,7 @@ def measure_bands(class_paths, bands=LENGTH_BANDS):
             row = {}
             for cls, paths in class_paths.items():
                 hits, verdicts, used, skipped = [], [], 0, 0
+                failures = []
                 for p in paths:
                     ex = excerpt(p, band)
                     if ex is None:
@@ -230,8 +246,12 @@ def measure_bands(class_paths, bands=LENGTH_BANDS):
                     f = os.path.join(tmp, f"{cls}-{band}-{used}.md")
                     with open(f, "w", encoding="utf-8") as fh:
                         fh.write(ex)
-                    verdict, s_fired = run_structural(f)
-                    hits.append(s_fired | run_lexical(f))
+                    try:
+                        verdict, s_fired = run_structural(f)
+                        hits.append(s_fired | run_lexical(f))
+                    except DetectorFailure as e:
+                        failures.append(str(e))
+                        continue
                     verdicts.append(verdict)
                     used += 1
                 dets = {}
@@ -246,6 +266,7 @@ def measure_bands(class_paths, bands=LENGTH_BANDS):
                 row[cls] = {
                     "documents": used,
                     "skipped_too_short": skipped,
+                    "detector_failures": failures,
                     "verdicts": dict(Counter(verdicts)),
                     "non_clean_rate": (
                         round(sum(1 for v in verdicts
@@ -276,17 +297,31 @@ def evaluate(bands=False):
             files, human_meta = human_from_writing_voice()
         per_file = {}
         verdicts = {}
+        failures = {}
         for f in files:
-            fired = run_lexical(f)
-            verdict, s_fired = run_structural(f)
+            try:
+                fired = run_lexical(f)
+                verdict, s_fired = run_structural(f)
+            except DetectorFailure as e:
+                failures[os.path.basename(f)] = str(e)
+                continue
             per_file[os.path.basename(f)] = sorted(fired | s_fired)
             verdicts[os.path.basename(f)] = verdict
         per_class_hits[cls] = per_file
         report["classes"][cls] = {
             "files": len(files),
+            "measured": len(per_file),
+            "detector_failures": failures,
             "verdicts": verdicts,
             "length": length_stats(files),
         }
+        # A degraded run is not a measurement. Comparing it against a baseline
+        # would judge detector changes on machine load.
+        if files and len(failures) / len(files) > 0.10:
+            print(f"WARNING: {len(failures)}/{len(files)} {cls} documents "
+                  f"failed to measure — this run is degraded, do not compare "
+                  f"it against a baseline. First failure: "
+                  f"{next(iter(failures.values()))}", file=sys.stderr)
         report["classes"][cls]["_paths"] = list(files)
         if cls == "human" and human_meta:
             # Provenance, not text: where the samples came from, so a baseline
