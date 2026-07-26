@@ -45,6 +45,10 @@ REG_NOTE = ("Avoid corporate and AI-typical vocabulary (leverage, robust, seamle
             "delve, comprehensive, crucial). Do not trade it for chatty filler "
             "either: no just, actually, really, basically, simply, honestly. "
             "Plain declarative technical prose.")
+DASH_NOTE = ("You added an em-dash the original did not have. Keep the original's "
+             "punctuation: no new em-dashes, and do not convert a comma or colon "
+             "into one. Do not manufacture antithesis either — no \"X is not Y, "
+             "it is Z\" unless the original already contrasted them.")
 MARKUP_NOTE = ("Reproduce the markdown formatting of the original exactly: every **bold** "
                "span, *italic* span, and `code` span, in the same places. If the "
                "paragraph opens with a bold sentence, your rewrite must open with a "
@@ -95,6 +99,54 @@ def pangram_scan(path, work, tag):
         return None
     open(resp, "w").write(s.stdout)
     return resp, os.path.splitext(payload)[0] + ".spans.json"
+
+
+STRUCTURAL = os.path.normpath(os.path.join(SK, "..", "..", "filter-tells",
+                                           "scripts", "detect-structural.py"))
+# The three the rewrite was measured degrading (GH-243). Reported from
+# detect-structural.py rather than recomputed here: two implementations of
+# "dash density" would drift, and the numbers in issues have to be the numbers
+# in run output.
+STRUCT_KEYS = ("sentence_length_std", "dash_density_per_500w",
+               "contrast_flip_per_500w")
+
+
+def _structural(path):
+    """The tracked metrics for one file, or {} when they cannot be read."""
+    r = run([sys.executable, STRUCTURAL, path, "--json"])
+    if r.returncode not in (0, 1) or not r.stdout.strip():
+        return {}
+    try:
+        data = json.loads(r.stdout)
+    except json.JSONDecodeError:
+        return {}
+    rec = data[0] if isinstance(data, list) and data else data
+    m = (rec or {}).get("metrics", {}) if isinstance(rec, dict) else {}
+    # Only the metrics that were actually scored. A short document skips them,
+    # and keys carrying None would defeat the caller's "nothing to compare"
+    # guard and print a row of n/a instead of staying quiet.
+    return {k: m[k] for k in STRUCT_KEYS if m.get(k) is not None}
+
+
+def report_structural(article, draft):
+    """Print the three rhythm metrics before -> after.
+
+    A falling detector score with these moving the wrong way is the GH-219
+    pattern, and antithesis is the one the house rules forbid outright — so a
+    rewrite that manufactures it has to be visible in the run, not discovered by
+    a hand measurement afterwards.
+    """
+    before, after = _structural(article), _structural(draft)
+    shared = [k for k in STRUCT_KEYS if k in before and k in after]
+    if not shared:
+        return
+    print("\nrhythm (article -> draft):")
+    for k in shared:
+        b, a = before[k], after[k]
+        # std falling means flatter; the other two rising means more of what the
+        # house rules limit.
+        worse = (a < b) if k == "sentence_length_std" else (a > b)
+        print(f"  {k:26} {b:>6} -> {a:<6}{'  WORSE' if worse else ''}")
 
 
 def report_register(article, draft):
@@ -487,6 +539,8 @@ def main():
                 notes.append(NUM_NOTE)
             if '"markup"' in fj:
                 notes.append(MARKUP_NOTE)
+            if '"dashes"' in fj:
+                notes.append(DASH_NOTE)
             if '"similarity"' in fj:
                 notes.append(COPY_NOTE)
             if de.returncode != 0:
@@ -525,6 +579,12 @@ def main():
     print("\nMechanical gate only. Before accepting the draft: run the meaning-"
           "entailment review (references/prompts.md) on each accepted paragraph, "
           "and filter-tells over the assembled file.")
+
+    # Unconditional, unlike the Pangram section below: this is local, costs
+    # nothing, and uploads nothing. A rewrite that flattened rhythm or
+    # manufactured antithesis should be visible from the run that did it rather
+    # than from a hand measurement weeks later (GH-243).
+    report_structural(art, out)
 
     # The outcome measure, last because it is the result of the run. Without a
     # baseline there is nothing to compare, so the second scan is not spent.

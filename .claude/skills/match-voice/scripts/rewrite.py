@@ -52,7 +52,10 @@ RULES:
 3. Preserve the markdown formatting: every **bold** span, *italic* span, and `code` span stays, in the same place. If the paragraph opens with a bold sentence, your rewrite opens with a bold sentence — it is a lead-in, not ordinary prose.
 4. Rewrite only this one paragraph. Do not merge it with others, do not split the topic, do not add a heading.
 5. Match the anchors' voice, but do NOT copy phrases from them — write the same content in that register.
-6. Output ONLY the rewritten paragraph. No preamble, no explanation, no quotes around it.
+6. Do NOT manufacture antithesis. Never turn a plain statement into "X is not Y, it is Z" or "not X, but Y" unless the original already contrasts them. Stating the thing is stronger than staging a contrast.
+7. Do NOT add em-dashes, and do not convert commas or colons into them. Keep the punctuation the original used.
+8. Keep the sentence lengths uneven. If the original mixes a four-word sentence with a thirty-word one, the rewrite does too — do not even them out into a uniform middle length.
+9. Output ONLY the rewritten paragraph. No preamble, no explanation, no quotes around it.
 {retry_note}
 PARAGRAPH TO REWRITE:
 {paragraph}"""

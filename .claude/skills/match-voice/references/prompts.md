@@ -13,6 +13,10 @@ The template lives in the script so the client is self-contained. Its shape:
 - **Preservation rules, stated as hard constraints** — citation keys verbatim
   (`[@key]`, `\citep{key}`), every number and unit, inline markup where it
   stands, no added or removed claims.
+- **Anti-punch constraints** — no manufactured antithesis, no em-dash the
+  original lacked, no evening out of sentence lengths. A model told to match a
+  punchy register reaches for the most legible signals of punch it knows, and
+  those three are the ones it reaches for (GH-243).
 - **Scope** — one paragraph, no merging, no splitting, no headings.
 - **Output discipline** — the paragraph alone, no preamble. Small models like
   to explain themselves; the client also strips a wrapping pair of quotes.
@@ -29,6 +33,7 @@ failure. Keep it concrete — a generic "try again" wastes the attempt.
 | technical term dropped | `You dropped the term <TERM>. Keep domain terms and acronyms as written.` |
 | citation syntax changed | `You rewrote [@key] as \\citep{key}. Reproduce citations in the SAME syntax as the source paragraph — do not convert between pandoc and natbib.` |
 | markup dropped | `Reproduce the markdown formatting exactly: every **bold**, *italic*, and \`code\` span, in the same places. A paragraph that opens with a bold sentence must still open with one — that is a lead-in, not ordinary prose.` |
+| em-dash added | `You added an em-dash the original did not have. Keep the original's punctuation, and do not manufacture antithesis either — no "X is not Y, it is Z" unless the original already contrasted them.` |
 | similarity violation | `You reused a long phrase from an anchor. Write the same content in that register using your own wording.` |
 | register still off (filter-tells) | `The result still reads as generic AI prose (<flagged terms>). Follow the anchors' plainer rhythm and concrete vocabulary.` |
 | conversational filler (rate rose against the original) | `You replaced corporate vocabulary with chatty filler — just/actually/really/basically went from <b> to <a> per 500 words. State the claim without the softener.` |

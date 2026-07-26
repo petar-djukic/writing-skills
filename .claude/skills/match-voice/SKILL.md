@@ -264,6 +264,7 @@ python3 <skill>/scripts/verify.py --original <paragraph-file> --rewrite <candida
 | Citations, numbers, terms | `verify.py` | a key or figure lost, altered, or invented |
 | Citation syntax family | `verify.py` | `[@key]` silently rewritten as `\citep{key}` — the key survives but the build breaks |
 | Inline markup | `verify.py` | a `**bold**`, `*italic*`, or `` `code` `` span dropped, or a bold lead-in returned as plain prose — same class as citation syntax, and the reason a section of lead-ins lost three of six |
+| Em-dashes | `verify.py` | a dash the original did not have — manufactured punch, measured at 7 → 10 and 7 → 15 across two articles against a house limit of 2.0 per 500 words |
 | Anchor similarity | `verify.py` (match-structure shingles) | a long verbatim run copied from an exemplar |
 | Meaning entailment | **Claude**, per references/prompts.md | any claim weakened, added, or re-scoped |
 | Register | filter-tells lexical scan on the candidate | banned words — one machine register traded for another |
