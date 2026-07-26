@@ -72,6 +72,15 @@ words are legitimate individually and only the rate says anything.
 `just`, `actually`, `really`, `basically`, `simply` — is the register a rewrite
 lands in when it stops sounding corporate, and it is **reported, not gated**.
 
+Both densities count **occurrences**, not matching lines. A markdown paragraph
+is one long line, so a line-based count scored three flourishes in a paragraph
+as one, and undercounted worst on the long paragraphs the measure is for
+(GH-242). The 4.0 ornate threshold survived that correction unchanged: across
+193 documents in three corpora — this repository's rules and skills, and the
+reference `writing-voice` corpus — one file exceeds it, and that file is
+[banned-patterns.md](./references/banned-patterns.md), which flags itself because
+it lists the patterns.
+
 That asymmetry is a calibration result, not an oversight. The banned-word list
 holds `leverage` and `robust`, false emphasis holds `crucially` and `notably`,
 and filler was the one machine register with nothing in front of it — a rewrite
