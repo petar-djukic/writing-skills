@@ -14,7 +14,7 @@ On opening a repository — or at the latest before running any skill that invok
 scripts/ensure-env.sh
 ```
 
-It checks for pixi (installing it if absent, unless `SKILL_ENV_NO_INSTALL` is set), then materializes the locked environment. It is idempotent and fast once provisioned. Run skill scripts through it with `pixi run --manifest-path <agent-dir>/pixi.toml python <script>`. The de-ai detectors need only bash and the Python stdlib, so they run without this step.
+It checks for pixi (installing it if absent, unless `SKILL_ENV_NO_INSTALL` is set), then materializes the locked environment. It is idempotent and fast once provisioned. Run skill scripts through it with `pixi run --manifest-path <agent-dir>/pixi.toml python <script>`. The filter-tells detectors need only bash and the Python stdlib, so they run without this step.
 
 ## Pre-Commit Quality Gate
 

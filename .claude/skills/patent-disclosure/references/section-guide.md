@@ -171,8 +171,8 @@ common than their expansions (HTTP, TCP/IP).
   verbs (causes, enables, prevents).
 - No marketing language ("revolutionary", "groundbreaking"), no vague
   qualifiers ("efficient", "improved") without quantification, no
-  unsupported superlatives. This overlaps the de-ai skill's venue-jargon
-  category — run the finished disclosure through de-ai.
+  unsupported superlatives. This overlaps the filter-tells skill's venue-jargon
+  category — run the finished disclosure through filter-tells.
 - Technical register: components perform operations, they do not
   converse or gesture. Sweep Sections 5-6 against
   technical-register.md after drafting (SKILL.md step 3b).

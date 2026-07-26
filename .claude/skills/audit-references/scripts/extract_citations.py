@@ -24,6 +24,7 @@ Pure stdlib — no dependencies.
 """
 
 import json
+import os
 import re
 import sys
 
@@ -152,7 +153,13 @@ def extract_natbib(filepath):
     schema as the pandoc path: one object per (key, line), with the paragraph
     as context and the containing sentence as the claim, both markup-free.
     """
-    import detex  # copied into this skill's scripts (same dir)
+    # Shared with the prose skills since GH-196 — one copy, at the surface
+    # root. Path computed, never literal (self-containment guard).
+    _shared = os.path.normpath(os.path.join(
+        os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", "scripts"))
+    if _shared not in sys.path:
+        sys.path.insert(0, _shared)
+    import detex
     with open(filepath) as f:
         tex = f.read()
     aligned = detex.detex_aligned(tex, keep_cites=True)  # index i -> source line i+1

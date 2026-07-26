@@ -97,7 +97,7 @@ in the format spec and is judged by reading, not by the script.
 ### 7. Prose pass
 
 The file carries substantial prose (intents, contexts, solutions). Run the
-`de-ai` skill over it — pattern languages are exactly where coined-bigram and
+`filter-tells` skill over it — pattern languages are exactly where coined-bigram and
 compressed-conversation tells accumulate, and every coined *pattern name* is
 deliberate but everything else must survive a cold reader.
 
@@ -126,7 +126,7 @@ Two kinds of repair, treated differently:
   silence the validator produces a catalogue entry, not a pattern.
 
 Re-validate to zero findings. Bump `version` only if the pattern set changed
-(a pure repair does not). If prose was touched, run the de-ai pass.
+(a pure repair does not). If prose was touched, run the filter-tells pass.
 
 ## Extending an existing language
 
