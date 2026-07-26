@@ -30,7 +30,38 @@ import sys
 BRACKET_CITE = re.compile(r"\[([^\]]*@[^\]]+)\]")
 NATBIB_TOKEN = re.compile(r"\[CITE:[pt]:([^\]]+)\]")
 CITE_ID = re.compile(r"@([\w][\w:.#$%&\-+?<>~/]*)")
-INLINE_CITE = re.compile(r"(?<!\[)@([\w][\w:.#$%&\-+?<>~/]*)(?![;\]@])")
+# Inline @key outside any bracket. No trailing lookahead: bracket content is
+# masked out before this runs (see mask_brackets), and a lookahead here would
+# make the regex backtrack into the key rather than skip the match — which is
+# how the last key of every multi-key bracket came out one character short.
+INLINE_CITE = re.compile(r"(?<![\[\w])@([\w][\w:.#$%&\-+?<>~/]*)")
+
+# A pandoc key may contain these internally but never ends with one, so a
+# trailing run is sentence punctuation the greedy match swallowed.
+KEY_TRAILING = ":.#$%&-+?<>~/"
+
+
+def trim_key(cid):
+    """Drop trailing punctuation the character class let in.
+
+    `@nygard-2011.` at the end of a sentence must yield `nygard-2011`, not
+    `nygard-2011.` — the latter resolves against nothing and is reported as a
+    missing reference the author never wrote.
+    """
+    return cid.rstrip(KEY_TRAILING)
+
+
+def mask_brackets(line):
+    """Blank out bracketed citation spans, preserving offsets and length.
+
+    Inline detection runs over the result. Masking rather than filtering is
+    what keeps the two passes from seeing the same text: previously the
+    lookahead tried to do this job and mutilated keys instead of skipping them.
+    """
+    out = line
+    for m in BRACKET_CITE.finditer(line):
+        out = out[:m.start()] + (" " * (m.end() - m.start())) + out[m.end():]
+    return out
 
 
 def extract_sentences(text):
@@ -64,42 +95,25 @@ def extract_citations(filepath):
 
     results = []
     seen = set()
+    # Fence state spans lines. Initialising it inside the loop reset it every
+    # iteration, so the skip only ever applied to the fence line itself and
+    # every citation inside a code block was extracted as real.
+    in_code = False
 
     for line_num, line in enumerate(lines, 1):
-        in_code = False
         if line.strip().startswith("```"):
             in_code = not in_code
             continue
         if in_code:
             continue
 
-        bracket_matches = BRACKET_CITE.finditer(line)
-        for m in bracket_matches:
-            bracket_content = m.group(1)
-            ids = CITE_ID.findall(bracket_content)
-            for cid in ids:
-                key = (cid, line_num)
-                if key in seen:
-                    continue
-                seen.add(key)
-                para_context = ""
-                for pstart, ptxt in para_starts:
-                    if pstart <= line_num <= pstart + ptxt.count("\n"):
-                        para_context = " ".join(ptxt.split())
-                        break
-                results.append({
-                    "citation_id": cid,
-                    "line": line_num,
-                    "context": para_context or line.strip(),
-                    "claim": find_claim(para_context or line, cid),
-                })
-
-        inline_matches = INLINE_CITE.finditer(line)
-        for m in inline_matches:
-            cid = m.group(1)
+        def emit(cid):
+            cid = trim_key(cid)
+            if not cid:
+                return
             key = (cid, line_num)
             if key in seen:
-                continue
+                return
             seen.add(key)
             para_context = ""
             for pstart, ptxt in para_starts:
@@ -112,6 +126,15 @@ def extract_citations(filepath):
                 "context": para_context or line.strip(),
                 "claim": find_claim(para_context or line, cid),
             })
+
+        for m in BRACKET_CITE.finditer(line):
+            for cid in CITE_ID.findall(m.group(1)):
+                emit(cid)
+
+        # Inline pass sees the line with bracket spans blanked, so a key inside
+        # a bracket cannot be re-matched here in mangled form.
+        for m in INLINE_CITE.finditer(mask_brackets(line)):
+            emit(m.group(1))
 
     return results
 
