@@ -239,8 +239,9 @@ It scans the article before touching a paragraph, scans the assembled draft at
 the end, and reports `fraction_ai` before → after with the paragraphs that
 moved. That ordering is why the measurement lives in the driver rather than in
 a procedure to follow afterwards: **the baseline cannot be reconstructed once
-the paragraphs are replaced**, so a run started without the flag can never be
-measured later. Decide before the run, not after reading the draft.
+the paragraphs are replaced**, so a run started without the flag has
+nothing to compare against later. Decide before the run, not after reading the
+draft.
 
 **Passing the flag is the consent**, and it is asked for per document. The
 scan uploads the article and the draft to a third party that retains both —

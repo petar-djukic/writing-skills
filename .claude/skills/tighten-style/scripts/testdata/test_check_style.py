@@ -70,6 +70,31 @@ def main():
                      "Ordinary prose here that says something plain and short.\n")
         assert not rules(f), f"code and headings must be out of scope: {f}"
 
+        # TS-02: the agentive passive fires — the actor is in the by-phrase,
+        # so the active form exists and was avoided (the GH-220/223 control).
+        f = run(tmp, "# H\n\nGit operations are executed by the orchestrator "
+                     "rather than the agents, which slows every run down.\n")
+        assert "TS-02" in rules(f), f
+        #    A single bare passive does NOT fire: TS-02's own exception
+        #    (unknown actor, object as topic) makes it unremarkable.
+        f = run(tmp, "# H\n\nThe samples were stored at four degrees for the "
+                     "whole duration of the second experimental campaign.\n")
+        assert "TS-02" not in rules(f), f
+        #    ...and adjectival be+participle is not a passive at all.
+        f = run(tmp, "# H\n\nShe is interested in the result and pleased "
+                     "with the outcome of the latest experimental run.\n")
+        assert "TS-02" not in rules(f), f
+
+        # TS-04 per sentence: three buried verbs in one sentence fire locally,
+        # whatever the document average is; two do not, because noun pairs are
+        # often terms of art.
+        f = run(tmp, "# H\n\nThe implementation of the verification is "
+                     "required before the integration of the deployment.\n")
+        assert "TS-04" in rules(f), f
+        f = run(tmp, "# H\n\nThe classification of each observation follows "
+                     "the procedure that the appendix describes in detail.\n")
+        assert "TS-04" not in rules(f), f
+
         # Clean prose produces nothing — the skill must be usable without
         # crying wolf on writing that is already tight.
         f = run(tmp, "# H\n\nThe scheduler allocates one slot per link. "

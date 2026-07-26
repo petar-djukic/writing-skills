@@ -78,16 +78,19 @@ def check_server(endpoint, model):
     return True, f"{endpoint} ready, model {model}"
 
 
-def rewrite(paragraph, anchors, endpoint=DEFAULT_ENDPOINT, model=DEFAULT_MODEL,
-            temperature=0.7, retry_note="", timeout=DEFAULT_TIMEOUT):
-    prompt = PROMPT.format(anchors=anchors, paragraph=paragraph,
-                           retry_note=(f"\nRETRY GUIDANCE: {retry_note}\n"
-                                       if retry_note else ""))
+def generate(prompt, endpoint=DEFAULT_ENDPOINT, model=DEFAULT_MODEL,
+             temperature=0.7, timeout=DEFAULT_TIMEOUT):
+    """One raw generation call. Raises RuntimeError; never falls back.
+
+    Factored out of rewrite() (GH-225) so tighten-style's driver shares the
+    transport, the timeout guidance, and the no-fallback rule instead of
+    growing a second Ollama client.
+    """
     body = json.dumps({
         "model": model,
         "prompt": prompt,
         "stream": False,
-        "options": {"temperature": temperature},
+        "options": {"temperature": float(temperature)},
     }).encode()
     req = urllib.request.Request(f"{endpoint}/api/generate", data=body,
                                  headers={"Content-Type": "application/json"})
@@ -95,24 +98,37 @@ def rewrite(paragraph, anchors, endpoint=DEFAULT_ENDPOINT, model=DEFAULT_MODEL,
         with urllib.request.urlopen(req, timeout=timeout) as r:
             data = json.loads(r.read())
     except socket.timeout:
-        sys.exit(f"Ollama timed out after {timeout}s on model '{model}'. A cold "
-                 "model load can take minutes (gemma4:12b measured ~210s cold, "
-                 "~96s warm for a 35b). Raise --timeout / MATCH_VOICE_TIMEOUT, "
-                 "or warm the model first with `ollama run "
-                 f"{model} ''`. match-voice stops here (no Claude fallback).")
+        raise RuntimeError(
+            f"Ollama timed out after {timeout}s on model '{model}'. A cold "
+            "model load can take minutes (gemma4:12b measured ~210s cold). "
+            "Raise the timeout or warm the model first with "
+            f"`ollama run {model} ''`. No Claude fallback, by design.")
     except urllib.error.URLError as e:
-        # a socket timeout can also surface wrapped in URLError
         if isinstance(getattr(e, "reason", None), socket.timeout):
-            sys.exit(f"Ollama timed out after {timeout}s on model '{model}'. "
-                     "Raise --timeout / MATCH_VOICE_TIMEOUT, or warm the model "
-                     f"first with `ollama run {model} ''`.")
-        sys.exit(f"Ollama request failed: {e.reason}. match-voice stops here "
-                 "(no Claude fallback by design).")
+            raise RuntimeError(
+                f"Ollama timed out after {timeout}s on model '{model}'. "
+                f"Raise the timeout or warm the model first.")
+        raise RuntimeError(f"Ollama request failed: {e.reason}. "
+                           "No Claude fallback, by design.")
     out = (data.get("response") or "").strip()
     # models sometimes wrap the answer in quotes or a lead-in line
     if out.startswith('"') and out.endswith('"') and out.count('"') == 2:
         out = out[1:-1].strip()
     return out
+
+
+def rewrite(paragraph, anchors, endpoint=DEFAULT_ENDPOINT, model=DEFAULT_MODEL,
+            temperature=0.7, retry_note="", timeout=DEFAULT_TIMEOUT):
+    prompt = PROMPT.format(anchors=anchors, paragraph=paragraph,
+                           retry_note=(f"\nRETRY GUIDANCE: {retry_note}\n"
+                                       if retry_note else ""))
+    try:
+        return generate(prompt, endpoint=endpoint, model=model,
+                        temperature=temperature, timeout=timeout)
+    except RuntimeError as e:
+        sys.exit(str(e))
+
+
 
 
 def main():

@@ -121,6 +121,13 @@ ABBREV_SKIP = {"AI", "API", "CPU", "GPU", "RAM", "URL", "HTTP", "HTTPS", "JSON",
                "GB", "MB", "KB", "TB", "MS", "GHZ", "RAM"}
 
 
+def _markers():
+    """The shared register-marker module (GH-222) — one passive grammar, not two."""
+    _shared()
+    import register_markers
+    return register_markers
+
+
 def load_prose(path):
     """Prose view of the file, plus the shared paragraph extractor's blocks."""
     _shared()
@@ -194,14 +201,55 @@ def check(path):
                                  "state what makes it matter, or cut it "
                                  "(check the term-of-art exception first)"))
 
-    # TS-08: hedge STACKS, per sentence — one hedge is calibration.
+    # Per-sentence rules. TS-02 and TS-04 were advertised but never
+    # implemented — a paragraph of textbook passives returned zero findings
+    # (GH-223) — so the per-sentence checks live here beside the hedge stack.
+    rm = _markers()
     for para in parsed.paragraphs:
         for sent in split_sentences(para[2]):
-            n = len(re.findall(HEDGES, sent.lower()))
+            low = sent.lower()
+
+            # TS-08: hedge STACKS — one hedge is calibration.
+            n = len(re.findall(HEDGES, low))
             if n >= HEDGE_STACK:
                 findings.append(find("TS-08", para[0],
                                      f"{n} hedges in one sentence", sent,
                                      "keep the one carrying real uncertainty"))
+
+            # TS-02: the agentive passive is the strongest signal — the actor
+            # is right there in the by-phrase, so the active form exists and
+            # was avoided. Bare passives flag only when a sentence stacks two:
+            # TS-02's own exception (unknown/irrelevant actor, object as
+            # topic) makes one unremarkable, and TWO are routinely a
+            # deliberate parallel ("a PRD is read by field, a section is read
+            # as writing"). Three is density.
+            agentive = rm.AGENTIVE.findall(sent)
+            passives = max(0, len(rm.PASSIVE.findall(sent))
+                           - len(rm._ADJECTIVAL.findall(sent)))
+            if agentive:
+                findings.append(find("TS-02", para[0],
+                                     f"agentive passive: '{agentive[0].strip()}...'",
+                                     sent, "name the actor as the subject"))
+            elif passives >= 3:
+                findings.append(find("TS-02", para[0],
+                                     f"{passives} passives in one sentence",
+                                     sent, "recast at least one as active"))
+
+            # TS-04: three DISTINCT nominalizations plus at least one
+            # "X of the Y" genitive chain — Williams' actual diagnostic for a
+            # buried verb ("the implementation of the verification"). The
+            # chain requirement is what separates buried actions from a list
+            # that merely NAMES nominal things ("quotations, requirements,
+            # citations" — the skill's own SKILL.md fired on itself here).
+            noms = rm.NOMINALIZATION.findall(sent)
+            of_chain = re.search(
+                r"\w+(?:tion|ment|ance|ence|ity|ness|ism|al)s?\s+of\s+"
+                r"(?:the|a|an|each|every|this|that|its|their)\b", low)
+            if len(set(n.lower() for n in noms)) >= 3 and of_chain:
+                findings.append(find("TS-04", para[0],
+                                     f"{len(noms)} nominalizations in one "
+                                     f"sentence ({', '.join(noms[:3])})",
+                                     sent, "restore the buried verbs"))
 
     # TS-14: abbreviation used before definition.
     defined, seen_heading = set(), 0
@@ -243,7 +291,10 @@ def check(path):
             # natural register — the density-floor mistake in rule form. Where
             # a writing-voice/ corpus exists, that baseline replaces this
             # number; this is the no-corpus fallback.
-            if per_1000 > 70:
+            # A rate needs a denominator: 2 nominalizations in 17 words
+            # extrapolates to 118/1000, which is arithmetic, not evidence.
+            # Short documents are fully covered by the per-sentence check.
+            if per_1000 > 70 and len(prose_only.split()) >= 300:
                 findings.append(find("TS-04", parsed.paragraphs[0][0] if parsed.paragraphs else 1,
                                      f"{per_1000:.0f} nominalizations per 1000 words",
                                      "(document-level)", "restore the buried verbs"))

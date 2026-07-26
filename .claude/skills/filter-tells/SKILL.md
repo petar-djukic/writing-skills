@@ -250,8 +250,7 @@ belongs to match-voice, whose driver captures the baseline before it rewrites
 anything (`drive.py --pangram`) — the one moment it can still be captured. Both
 skills invoke the same two scripts from the shared root; neither owns them.
 
-Only prose is submitted — code fences, tables, and front matter are excluded by
-the shared extractor, which both keeps non-prose from skewing a prose detector
+Only prose is submitted — the shared extractor drops code fences, tables, and front matter, which both keeps non-prose from skewing a prose detector
 and holds down cost. Billing counts started 1,000-word blocks with a one-unit
 minimum, and the free tier is four scans a day, so a full before/after
 comparison spends half of it.
@@ -267,8 +266,8 @@ The scripts are calibrated against the labeled corpus in
 [eval/](./eval/README.md): `python3 eval/run_eval.py` reports per-detector
 fire rates on human vs ai classes and diffs against the committed baseline.
 Every new detector passes the gate there before merge (fires on an ai sample;
-fires on ≤20% of human samples; no existing human-class rate rises). The
-human class is populated by the author only.
+fires on ≤20% of human samples; no existing human-class rate rises). Only the author populates the
+human class.
 
 Threshold provenance lives in [references/detector-thresholds.md](./references/detector-thresholds.md): every numeric gate with its justification or an explicit "uncalibrated" marker, the boundaries between overlapping detectors, and the standing noise-audit results.
 
