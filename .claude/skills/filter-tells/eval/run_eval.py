@@ -22,6 +22,7 @@ import json
 import os
 import re
 import shutil
+import fnmatch
 import subprocess
 import sys
 import tempfile
@@ -132,6 +133,94 @@ class DetectorFailure(Exception):
         self.tool, self.returncode = tool, returncode
         self.stderr = (stderr or "").strip().split("\n")[-1][:200]
         super().__init__(f"{tool} exited {returncode}: {self.stderr or 'no stderr'}")
+
+
+def ai_from_manifest(start=None):
+    """Author-designated AI documents from the consuming repository.
+
+    The fixture ai class is four short drafts written to exhibit specific
+    tells. Useful as regression anchors, but four documents at a 332-word
+    median is a thin basis for a rate, and their length sits nowhere near the
+    human class — the mismatch GH-186 exists to surface.
+
+    A repository that generates documents can designate them in
+    BACKGROUND/ai-corpus.yaml. Only what that file lists is used: an agent
+    must never guess which directories hold generated text, because a person
+    vouching for the label is the entire value of the class. Read in place and
+    never copied — this repo is public and shared.
+
+    Returns (files, meta); meta carries provenance for the baseline, not text.
+    """
+    d = os.path.abspath(start or os.getcwd())
+    manifest = None
+    while True:
+        # Root first: the corpus may sit under a gitignored directory (third-
+        # party material), and the designation should be trackable even when
+        # the documents are not. Paths resolve relative to the manifest.
+        for rel in ("ai-corpus.yaml", os.path.join("BACKGROUND", "ai-corpus.yaml")):
+            cand = os.path.join(d, rel)
+            if os.path.isfile(cand):
+                manifest = cand
+                break
+        if manifest:
+            break
+        parent = os.path.dirname(d)
+        if parent == d:
+            return [], {"source": None, "reason": "no BACKGROUND/ai-corpus.yaml found"}
+        d = parent
+
+    try:
+        import yaml
+    except ImportError:
+        return [], {"source": manifest, "reason": "PyYAML not installed"}
+    try:
+        spec = yaml.safe_load(open(manifest)) or {}
+    except Exception as e:
+        return [], {"source": manifest, "reason": f"manifest unreadable: {type(e).__name__}"}
+
+    root = os.path.dirname(manifest)
+    excluded, globs = set(), []
+    for pat in spec.get("exclude") or []:
+        (globs.append(pat) if "*" in pat else excluded.add(pat))
+
+    min_words = int(spec.get("min_words", 0) or 0)
+    files, dirs, short = [], [], 0
+    for entry in spec.get("directories") or []:
+        if entry.get("label") != "ai":
+            continue
+        sub = os.path.join(root, entry["path"])
+        if not os.path.isdir(sub):
+            continue
+        dirs.append(entry["path"])
+        # Recursive: reference-architecture keeps 48 of its 54 documents in
+        # subdirectories, and a top-level scan silently measured a tenth of
+        # the corpus.
+        for dirpath, _, names in os.walk(sub):
+            for name in sorted(names):
+                if not name.endswith((".md", ".tex")) or name.startswith("."):
+                    continue
+                full = os.path.join(dirpath, name)
+                rel = os.path.relpath(full, root)
+                if rel in excluded or any(fnmatch.fnmatch(rel, g) for g in globs):
+                    continue
+                if word_count(full) < min_words:
+                    short += 1
+                    continue
+                files.append(full)
+
+    return sorted(files), {
+        "source": root,
+        "manifest": manifest,
+        "directories": dirs,
+        "files": len(files),
+        "skipped_too_short": short,
+        "min_words": min_words,
+        # Raw output and edited output answer different questions; the rates
+        # mean different things depending which this is.
+        "provenance": spec.get("provenance", "unstated"),
+        "designated_by": spec.get("designated_by"),
+        "updated": str(spec.get("updated", "")),
+    }
 
 
 def run_lexical(path):
@@ -305,25 +394,40 @@ def evaluate(bands=False):
     per_class_hits = {}
     per_class_cands = {}
 
-    human_meta = None
+    human_meta, ai_meta = None, None
     for cls in ("human", "ai"):
         files = corpus_files(cls)
         if cls == "human" and not files:
             files, human_meta = human_from_writing_voice()
+        if cls == "ai":
+            designated, ai_meta = ai_from_manifest()
+            if designated:
+                # Fixtures stay as regression anchors but are reported apart:
+                # each exists to trip one detector class, so mixing them into a
+                # rate over real documents would weight those tells by design.
+                ai_meta["fixtures_held_out"] = len(files)
+                files = designated
         per_file = {}
         per_file_cands = {}
         verdicts = {}
         failures = {}
+        # Key by path relative to the class root, not basename: a recursive
+        # corpus has eight files called 01-introduction.md, and basename keys
+        # silently collapsed them into one — 49 documents measured as 41, with
+        # no failure reported. Latent until a corpus had subdirectories.
+        root = os.path.commonpath([os.path.dirname(x) for x in files]) if len(files) > 1 else ""
+        def key(path):
+            return os.path.relpath(path, root) if root else os.path.basename(path)
         for f in files:
             try:
                 lex_cands = run_lexical(f)
                 verdict, s_fired, s_cands = run_structural(f)
             except DetectorFailure as e:
-                failures[os.path.basename(f)] = str(e)
+                failures[key(f)] = str(e)
                 continue
-            per_file[os.path.basename(f)] = sorted(s_fired)
-            per_file_cands[os.path.basename(f)] = sorted(lex_cands | s_cands)
-            verdicts[os.path.basename(f)] = verdict
+            per_file[key(f)] = sorted(s_fired)
+            per_file_cands[key(f)] = sorted(lex_cands | s_cands)
+            verdicts[key(f)] = verdict
         per_class_hits[cls] = per_file
         per_class_cands[cls] = per_file_cands
         report["classes"][cls] = {
@@ -341,6 +445,8 @@ def evaluate(bands=False):
                   f"it against a baseline. First failure: "
                   f"{next(iter(failures.values()))}", file=sys.stderr)
         report["classes"][cls]["_paths"] = list(files)
+        if cls == "ai" and ai_meta:
+            report["classes"][cls]["source"] = ai_meta
         if cls == "human" and human_meta:
             # Provenance, not text: where the samples came from, so a baseline
             # is interpretable without the private corpus being present.
