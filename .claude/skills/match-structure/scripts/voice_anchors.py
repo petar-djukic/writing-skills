@@ -181,11 +181,33 @@ def _cos(a, b):
     return num / (da * db) if da and db else 0.0
 
 
+# How much an author-voice passage outranks a venue-voice one at equal
+# similarity. A weight, not a partition: the previous sort key put role first
+# in the tuple, so EVERY author-voice passage beat EVERY venue-voice passage
+# regardless of score. Measured consequence (GH-216): for "Let the orchestrator
+# run git, not the agents." the five nearest passages were Yegge at ~0.23 and
+# the ranker returned Djukic papers at ~0.07 — it found the right anchors and
+# discarded them, then the model faithfully reproduced the IEEE register it was
+# shown.
+#
+# 1.5 keeps the original intent — with comparable scores the author's own prose
+# wins, because it is the better diction target when it fits — while letting a
+# passage substantially nearer the draft win on merit. The constant is a
+# judgment, not a measurement; the tests pin both directions so it cannot
+# silently become a partition again.
+AUTHOR_VOICE_WEIGHT = 1.5
+
+
 def anchors(voice_dir: str, passage: str, k: int = 3, role: str = None):
     """Top-k exemplar passages most topically similar to `passage`.
 
-    author-voice is preferred: venue-voice candidates are ranked only after
-    author-voice ones unless an explicit role filter says otherwise.
+    author-voice is weighted, not privileged absolutely: at comparable
+    similarity it wins, but a clearly nearer venue-voice passage outranks it.
+    An explicit `role` still filters hard.
+
+    Each returned anchor carries its `score`, its `weighted` score, and its
+    `role`, so an inappropriate mix is visible in the output rather than
+    something an operator has to re-derive by hand.
     """
     cands = []
     for path, r in sample_paths(voice_dir, role=role):
@@ -200,9 +222,9 @@ def anchors(voice_dir: str, passage: str, k: int = 3, role: str = None):
           for w, c in q_tf.items()}
     for c, v in zip(cands, vecs):
         c["score"] = round(_cos(qv, v), 4)
-    # author-voice first, then score
-    cands.sort(key=lambda c: (c["role"] == "author-voice", c["score"]),
-               reverse=True)
+        c["weighted"] = round(
+            c["score"] * (AUTHOR_VOICE_WEIGHT if c["role"] == "author-voice" else 1.0), 4)
+    cands.sort(key=lambda c: c["weighted"], reverse=True)
     return [c for c in cands[:k] if c["score"] > 0]
 
 
