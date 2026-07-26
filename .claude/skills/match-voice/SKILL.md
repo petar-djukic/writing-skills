@@ -53,6 +53,34 @@ python3 <skill>/scripts/rewrite.py --check --text /dev/null
 If this fails, **report it and stop**. The skill never falls back to a Claude
 rewrite: that would defeat the decorrelation it exists for.
 
+## Steering the anchors
+
+The driver prints the exemplar mix **before** rewriting anything:
+
+```
+anchors: 52 exemplars from .../writing-voice
+         {'author-voice': 24, 'venue-voice': 28}
+```
+
+Read that line. An all-`author-voice` mix behind a draft that wants punch is
+the GH-215 failure, and it costs a whole rewrite to discover afterwards.
+
+| you want | flags |
+|---|---|
+| default — nearest passages, author-voice weighted | none |
+| diction-safe only (exclude AI-era samples) | `--stratum pre-ai` |
+| **punch: the pre-AI peer essays** | `--role venue-voice --stratum pre-ai` |
+| a specific corpus | `--voice-dir <path>` |
+
+The last combination is what a repository README means by "anchor on the Yegge
+and Beck samples". `--stratum pre-ai` alone is often not enough: it removes the
+AI-era samples, but if the remaining peer essays are not *topically* near the
+draft, the academic papers still win on similarity. Forcing the role is how you
+say "punch matters more than topic here".
+
+Anchors used per paragraph, with scores, land in `results.json` — so a bad mix
+is diagnosable after the fact without re-running retrieval by hand.
+
 ## Driver (whole-article orchestration)
 
 `scripts/drive.py` runs the per-paragraph pipeline over a full article and
