@@ -26,12 +26,14 @@ Usage:
                    [--coverage-only] [--pangram]
 """
 import argparse, json, os, re, subprocess, sys, tempfile
+from collections import Counter
 
 SK = os.path.dirname(os.path.abspath(__file__))
 DEAI = os.path.normpath(os.path.join(SK, "..", "..", "filter-tells", "scripts", "detect-lexical.sh"))
 SHARED = os.path.normpath(os.path.join(SK, "..", "..", "..", "scripts"))
 PANGRAM = os.path.join(SHARED, "pangram.py")
 PANGRAM_REPORT = os.path.join(SHARED, "pangram_report.py")
+FILTER_TELLS = os.path.normpath(os.path.join(SK, "..", "..", "filter-tells", "scripts"))
 
 COPY_NOTE = ("Write the paragraph entirely in your own words. The example passages are a "
              "STYLE guide only — do NOT reuse any run of more than a few words from them. "
@@ -84,6 +86,45 @@ def pangram_scan(path, work, tag):
     return resp, os.path.splitext(payload)[0] + ".spans.json"
 
 
+def register_metrics(path):
+    """The local register numbers that move opposite to a falling AI score."""
+    r = run(["python3", os.path.join(FILTER_TELLS, "detect-structural.py"),
+             path, "--json"])
+    try:
+        d = json.loads(r.stdout)
+        if isinstance(d, list):
+            d = d[0]
+        m = d.get("metrics", {})
+    except (json.JSONDecodeError, IndexError, AttributeError):
+        return {}
+    return {k: m[k] for k in ("passive_enabling_per_500w", "salad_rate_per_100",
+                              "opening_diversity") if k in m}
+
+
+def report_register(article, draft):
+    """Print register metrics before -> after, and flag divergence.
+
+    A falling AI score with worsening register is the GH-219 failure: the
+    objective met, the prose worse. Printing both together is what makes that
+    visible instead of something you notice a week later.
+    """
+    b, a = register_metrics(article), register_metrics(draft)
+    if not b or not a:
+        return
+    print("\nlocal register (lower is plainer, except opening_diversity):")
+    worse = []
+    for k in sorted(set(b) & set(a)):
+        arrow = "->"
+        bad = (a[k] > b[k]) if k != "opening_diversity" else (a[k] < b[k])
+        print(f"  {k:26} {b[k]} {arrow} {a[k]}{'   WORSE' if bad else ''}")
+        if bad:
+            worse.append(k)
+    if worse:
+        print("  A falling AI score with worsening register is the score-only "
+              "optimum, not a better draft — check the anchors (SKILL.md).",
+              file=sys.stderr)
+
+
 def pangram_delta(before, after):
     """Print fraction_ai before -> after and the still-flagged worklist."""
     r = run(["python3", PANGRAM_REPORT, "report", "--response", after[0],
@@ -95,6 +136,57 @@ def pangram_delta(before, after):
         return
     print("\nexternal check (Pangram, article -> draft):")
     print(r.stdout.rstrip())
+
+
+def anchor_flags(a):
+    """Anchor-selection flags to forward to retrieve.py."""
+    f = []
+    if a.voice_dir:
+        f += ["--voice-dir", a.voice_dir]
+    if a.role:
+        f += ["--role", a.role]
+    if a.stratum:
+        f += ["--stratum", a.stratum]
+    return f
+
+
+def anchor_provenance(a, article):
+    """Print which exemplars the anchors will be drawn from, BEFORE rewriting.
+
+    The whole failure in GH-215 was invisible until the operator ran retrieve.py
+    by hand after a 25-paragraph rewrite and found every anchor was an IEEE
+    paper. Printing the mix first costs nothing and makes that obvious.
+    """
+    stylo = os.path.normpath(os.path.join(SK, "..", "..", "match-structure", "scripts"))
+    if stylo not in sys.path:
+        sys.path.insert(0, stylo)
+    try:
+        import voice_anchors as va
+    except ImportError:
+        print("anchors: match-structure not importable — cannot report the mix",
+              file=sys.stderr)
+        return
+    d = a.voice_dir or va.discover(article)
+    if not d:
+        print("anchors: no writing-voice/ found — the rewrite has no target "
+              "register; run plain filter-tells instead", file=sys.stderr)
+        return
+    pre = (True if a.stratum == "pre-ai"
+           else False if a.stratum == "ai-era" else None)
+    paths = va.sample_paths(d, role=a.role, pre_ai=pre)
+    mix = Counter(r for _, r in paths)
+    filt = " ".join(x for x in (f"role={a.role}" if a.role else "",
+                                f"stratum={a.stratum}" if a.stratum else "") if x)
+    print(f"anchors: {len(paths)} exemplars from {d}")
+    print(f"         {dict(mix)}{'  [' + filt + ']' if filt else ''}")
+    if not paths:
+        print("         NOTHING MATCHES THE FILTER — every rewrite will run "
+              "without anchors", file=sys.stderr)
+    elif mix.get("author-voice", 0) == len(paths) and not a.role:
+        # The GH-215 shape: an all-papers corpus behind a draft that may not
+        # want academic register.
+        print("         all author-voice; if this draft wants punch rather than "
+              "precision, try --stratum pre-ai", file=sys.stderr)
 
 
 def parse_paragraphs(path, min_words):
@@ -116,6 +208,15 @@ def main():
     ap.add_argument("--retries", type=int, default=2)
     ap.add_argument("--min-words", type=int, default=12)
     ap.add_argument("--temperature", default="0.7")
+    ap.add_argument("--voice-dir",
+                    help="exemplar corpus (default: discover writing-voice/ "
+                         "upward from the article)")
+    ap.add_argument("--role", choices=["author-voice", "venue-voice"],
+                    help="hard filter anchors to one role")
+    ap.add_argument("--stratum", choices=["pre-ai", "ai-era"],
+                    help="pre-ai restricts anchors to diction-safe samples "
+                         "across roles — use it when the draft needs punch and "
+                         "the corpus is mostly papers")
     ap.add_argument("--coverage-only", action="store_true",
                     help="parse + coverage audit only; no model calls")
     ap.add_argument("--pangram", action="store_true",
@@ -128,6 +229,7 @@ def main():
     art = os.path.abspath(a.article)
     out = a.out or re.sub(r"\.md$", ".vr-draft.md", art)
     lines, fm_close, paras, coverage, unaccounted = parse_paragraphs(art, a.min_words)
+    anchor_provenance(a, art)
 
     from collections import Counter
     cats = Counter(coverage.values())
@@ -161,9 +263,21 @@ def main():
         if rec["words"] < a.min_words:
             rec["status"] = "skipped-short"; results.append(rec); continue
         pf = f"{work}/p{n:02d}.orig.txt"; open(pf, "w").write(txt)
-        aj = run(["python3", f"{SK}/retrieve.py", "--text", pf, "--for", art, "--json"])
-        at = run(["python3", f"{SK}/retrieve.py", "--text", pf, "--for", art])
+        rflags = anchor_flags(a)
+        aj = run(["python3", f"{SK}/retrieve.py", "--text", pf, "--for", art,
+                  *rflags, "--json"])
+        at = run(["python3", f"{SK}/retrieve.py", "--text", pf, "--for", art, *rflags])
         ajf = f"{work}/p{n:02d}.anchors.json"; open(ajf, "w").write(aj.stdout or "[]")
+        # Which exemplars anchored THIS paragraph, with scores, so a bad mix is
+        # diagnosable from results.json instead of by re-running retrieval.
+        try:
+            payload = json.loads(aj.stdout or "[]")
+            recs = payload.get("anchors", payload) if isinstance(payload, dict) else payload
+            rec["anchors"] = [{"file": x.get("file"), "role": x.get("role"),
+                               "score": x.get("score"), "weighted": x.get("weighted")}
+                              for x in recs]
+        except (json.JSONDecodeError, AttributeError, TypeError):
+            rec["anchors"] = []
         atf = f"{work}/p{n:02d}.anchors.txt"; open(atf, "w").write(at.stdout or "")
         note = None
         for attempt in range(1 + a.retries):
@@ -245,6 +359,9 @@ def main():
         after = pangram_scan(out, work, "after")
         if after:
             pangram_delta(baseline, after)
+            # Beside the score, never instead of it: the two moving in
+            # opposite directions is the whole GH-219 finding.
+            report_register(art, out)
         else:
             print(f"\nexternal check: the draft scan failed. The baseline stands "
                   f"at {baseline[0]}, so a later scan of this draft can still be "

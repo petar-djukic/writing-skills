@@ -46,6 +46,36 @@ Required per exemplar: `id`, `file`, `role`. `venue`, `year`, `source`, and
 `notes` are recommended — `notes` is read by humans choosing exemplars and by
 the anchor-retrieval step when ranking ties.
 
+## Two independent axes
+
+`role` says **whose voice** a sample is. `pre_ai` says **whether it is safe to
+anchor diction on**. They are independent, and the second cannot be expressed
+by the first:
+
+| Stratum | role | anchor for |
+|---|---|---|
+| author papers, pre-AI | `author-voice` | diction, precision |
+| peer essays, pre-AI | `venue-voice` | diction **and punch** |
+| anything AI-era | either | genre and structure only, **never diction** |
+
+`--role venue-voice` returns the pre-AI punch anchors and the AI-era samples
+together — the ones that must never anchor diction. `--stratum pre-ai` cuts
+across roles and returns only what is safe.
+
+```yaml
+- id: yegge-2011-google-platforms-rant
+  file: Yegge-2011-stevey-s-google-platforms-rant.md
+  role: venue-voice
+  year: 2011
+  pre_ai: true        # optional; absent, inferred from year < 2022
+```
+
+Prose written once generative AI was available may carry AI diction, which
+makes it circular as a diction anchor. `pre_ai` is optional and the year infers
+it, but an explicit value wins: where the line falls for a given piece is the
+curator's knowledge, not arithmetic — a 2023 draft may predate their model
+access, and a 2021 one may not.
+
 ## Roles and precedence
 
 `author-voice` is the voice to match; `venue-voice` supplies genre convention

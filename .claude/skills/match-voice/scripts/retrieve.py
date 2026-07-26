@@ -50,6 +50,10 @@ def main():
     p.add_argument("--voice-dir")
     p.add_argument("--for", dest="for_file", help="discover writing-voice/ from this file")
     p.add_argument("-k", type=int, default=3)
+    p.add_argument("--role", choices=["author-voice", "venue-voice"],
+                   help="hard filter to one role")
+    p.add_argument("--stratum", choices=["pre-ai", "ai-era"],
+                   help="pre-ai restricts to diction-safe samples across roles")
     p.add_argument("--json", action="store_true", help="emit the raw anchor records")
     args = p.parse_args()
 
@@ -63,7 +67,9 @@ def main():
                      "exemplars (see the writing-voice contract)")
 
     passage = sys.stdin.read() if args.text == "-" else open(args.text).read()
-    got = va.anchors(voice_dir, passage, k=args.k)
+    got = va.anchors(voice_dir, passage, k=args.k, role=args.role,
+                     pre_ai=(True if args.stratum == "pre-ai"
+                             else False if args.stratum == "ai-era" else None))
     if args.json:
         print(json.dumps({"writing_voice": voice_dir, "anchors": got},
                          indent=2, ensure_ascii=False))

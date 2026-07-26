@@ -101,7 +101,13 @@ def human_from_writing_voice(start=None, role="author-voice"):
         # manifest lists. But a sample written after generative AI arrived may
         # carry AI diction, and as ground truth for "what human prose looks
         # like" that is circular. Warn; do not silently drop.
-        if isinstance(y, int) and y > AI_ERA_YEAR:
+        # The curator's explicit pre_ai wins over the year constant (GH-217):
+        # a manifest that vouches for a sample is the authority, and warning
+        # against it would train people to ignore the warning.
+        if "pre_ai" in ex:
+            if not ex["pre_ai"]:
+                late.append(f"{ex.get('id') or os.path.basename(p)} (marked ai-era)")
+        elif isinstance(y, int) and y > AI_ERA_YEAR:
             late.append(f"{ex.get('id') or os.path.basename(p)} ({y})")
 
     known = [y for y in years if isinstance(y, int)]
