@@ -121,3 +121,60 @@ local evidence and were never length-sensitive.
 Verification: GH-186 banded eval before vs after, human class avg detectors
 fired — target roughly flat across 400/800/1500/2500; ai-class rates must not
 fall. Results recorded on GH-187.
+
+## GH-188 — matched-length false-positive triage (2026-07-26)
+
+Every detector over the 20% gate at matched length was classified by reading
+its actual firings on the author corpus, per the three-way split: extraction
+artifact / genre / real. Decisions and evidence:
+
+**Extraction artifacts (fixed in extract_prose, not in any detector).** On one
+converted paper, 42 of 44 antithesis "pairs" were figure captions and numbered
+headings ("Fig. 6.", "1. Network Beacon Schedule.") and the rest of the
+overage was bibliography debris ("vol. 39, no.", "[1]" on its own line) —
+the PDF conversion emits references as plain text that the sentence splitter
+shreds. extract_prose now drops caption/heading-shaped lines (conservatively:
+short, heading-shaped only) and stops at a references/bibliography heading,
+including the OCR-spaced "R EFERENCES" form. That single change took the
+paper's antithesis count from 44 to 4 and its verdict from likely-ai to
+suspicious-overshoot. antithesis-fragment at matched length was 0.12 before
+the fix and is expected near zero after; the detector itself was never the
+problem.
+
+**No separating threshold exists (demoted to advisory).** Distributions
+measured on 24 human papers (at the 800-word band) vs the 4 ai fixtures
+(native length):
+
+| detector | human | ai | reading |
+|---|---|---|---|
+| low-opening-diversity | med 0.51 (0.32–0.81) | med 0.60 (0.40–0.82) | wrong direction; overlapping |
+| word-salad-heavy | med 7.9/100 (0–25.5) | med 7.2/100 (0–13.9) | identical distributions |
+| hyphen-compound-heavy | med 5.05/500w (0–24.8) | med 7.45/500w (0–13.0) | human max double the ai max |
+
+All three are real AI behaviours *and* the ordinary register of technical
+prose — multi-hop, cross-layer, time-slot is the vocabulary of the field, and
+"The... The... We..." is how papers open sentences. No threshold on these
+metrics separates the classes, so a hard issue is indefensible; each is now an
+`advisory` entry (metrics and candidates intact, semantic pass adjudicates).
+Cost, stated: the spec-compressed ai fixture softens from likely-ai to
+suspicious, because its register leans on salad density. ai_flagged stays 4/4.
+
+**coinage_candidates — explicit verdict: stays, advisory, unchanged.** Fires
+on 100% of human samples at every length; the firings are terms of art
+("itu-t rec" ×33 in the GH-123 audit). It was already advisory and never
+touched a verdict; its job is feeding Prompt 8b, which applies the
+term-of-art test the n-gram counter cannot. The eval now reports it under
+candidate_rates rather than alongside verdict-driving detectors, which is
+where its 1.00 belonged all along.
+
+**Lexical categories (ai-cliche, cot-candidate, mechanical-transition,
+ornate-register, banned-word) — candidates by contract, now counted as such.**
+Their hits are marked "candidate" in the script's own JSON and the skill
+contract says a flag is a prompt to look, not a verdict. The eval nevertheless
+counted them as fired detectors, which is where the residual length ramp lived
+(ai-cliche 0.50→0.96 across bands: one grep hit anywhere fires the category,
+and "orthogonal" is an ai-cliche pattern that is also the core vocabulary of
+OFDM papers). run_eval now reports issue-driving detectors and candidate
+signals in separate tables; HUMAN_FIRE_GATE governs the former. The lists
+themselves are unchanged — on AI-era drafts, which is what de-ai actually
+reviews, they remain the cheapest first pass.

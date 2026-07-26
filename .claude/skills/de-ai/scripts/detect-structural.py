@@ -100,6 +100,15 @@ def extract_prose(text: str) -> str:
     in_frontmatter = False
 
     for i, line in enumerate(lines):
+        # Everything after a references/bibliography heading is citation data,
+        # not prose. PDF conversions emit it as plain text ("R EFERENCES" with
+        # OCR letter-spacing, "[1]" alone on a line, "vol. 39, no." fragments),
+        # which the sentence splitter shreds into pseudo-sentences — 29 of the
+        # remaining antithesis "pairs" in the GH-188 audit were bibliography
+        # debris. Markdown-heading references were already skipped via "#".
+        if re.match(r"^\s*R\s?E\s?F\s?E\s?R\s?E\s?N\s?C\s?E\s?S\s*$|^\s*(References|REFERENCES|Bibliography|BIBLIOGRAPHY)\s*$", line.strip()):
+            break
+
         # Frontmatter
         if i == 0 and line.strip() == "---":
             in_frontmatter = True
@@ -130,6 +139,19 @@ def extract_prose(text: str) -> str:
 
         # Skip numbered reference-list entries: "[1] Author (2026). ..."
         if re.match(r"^\s*\[\d+\]\s", line):
+            continue
+
+        # Skip figure/table captions and numbered section headings from PDF
+        # conversion ("Fig. 6.", "TABLE II", "1. Network Beacon Schedule.").
+        # These are not sentences: in the GH-188 audit, 42 of 44 antithesis
+        # "pairs" on one converted paper were caption lines read as clipped
+        # antithesis fragments. Match conservatively — short, heading-shaped
+        # lines only — so a real paragraph that happens to open with a number
+        # survives (it will be longer than 8 words).
+        s = line.strip()
+        if re.match(r"^(Fig\.?|Figure|Table|TABLE|Algorithm|Listing)\s*\.?\s*[0-9IVX]", s):
+            continue
+        if re.match(r"^\d+(\.\d+)*\.?\s+[A-Z]", s) and len(s.split()) <= 8 and not s.endswith((",", ";")):
             continue
 
         prose_lines.append(line)
@@ -1047,6 +1069,7 @@ def analyze(text: str, threshold_name: str = "medium") -> dict:
     thresholds = THRESHOLDS[threshold_name]
     prose = extract_prose(text)
     issues = []
+    advisory = []   # GH-188: real signals with no class-separating threshold
     metrics = {}
 
     if len(prose.split()) < 50:
@@ -1164,13 +1187,17 @@ def analyze(text: str, threshold_name: str = "medium") -> dict:
         metrics["opening_diversity"] = round(unique_ratio, 2)
 
         if unique_ratio < thresholds["opening_diversity_min"]:
-            # Find the most repeated openings
+            # Advisory since GH-188: measured on the author corpus, human
+            # papers median 0.51 and the ai fixtures 0.60 — overlapping ranges
+            # and the WRONG direction, so no threshold separates the classes.
+            # Sentence-opening monotony is real in AI prose but also the
+            # register of technical writing ("The... The... We..."); the
+            # semantic pass judges it with context the ratio cannot carry.
             counter = Counter(first_words)
             top = counter.most_common(3)
-            issues.append({
+            advisory.append({
                 "type": "low-opening-diversity",
                 "detail": f"Only {unique_ratio:.0%} of sentences start with unique words. Most common: {top}",
-                "severity": "medium",
                 "metric": unique_ratio,
             })
 
@@ -1475,22 +1502,27 @@ def analyze(text: str, threshold_name: str = "medium") -> dict:
         metrics["salad_rate_per_100"] = salad["salad_rate_per_100"]
         metrics["hyphen_compound_per_500w"] = salad["hyphen_compound_per_500w"]
         if salad["salad_rate_per_100"] > thresholds["salad_rate_max"]:
-            issues.append({
+            # Advisory since GH-188: human papers median 7.9 per 100 vs ai 7.2
+            # — identical distributions on the available corpus. Technical
+            # prose stacks noun compounds by nature; the components list still
+            # feeds the semantic pass.
+            advisory.append({
                 "type": "word-salad-heavy",
                 "detail": (f"{salad['salad_rate_per_100']:.1f} salad sentences per 100 "
                            f"(threshold: <{thresholds['salad_rate_max']}). Sentences stack "
-                           "content words without function-word joints; unpack them."),
-                "severity": "high",
+                           "content words with few connectives."),
                 "metric": salad["salad_rate_per_100"],
                 "candidates": salad["salad_candidates"],
             })
         if salad["hyphen_compound_per_500w"] > thresholds["hyphen_compound_max"]:
-            issues.append({
+            # Advisory since GH-188: human papers reach 24.8 per 500 w against
+            # an ai max of 13 — multi-hop, cross-layer, time-slot IS the
+            # vocabulary of the field. No separating threshold exists.
+            advisory.append({
                 "type": "hyphen-compound-heavy",
                 "detail": (f"{salad['hyphen_compound_per_500w']:.1f} hyphenated compounds per 500 words "
                            f"(threshold: <{thresholds['hyphen_compound_max']}). Each coined compound "
                            "is a packed relative clause; expand them."),
-                "severity": "medium",
                 "metric": salad["hyphen_compound_per_500w"],
             })
 
@@ -1518,7 +1550,8 @@ def analyze(text: str, threshold_name: str = "medium") -> dict:
     metrics["sentence_count"] = len(sentences)
     metrics["paragraph_count"] = len(paragraphs)
 
-    return {"issues": issues, "metrics": metrics, "verdict": verdict,
+    return {"issues": issues, "advisory": advisory, "metrics": metrics,
+            "verdict": verdict,
             "tail_echo_candidates": result_extra_tail_echo}
 
 

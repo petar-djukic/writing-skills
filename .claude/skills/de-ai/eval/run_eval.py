@@ -144,7 +144,14 @@ def run_lexical(path):
 
 
 def run_structural(path):
-    """(verdict, set of structural issue types + advisory blocks present)."""
+    """(verdict, issue types, candidate/advisory names).
+
+    Issues drive verdicts and are what HUMAN_FIRE_GATE governs. Candidates —
+    advisory structural blocks and the *_candidates lists — are prompts for
+    the semantic pass by contract and never touch a verdict. Counting the two
+    together (as this harness did until GH-188) made the headline rates mean
+    neither thing.
+    """
     r = subprocess.run(
         [sys.executable, os.path.join(SCRIPTS, "detect-structural.py"),
          path, "--json"],
@@ -156,13 +163,11 @@ def run_structural(path):
     if isinstance(d, list):
         d = d[0]
     fired = {i["type"] for i in d.get("issues", [])}
-    if d.get("repeated_formulae"):
-        fired.add("repeated_formulae")
-    if d.get("coinage_candidates"):
-        fired.add("coinage_candidates")
-    if d.get("tail_echo_candidates"):
-        fired.add("tail_echo_candidates")
-    return d.get("verdict", "?"), fired
+    cands = {a["type"] for a in d.get("advisory", [])}
+    for key in ("repeated_formulae", "coinage_candidates", "tail_echo_candidates"):
+        if d.get(key):
+            cands.add(key)
+    return d.get("verdict", "?"), fired, cands
 
 
 # Length bands for the matched-length pass. The lowest is the ai class's own
@@ -237,7 +242,7 @@ def measure_bands(class_paths, bands=LENGTH_BANDS):
             row = {}
             for cls, paths in class_paths.items():
                 hits, verdicts, used, skipped = [], [], 0, 0
-                failures = []
+                cand_hits, failures = [], []
                 for p in paths:
                     ex = excerpt(p, band)
                     if ex is None:
@@ -247,18 +252,20 @@ def measure_bands(class_paths, bands=LENGTH_BANDS):
                     with open(f, "w", encoding="utf-8") as fh:
                         fh.write(ex)
                     try:
-                        verdict, s_fired = run_structural(f)
-                        hits.append(s_fired | run_lexical(f))
+                        verdict, s_fired, s_cands = run_structural(f)
+                        hits.append(s_fired)
+                        cand_hits.append(s_cands | run_lexical(f))
                     except DetectorFailure as e:
                         failures.append(str(e))
                         continue
                     verdicts.append(verdict)
                     used += 1
-                dets = {}
+                dets, cands = {}, {}
                 if used:
                     for det in sorted(set().union(*hits) if hits else set()):
-                        n = sum(1 for h in hits if det in h)
-                        dets[det] = round(n / used, 2)
+                        dets[det] = round(sum(1 for h in hits if det in h) / used, 2)
+                    for det in sorted(set().union(*cand_hits) if cand_hits else set()):
+                        cands[det] = round(sum(1 for h in cand_hits if det in h) / used, 2)
                 # Report the verdict spread, not just a binary. "suspicious"
                 # and "likely-ai" are different experiences for a writer, and
                 # collapsing them makes the headline rate mean whichever one
@@ -278,7 +285,10 @@ def measure_bands(class_paths, bands=LENGTH_BANDS):
                         if used else None),
                     "avg_detectors_fired": (
                         round(sum(len(h) for h in hits) / used, 1) if used else None),
+                    "avg_candidates_fired": (
+                        round(sum(len(h) for h in cand_hits) / used, 1) if used else None),
                     "detectors": dets,
+                    "candidates": cands,
                 }
             out[str(band)] = row
     finally:
@@ -287,8 +297,10 @@ def measure_bands(class_paths, bands=LENGTH_BANDS):
 
 
 def evaluate(bands=False):
-    report = {"classes": {}, "detectors": {}, "verdict_accuracy": {}}
+    report = {"classes": {}, "detectors": {}, "candidate_rates": {},
+              "verdict_accuracy": {}}
     per_class_hits = {}
+    per_class_cands = {}
 
     human_meta = None
     for cls in ("human", "ai"):
@@ -296,18 +308,21 @@ def evaluate(bands=False):
         if cls == "human" and not files:
             files, human_meta = human_from_writing_voice()
         per_file = {}
+        per_file_cands = {}
         verdicts = {}
         failures = {}
         for f in files:
             try:
-                fired = run_lexical(f)
-                verdict, s_fired = run_structural(f)
+                lex_cands = run_lexical(f)
+                verdict, s_fired, s_cands = run_structural(f)
             except DetectorFailure as e:
                 failures[os.path.basename(f)] = str(e)
                 continue
-            per_file[os.path.basename(f)] = sorted(fired | s_fired)
+            per_file[os.path.basename(f)] = sorted(s_fired)
+            per_file_cands[os.path.basename(f)] = sorted(lex_cands | s_cands)
             verdicts[os.path.basename(f)] = verdict
         per_class_hits[cls] = per_file
+        per_class_cands[cls] = per_file_cands
         report["classes"][cls] = {
             "files": len(files),
             "measured": len(per_file),
@@ -328,20 +343,28 @@ def evaluate(bands=False):
             # is interpretable without the private corpus being present.
             report["classes"][cls]["source"] = human_meta
 
-    # per-detector fire rates per class
-    all_detectors = set()
-    for cls in per_class_hits:
-        for hits in per_class_hits[cls].values():
-            all_detectors.update(hits)
-    for det in sorted(all_detectors):
-        row = {}
-        for cls in ("human", "ai"):
-            files = per_class_hits[cls]
-            n = len(files)
-            fired = sum(1 for hits in files.values() if det in hits)
-            row[cls] = {"fired": fired, "of": n,
-                        "rate": round(fired / n, 2) if n else None}
-        report["detectors"][det] = row
+    # per-detector fire rates per class — issue-driving detectors and
+    # candidate/advisory signals in separate tables. The gate governs the
+    # first; the second is semantic-pass input and gets no gate.
+    def rate_table(per_class):
+        out = {}
+        names = set()
+        for cls in per_class:
+            for hits in per_class[cls].values():
+                names.update(hits)
+        for det in sorted(names):
+            row = {}
+            for cls in ("human", "ai"):
+                files = per_class.get(cls, {})
+                n = len(files)
+                fired = sum(1 for hits in files.values() if det in hits)
+                row[cls] = {"fired": fired, "of": n,
+                            "rate": round(fired / n, 2) if n else None}
+            out[det] = row
+        return out
+
+    report["detectors"] = rate_table(per_class_hits)
+    report["candidate_rates"] = rate_table(per_class_cands)
 
     # suite verdict accuracy
     ai_v = report["classes"].get("ai", {}).get("verdicts", {})
