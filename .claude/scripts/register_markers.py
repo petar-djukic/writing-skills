@@ -40,7 +40,7 @@ _BE = r"(?:is|are|was|were|be|been|being)"
 PASSIVE = re.compile(
     rf"\b{_BE}\s+(?:\w+ly\s+)?(?:\w+(?:ed|en)|{_IRREGULAR})\b", re.IGNORECASE)
 AGENTIVE = re.compile(
-    rf"\b{_BE}\s+(?:\w+ly\s+)?(?:\w+(?:ed|en)|{_IRREGULAR})\s+by\s+(?:the|a|an|its?|their|our)\b",
+    rf"\b{_BE}\s+(?:\w+ly\s+)?(?:\w+(?:ed|en)|{_IRREGULAR})\s+by\s+(?:the|a|an|its?|their|our|me|us|you|him|her|them)\b",
     re.IGNORECASE)
 # -al nominalizations are listed, not suffix-matched: the suffix alone would
 # sweep in every adjective (structural, general, formal).
