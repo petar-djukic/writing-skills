@@ -42,7 +42,13 @@ NUM_NOTE = ("Preserve every number and figure exactly as written in the original
             "add, remove, renumber, or invent any number. Do not turn prose into a "
             "numbered or bulleted list.")
 REG_NOTE = ("Avoid corporate and AI-typical vocabulary (leverage, robust, seamless, "
-            "delve, comprehensive, crucial). Plain declarative technical prose.")
+            "delve, comprehensive, crucial). Do not trade it for chatty filler "
+            "either: no just, actually, really, basically, simply, honestly. "
+            "Plain declarative technical prose.")
+MARKUP_NOTE = ("Reproduce the markdown formatting of the original exactly: every **bold** "
+               "span, *italic* span, and `code` span, in the same places. If the "
+               "paragraph opens with a bold sentence, your rewrite must open with a "
+               "bold sentence too — it is a lead-in, not ordinary prose.")
 
 
 def run(cmd, **kw):
@@ -134,45 +140,212 @@ def anchor_flags(a):
     return f
 
 
-def anchor_provenance(a, article):
-    """Print which exemplars the anchors will be drawn from, BEFORE rewriting.
+PREVIEW_PARAGRAPHS = 5
 
-    The whole failure in GH-215 was invisible until the operator ran retrieve.py
-    by hand after a 25-paragraph rewrite and found every anchor was an IEEE
-    paper. Printing the mix first costs nothing and makes that obvious.
-    """
+
+def _voice_anchors_module():
     stylo = os.path.normpath(os.path.join(SK, "..", "..", "match-structure", "scripts"))
     if stylo not in sys.path:
         sys.path.insert(0, stylo)
     try:
         import voice_anchors as va
+        return va
     except ImportError:
+        return None
+
+
+def _selection(a):
+    """(pre_ai, tags) as voice_anchors wants them, from the parsed flags."""
+    pre = (True if a.stratum == "pre-ai"
+           else False if a.stratum == "ai-era" else None)
+    return pre, (a.anchor_tags.split(",") if a.anchor_tags else None)
+
+
+def inert_filters(va, d, a):
+    """Which anchor-selection flags remove nothing on THIS corpus.
+
+    A filter that excludes no sample is not a control, and an operator following
+    a document that calls it one gets the failure it was supposed to prevent
+    (GH-234: `--stratum pre-ai` on a corpus deepened until every diction-eligible
+    sample is pre-AI). Reported by name, at the point it is applied.
+    """
+    pre, tags = _selection(a)
+    n = len(va.sample_paths(d, role=a.role, pre_ai=pre, tags=tags))
+    out = []
+    if a.stratum and len(va.sample_paths(d, role=a.role, pre_ai=None, tags=tags)) == n:
+        out.append(f"stratum={a.stratum}")
+    if a.role and len(va.sample_paths(d, role=None, pre_ai=pre, tags=tags)) == n:
+        out.append(f"role={a.role}")
+    if tags and len(va.sample_paths(d, role=a.role, pre_ai=pre, tags=None)) == n:
+        out.append(f"tags={a.anchor_tags}")
+    return out
+
+
+def realized_mix(va, d, a, paras, limit=None):
+    """Run retrieval for real and report what it SELECTED, not what was available.
+
+    The pool line cannot catch a bad selection (GH-233). On a corpus that is 80%
+    venue-voice, a how-to paragraph still drew two IEEE papers out of three
+    anchors — the GH-215 failure, on a pool assembled to prevent it, with a mix
+    line that showed nothing wrong because nothing about the pool was wrong.
+
+    Returns (roles, sources, sampled, total) where sampled is how many
+    paragraphs were actually retrieved for. A sampled count reported as if it
+    were complete would be the same defect this function exists to fix, so the
+    caller prints it.
+    """
+    pre, tags = _selection(a)
+    chosen = paras if limit is None else paras[:limit]
+    roles, sources = Counter(), Counter()
+    for _s, _e, txt in chosen:
+        for x in va.anchors(d, txt, k=3, role=a.role, pre_ai=pre, tags=tags):
+            roles[x.get("role", "?")] += 1
+            sources[x.get("file", "?")] += 1
+    return roles, sources, len(chosen), len(paras)
+
+
+def anchor_provenance(a, article, paras, full=False):
+    """Print the anchor pool AND the realized selection, BEFORE rewriting.
+
+    Two different questions, and only the second one predicts the output: the
+    pool says what retrieval may reach, the selection says what it chose. GH-215
+    was invisible until an operator re-ran retrieval by hand after a
+    25-paragraph rewrite; GH-233 was invisible because the pool was reported
+    instead of the selection. Both are cheap to answer up front.
+
+    Returns the discovered voice directory, or None when there is none.
+    """
+    va = _voice_anchors_module()
+    if va is None:
         print("anchors: match-structure not importable — cannot report the mix",
               file=sys.stderr)
-        return
+        return None
     d = a.voice_dir or va.discover(article)
     if not d:
         print("anchors: no writing-voice/ found — the rewrite has no target "
               "register; run plain filter-tells instead", file=sys.stderr)
-        return
-    pre = (True if a.stratum == "pre-ai"
-           else False if a.stratum == "ai-era" else None)
-    tags = a.anchor_tags.split(",") if a.anchor_tags else None
+        return None
+
+    pre, tags = _selection(a)
     paths = va.sample_paths(d, role=a.role, pre_ai=pre, tags=tags)
     mix = Counter(r for _, r in paths)
     filt = " ".join(x for x in (f"role={a.role}" if a.role else "",
                                 f"stratum={a.stratum}" if a.stratum else "",
                                 f"tags={a.anchor_tags}" if a.anchor_tags else "") if x)
-    print(f"anchors: {len(paths)} exemplars from {d}")
-    print(f"         {dict(mix)}{'  [' + filt + ']' if filt else ''}")
+    print(f"anchors: {len(paths)} exemplars available from {d}")
+    print(f"         pool {dict(mix)}{'  [' + filt + ']' if filt else ''}")
+
+    for name in inert_filters(va, d, a):
+        print(f"         INERT FILTER {name} selects the whole pool — it is not "
+              f"steering anything on this corpus", file=sys.stderr)
+
     if not paths:
         print("         NOTHING MATCHES THE FILTER — every rewrite will run "
               "without anchors", file=sys.stderr)
-    elif mix.get("author-voice", 0) == len(paths) and not a.role:
-        # The GH-215 shape: an all-papers corpus behind a draft that may not
-        # want academic register.
-        print("         all author-voice; if this draft wants punch rather than "
-              "precision, try --stratum pre-ai", file=sys.stderr)
+        return d
+    if not paras:
+        return d
+
+    roles, sources, sampled, total = realized_mix(
+        va, d, a, paras, None if full else PREVIEW_PARAGRAPHS)
+    scope = ("every paragraph" if sampled == total
+             else f"{sampled} of {total} paragraphs")
+    print(f"         selected {sum(roles.values())} anchors over {scope}")
+    print(f"         roles {dict(roles)}")
+    top = ", ".join(f"{f} x{n}" for f, n in sources.most_common(5))
+    print(f"         top sources {top}")
+
+    # Roles alone hide the GH-215 shape: {'venue-voice': 2, 'author-voice': 1}
+    # looks balanced while every anchor is an IEEE paper. Judge on what was
+    # chosen, which is why this warning moved off the pool.
+    picked = sum(roles.values())
+    if picked and roles.get("author-voice", 0) * 2 >= picked and not a.role:
+        print("         MOSTLY author-voice anchors were SELECTED; if this draft "
+              "wants punch rather than precision, select the register explicitly "
+              "with --role venue-voice and/or --anchor-tags", file=sys.stderr)
+    return d
+
+
+def _yaml_scalar(v):
+    """Quote only what YAML would otherwise misread. Hand-rolled on purpose:
+    this script is stdlib-only so it runs outside the pixi environment."""
+    if v is None:
+        return "null"
+    if isinstance(v, bool):
+        return "true" if v else "false"
+    if isinstance(v, (int, float)):
+        return repr(v)
+    s = str(v)
+    if s == "" or any(c in s for c in ":#[]{},&*!|>%@`\"'\n") or s[0] in "-? ":
+        return '"' + s.replace("\\", "\\\\").replace('"', '\\"') + '"'
+    return s
+
+
+def _fraction_ai(response_path):
+    """fraction_ai as a percentage from a saved Pangram response, or None."""
+    try:
+        with open(response_path) as f:
+            return json.load(f).get("fraction_ai")
+    except (OSError, json.JSONDecodeError):
+        return None
+
+
+def write_manifest(path, a, voice_dir, results, pangram=None):
+    """Run provenance beside the draft, in the shape a front-matter block wants.
+
+    The anchor set is the single most important input to a rewrite — it is what
+    pulled the prose toward one register rather than another — and until now it
+    lived only in a results.json inside a mkdtemp that the OS reaps (GH-236).
+    Everything here is already known or already computed; this is persistence
+    and a dedup, not new analysis.
+    """
+    seen, anchor_files = set(), []
+    for r in results:
+        for x in r.get("anchors") or []:
+            f = x.get("file")
+            if f and f not in seen:
+                seen.add(f)
+                anchor_files.append(f)
+    counts = Counter(r["status"] for r in results)
+    tags = [t.strip() for t in a.anchor_tags.split(",")] if a.anchor_tags else []
+
+    out = ["# Generated by match-voice/scripts/drive.py — run provenance.",
+           "match_voice:",
+           f"  model: {_yaml_scalar(a.model)}",
+           f"  voice_dir: {_yaml_scalar(voice_dir)}",
+           f"  anchor_role: {_yaml_scalar(a.role)}",
+           f"  anchor_tags: [{', '.join(_yaml_scalar(t) for t in tags)}]",
+           f"  stratum: {_yaml_scalar(a.stratum)}",
+           "  anchor_files:"]
+    out += [f"    - {_yaml_scalar(f)}" for f in anchor_files] or ["    []"]
+    out.append("  result: {accepted: %d, kept_original: %d, skipped_short: %d, "
+               "rewrite_error: %d}" % (counts.get("accepted-mechanical", 0),
+                                       counts.get("kept-original", 0),
+                                       counts.get("skipped-short", 0),
+                                       counts.get("rewrite-error", 0)))
+    if pangram:
+        before, after = pangram
+        # scope named explicitly: the driver submits a prose-only payload, so
+        # these will not match a whole-file scan done by hand.
+        out.append("  pangram: {scope: prose-only, before: %s, after: %s}"
+                   % (_yaml_scalar(before), _yaml_scalar(after)))
+    open(path, "w").write("\n".join(out) + "\n")
+    return anchor_files
+
+
+def restore_full_bold(original, candidate):
+    """Re-wrap a candidate whose original was a single wholly-bold paragraph.
+
+    A deterministic repair, and deliberately narrow. When the original is bold
+    from end to end the emphasis belongs to the whole block, so restoring it
+    cannot attach it to the wrong span. A leading bold sentence is the opposite
+    case — where the lead-in ends up in the rewrite is not knowable here, so
+    that one is the gate's business (GH-232) and gets retried, not patched.
+    """
+    o, c = original.strip(), candidate.strip()
+    if o.startswith("**") and o.endswith("**") and not c.startswith("**"):
+        return "**" + c + "**"
+    return candidate
 
 
 def parse_paragraphs(path, min_words):
@@ -205,10 +378,16 @@ def main():
                          "that fits is not the one topically nearest")
     ap.add_argument("--stratum", choices=["pre-ai", "ai-era"],
                     help="pre-ai restricts anchors to diction-safe samples "
-                         "across roles — use it when the draft needs punch and "
-                         "the corpus is mostly papers")
+                         "across roles. Inert on a corpus whose diction-eligible "
+                         "samples are all pre-AI — the run says so when it is. "
+                         "To steer register, reach for --role/--anchor-tags")
     ap.add_argument("--coverage-only", action="store_true",
                     help="parse + coverage audit only; no model calls")
+    ap.add_argument("--dry-run", action="store_true",
+                    help="run retrieval for EVERY paragraph, report the anchors "
+                         "it selects, and exit without calling the model. The "
+                         "pre-run line samples a few paragraphs; this is the "
+                         "whole article")
     ap.add_argument("--pangram", action="store_true",
                     help="measure the rewrite against an external detector. "
                          "UPLOADS this article and the draft to a third party "
@@ -219,7 +398,10 @@ def main():
     art = os.path.abspath(a.article)
     out = a.out or re.sub(r"\.md$", ".vr-draft.md", art)
     lines, fm_close, paras, coverage, unaccounted = parse_paragraphs(art, a.min_words)
-    anchor_provenance(a, art)
+    # Long enough to be rewritten is the same bar the loop uses, so the reported
+    # selection is the selection the run would actually make.
+    rewritable = [p for p in paras if len(p[2].split()) >= a.min_words]
+    voice_dir = anchor_provenance(a, art, rewritable, full=a.dry_run)
 
     from collections import Counter
     cats = Counter(coverage.values())
@@ -233,6 +415,10 @@ def main():
             w = len(txt.split())
             tag = "short-skip" if w < a.min_words else "rewrite"
             print(f"  p{n:02d} L{s:>4} {w:>4}w {tag:10} | {txt[:60]}")
+        sys.exit(1 if unaccounted else 0)
+    if a.dry_run:
+        print("\ndry run: anchors above are the real selection for every "
+              "rewritable paragraph. No model was called and no draft written.")
         sys.exit(1 if unaccounted else 0)
 
     work = tempfile.mkdtemp(prefix="match-voice-")
@@ -280,13 +466,18 @@ def main():
             if rw.returncode != 0 or not rw.stdout.strip():
                 rec["status"] = "rewrite-error"; rec["err"] = (rw.stderr or "")[:200]
                 break
-            cf = f"{work}/p{n:02d}.cand.txt"; open(cf, "w").write(rw.stdout.strip())
+            # Repair before verifying, not at assembly time: the gate now checks
+            # markup (GH-232), so a candidate the driver would have patched on
+            # the way out has to be patched before the gate reads it, or the
+            # repair and the check disagree about the same paragraph.
+            cand_text = restore_full_bold(txt, rw.stdout.strip())
+            cf = f"{work}/p{n:02d}.cand.txt"; open(cf, "w").write(cand_text)
             vf = run(["python3", f"{SK}/verify.py", "--original", pf, "--rewrite", cf,
                       "--anchors-json", ajf, "--json"])
             de = run(["bash", DEAI, cf])
             if vf.returncode == 0 and de.returncode == 0:
                 rec["status"] = "accepted-mechanical"
-                rec["cand"] = rw.stdout.strip()
+                rec["cand"] = cand_text
                 rec["attempt"] = attempt + 1
                 break
             # classify for the retry note
@@ -294,6 +485,8 @@ def main():
             notes = []
             if '"numbers"' in fj or '"citations"' in fj or '"terms"' in fj:
                 notes.append(NUM_NOTE)
+            if '"markup"' in fj:
+                notes.append(MARKUP_NOTE)
             if '"similarity"' in fj:
                 notes.append(COPY_NOTE)
             if de.returncode != 0:
@@ -310,12 +503,9 @@ def main():
     out_lines = list(lines)
     for n in sorted(accept, reverse=True):
         s, e = rng[n]
-        orig = "\n".join(out_lines[s - 1:e])
-        cand = accept[n]
-        if orig.strip().startswith("**") and orig.strip().endswith("**") \
-                and not cand.strip().startswith("**"):
-            cand = "**" + cand.strip() + "**"
-        out_lines[s - 1:e] = [cand]
+        # The wholly-bold repair happens before the gate now, so an accepted
+        # candidate already carries the markup it is going to carry.
+        out_lines[s - 1:e] = [accept[n]]
     open(out, "w").write("\n".join(out_lines))
     json.dump(results, open(f"{work}/results.json", "w"), indent=2)
 
@@ -338,6 +528,7 @@ def main():
 
     # The outcome measure, last because it is the result of the run. Without a
     # baseline there is nothing to compare, so the second scan is not spent.
+    pangram_pair = None
     if not a.pangram:
         print("\nexternal check: skipped (no --pangram). The gate proves the "
               "candidates kept their citations, numbers, and meaning; it cannot "
@@ -352,10 +543,18 @@ def main():
             # Beside the score, never instead of it: the two moving in
             # opposite directions is the whole GH-219 finding.
             report_register(art, out)
+            pangram_pair = (_fraction_ai(baseline[0]), _fraction_ai(after[0]))
         else:
             print(f"\nexternal check: the draft scan failed. The baseline stands "
                   f"at {baseline[0]}, so a later scan of this draft can still be "
                   f"compared against it.")
+
+    # Last, so it can record the Pangram numbers when there are any. Written
+    # beside the draft rather than into the temp dir, which the OS reaps.
+    manifest = re.sub(r"\.md$", ".generation.yaml", out)
+    used = write_manifest(manifest, a, voice_dir, results, pangram_pair)
+    print(f"\nprovenance: {manifest}")
+    print(f"  {len(used)} distinct exemplars anchored this draft")
 
 
 if __name__ == "__main__":

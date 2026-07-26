@@ -47,11 +47,20 @@ evidence of the wrong thing.
 The cause of that run was anchors, not the objective: retrieval was showing the
 model IEEE papers for a punchy blog post (GH-216). Fix the anchors and the
 objective is reachable without the failure mode — which is why the driver now
-prints the exemplar mix before it starts.
+reports the anchors it selected, not only the pool it selected them from,
+before it starts.
 
 There is deliberately **no automatic quality gate on the Pangram number**. One
 run is not a threshold, and inventing one from it would be the overfitting
 GH-188 warned about.
+
+A later run measured the same divergence while the score moved a long way
+(GH-233). An article fell 58 points, 81.1% to 23.3%, and in the same run
+`sentence_length_std` fell 8.9 → 8.3, `dash_density_per_500w` rose 1.4 → 2.0,
+`antithesis_pairs` rose 1 → 3, bold lead-ins fell 11 → 8, and ` just ` went
+1 → 10. A 58-point improvement is the most persuasive number this pipeline has
+produced, and the prose underneath it got worse on five measures at once. Read
+the register report beside the score, never instead of it.
 
 The rewriting model is deliberately **not** Claude. filter-tells detects and steers
 within the Claude loop (GH-156); this skill hands the rewrite itself to a
@@ -70,6 +79,15 @@ strengthen a claim. Nothing is spliced into a draft until the gate passes.
   skill has no target and should not run — use plain filter-tells instead.
 - A reachable Ollama endpoint with the model pulled, at
   `http://localhost:11434` by default.
+- For the `--pangram` measurement only, a Pangram API key. It resolves through
+  `<agent-dir>/scripts/credentials.py` in order: an explicit `--api-key`, then
+  `PANGRAM_API_KEY`, then the nearest `.secrets/keys.json` found by walking up
+  from the working directory (contract: the repository's secrets rule). So
+  `env | grep -i pangram` coming back empty settles nothing — the file is where
+  the key usually lives, and checking the environment first is what makes a
+  configured key look missing. Ask the loader instead:
+  `python3 <agent-dir>/scripts/credentials.py` reports which services are
+  configured, printing names and never values.
 
 **Model choice.** Default `gemma4:12b` — the best local model in the GH-163
 bake-off that runs anywhere. On a 32 GB Apple Silicon machine, `gemma4:31b-mlx`
@@ -88,23 +106,67 @@ python3 <skill>/scripts/rewrite.py --check --text /dev/null
 If this fails, **report it and stop**. The skill never falls back to a Claude
 rewrite: that would defeat the decorrelation it exists for.
 
+## When not to run it
+
+Two kinds of draft do not benefit, and each costs a whole run to find out.
+
+**Prose already cleaned by hand.** Measured on two articles that had been
+through the full filter-tells battery and an editing pass before the run: the
+pipeline put back what the cleanup had taken out. ` just ` went 1 → 10 and
+1 → 15, ` actually ` 1 → 7 and 0 → 15, bold lead-ins fell 11 → 8, and
+`antithesis_pairs` rose 1 → 3 (GH-233). A second model re-emitting finished
+prose finds little to repair and adjusts register anyway. The wins this skill
+can show were measured on drafts that had not been hand-tightened, and they do
+not transfer to prose that has.
+
+**An article about AI writing.** One document did not shift by a point — 8 of 8
+segments flagged before and after — through the same run that moved a sibling
+article 58 points. Its vocabulary *is* the flagged lexicon: it quotes
+"leverage", "robust", "seamless" and "delve", explains burstiness, and carries a
+table of AI artifacts. No rewrite reaches that, because the subject matter is
+what the detector measures. Expect no movement and spend the scans elsewhere.
+
 ## Steering the anchors
 
-The driver prints the exemplar mix **before** rewriting anything:
+The driver reports both the pool and the anchors retrieval actually chose,
+**before** rewriting anything:
 
 ```
-anchors: 52 exemplars from .../writing-voice
-         {'author-voice': 24, 'venue-voice': 28}
+anchors: 52 exemplars available from .../writing-voice
+         pool {'author-voice': 24, 'venue-voice': 28}
+         selected 15 anchors over 5 of 27 paragraphs
+         roles {'author-voice': 11, 'venue-voice': 4}
+         top sources Djukic-2009-rrm.md x4, Djukic-2005-lifetime.md x3, ...
 ```
 
-Read that line. An all-`author-voice` mix behind a draft that wants punch is
-the GH-215 failure, and it costs a whole rewrite to discover afterwards.
+Read the `selected` block, not the `pool` line. They answer different questions
+and only the second one predicts the output: the pool says what retrieval *may*
+reach, the selection says what it *chose*. A pool of 22 author-voice against 91
+venue-voice looks healthy and still hands a how-to paragraph two IEEE papers out
+of three anchors — the GH-215 failure on a corpus assembled to prevent it, which
+is why the pool line alone could not catch it (GH-233).
+
+The pre-run block samples the first few paragraphs and says so. For the real
+selection over every paragraph, with no model called and no draft written:
+
+```bash
+python3 <skill>/scripts/drive.py --article draft.md --dry-run
+```
+
+Judge on sources as well as roles. `{'venue-voice': 2, 'author-voice': 1}` reads
+balanced while every anchor is a paper.
+
+A flag that filters nothing is reported as inert rather than left to look like a
+control — `--stratum pre-ai` on a corpus whose diction-eligible samples are all
+pre-AI is a no-op, and following it as the register control produces the
+register it was meant to avoid (GH-234, idea-factory#355).
 
 | you want | flags |
 |---|---|
 | default — nearest passages, author-voice weighted | none |
-| diction-safe only (exclude AI-era samples) | `--stratum pre-ai` |
-| **punch: the pre-AI peer essays** | `--role venue-voice --stratum pre-ai` |
+| diction-safe only (exclude AI-era samples) | `--stratum pre-ai` — inert, and reported as such, when the corpus holds no AI-era diction samples |
+| **punch: the pre-AI peer essays** | `--role venue-voice --anchor-tags clipped` |
+| see the real selection before spending tokens | `--dry-run` |
 | **register that topic will not find** | `--anchor-tags economics` |
 | shape references, deliberately | `--anchor-tags structure-only` |
 | a specific corpus | `--voice-dir <path>` |
@@ -201,6 +263,7 @@ python3 <skill>/scripts/verify.py --original <paragraph-file> --rewrite <candida
 |---|---|---|
 | Citations, numbers, terms | `verify.py` | a key or figure lost, altered, or invented |
 | Citation syntax family | `verify.py` | `[@key]` silently rewritten as `\citep{key}` — the key survives but the build breaks |
+| Inline markup | `verify.py` | a `**bold**`, `*italic*`, or `` `code` `` span dropped, or a bold lead-in returned as plain prose — same class as citation syntax, and the reason a section of lead-ins lost three of six |
 | Anchor similarity | `verify.py` (match-structure shingles) | a long verbatim run copied from an exemplar |
 | Meaning entailment | **Claude**, per references/prompts.md | any claim weakened, added, or re-scoped |
 | Register | filter-tells lexical scan on the candidate | banned words — one machine register traded for another |
@@ -263,7 +326,18 @@ scan uploads the article and the draft to a third party that retains both —
 the opposite of the local-first reason this skill exists — so the driver never
 uploads on its own, not even with a key sitting in the environment. See the
 upload rule in the `writing-voice/` directory rule before answering. A full
-comparison costs two scans against a free tier of four a day.
+comparison costs two scans. How much of an allowance that spends depends on the
+account, and nothing here enforces a ceiling: run `pangram.py --check` first,
+which confirms the key and the endpoint and spends nothing, and read the
+account's own answer from the API — 402 for exhausted credits, 429 for too many
+requests. Do not plan a session around a remembered daily number.
+
+**It measures prose only.** Both scans submit the payload the shared extractor
+builds, with front matter, tables, and code fences dropped — the text a rewrite
+can change. Scanning the whole file by hand includes that machinery
+and returns a different number, and the difference is not the rewrite. Two
+readings of one document are comparable only when both cover the same text, so
+the run manifest records `scope: prose-only` beside the pair.
 
 Without the flag, or without a key, the driver runs unchanged and says the
 check was skipped. That is the normal state, not a degraded one; if the

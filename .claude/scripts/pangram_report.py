@@ -28,7 +28,10 @@ way to reconstruct it afterwards):
   pangram_report.py report --response after.json --spans draft.payload.spans.json \\
                            --baseline before.json
 
-A full comparison costs two scans, half the free tier's daily allowance.
+A full comparison costs two scans. Nothing here enforces a quota: pangram.py
+--check spends nothing, and the API answers 402 for exhausted credits and 429
+for too many requests. Those answers are the source of truth, not a remembered
+daily figure.
 
 Stdlib only. Consumes pangram.py --json output; never calls the API itself, so
 this half is testable with no key and no credits.

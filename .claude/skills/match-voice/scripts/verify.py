@@ -12,6 +12,11 @@ Checks:
              pandoc key silently rewritten as natbib breaks the build
   numbers    every number (with its unit when attached) must survive
   terms      acronyms and technical tokens from the original must survive
+  markup     inline emphasis and code spans must survive, in the same count and
+             with a leading emphasis span still leading (GH-232). The model
+             reads "**The context stays clean.** An autonomous loop..." as
+             prose and returns a plain declarative sentence: every number and
+             citation survives, and the section's visual structure does not.
   similarity n-gram overlap against the anchor passages, so the model does not
              simply copy the exemplars (reuses match-structure's shingle guard)
 
@@ -45,6 +50,28 @@ KNOWN_UNITS = {
 }
 ACRONYM = re.compile(r"\b([A-Z]{2,}(?:-\d+)?)\b")
 
+# Inline markup, stripped in this order so a span is counted once: code spans
+# first (their contents are literal and may hold asterisks), then bold, then
+# italic on what is left. Underscore italic requires non-word neighbours, or
+# every snake_case identifier reads as emphasis.
+CODE_SPAN = re.compile(r"`+[^`\n]+`+")
+BOLD = re.compile(r"(\*\*|__)(?=\S)(.+?)(?<=\S)\1", re.DOTALL)
+ITALIC_STAR = re.compile(r"(?<!\*)\*(?=\S)([^*\n]+)(?<=\S)\*(?!\*)")
+ITALIC_USCORE = re.compile(r"(?<![\w_])_(?=\S)([^_\n]+)(?<=\S)_(?![\w_])")
+# A leading span is emphasis that opens the paragraph — the bold lead-in whose
+# loss GH-232 measured. Matched on the stripped paragraph, so leading
+# whitespace does not decide it.
+LEADING_EMPHASIS = re.compile(r"^\s*(\*\*|__)(?=\S)(.+?)(?<=\S)\1")
+
+
+def _markup_spans(text):
+    """Counts of inline code, bold, and italic spans, counted once each."""
+    without_code, n_code = CODE_SPAN.subn(" ", text)
+    without_bold, n_bold = BOLD.subn(" ", without_code)
+    n_italic = (len(ITALIC_STAR.findall(without_bold))
+                + len(ITALIC_USCORE.findall(without_bold)))
+    return {"code": n_code, "bold": n_bold, "italic": n_italic}
+
 
 def _citation_keys(text):
     """Counter of keys, ignoring which syntax carried them."""
@@ -52,7 +79,7 @@ def _citation_keys(text):
 
 
 def _citation_pairs(text):
-    """[(key, family)] where family is 'pandoc' or 'natbib'.
+    r"""[(key, family)] where family is 'pandoc' or 'natbib'.
 
     The syntax family matters (GH-163): a model that silently rewrites
     [@key] as \citep{key} keeps the key but breaks a pandoc build, and a
@@ -151,6 +178,24 @@ def verify(original, rewritten, anchors_json=None, max_shared_run=8):
             findings.append({"check": "numbers", "severity": "fatal",
                              "detail": f"number '{val}' invented by the rewrite"})
 
+    # Markup is a contract like citation syntax: the content survives and the
+    # rendering does not, so nothing else here notices. Only a shortfall is
+    # fatal — a rewrite that adds emphasis is a style question for the reviewer,
+    # not a broken document.
+    o_m, r_m = _markup_spans(original), _markup_spans(rewritten)
+    for kind, label in (("bold", "bold"), ("code", "inline code"),
+                        ("italic", "italic")):
+        if r_m[kind] < o_m[kind]:
+            findings.append({"check": "markup", "severity": "fatal",
+                             "detail": f"{label} span(s) lost "
+                                       f"({o_m[kind]} in original, {r_m[kind]} "
+                                       f"in rewrite)"})
+    if LEADING_EMPHASIS.match(original) and not LEADING_EMPHASIS.match(rewritten):
+        findings.append({"check": "markup", "severity": "fatal",
+                         "detail": "the paragraph's leading emphasis span is "
+                                   "gone; a bold lead-in carries the section's "
+                                   "visual structure"})
+
     o_a, r_a = _acronyms(original), _acronyms(rewritten)
     for term, n in o_a.items():
         if r_a.get(term, 0) < n:
@@ -167,6 +212,7 @@ def verify(original, rewritten, anchors_json=None, max_shared_run=8):
         "clean": not any(f["severity"] == "fatal" for f in findings),
         "findings": findings,
         "similarity": sim,
+        "markup": {"original": o_m, "rewrite": r_m},
         "note": "mechanical gate only — Claude must still judge bidirectional "
                 "entailment and run the filter-tells lexical scan before splicing",
     }
