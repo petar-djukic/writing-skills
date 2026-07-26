@@ -88,3 +88,36 @@ Findings and actions:
 - All 8 proxy files scanned `likely-ai` — unusable as a clean-human check,
   reinforcing that `eval/human/` needs author-designated, conversion-free
   samples.
+
+## GH-187 — length normalization of presence-style detectors (2026-07-26)
+
+Measured on the 24 author-voice exemplars (GH-186 banded eval): average
+detectors fired on the author's own pre-AI prose climbed 6.0 (400 w) to 10.7
+(2,500 w) with register held constant. The cause was detectors that fire on an
+absolute count anywhere in the document, so opportunity scaled with length
+while evidence per word did not. Per-500-word density metrics (colon, dash,
+tricolon, rather-than, both-and, contrast-flip, passive-enabling, paren-def)
+were already length-safe and are untouched.
+
+Every change re-expresses the existing threshold at its ~500-word tuning
+point; short-document behaviour is unchanged by construction
+(`length_scaled_min(word_count, per_1000, floor)`).
+
+| Detector | Before | After | per_1000 rationale |
+|---|---|---|---|
+| antithesis (all subtypes) | every pair an issue, zero tolerance | pairs counted in metrics always; become issues at >= max(1, 2.0/1000w) | 1 pair in 500 w fired before; same density now required at any length. Verdict counted issues per pair, so 5 scattered pairs in a long paper alone forced likely-ai |
+| parallelism | any run > max_repeats | runs gated at >= max(1, 2.0/1000w) | "We derive... We prove..." somewhere in 12k words is convention |
+| frame-parallelism | any run | same gate as parallelism | same reasoning |
+| topic-sentence-weak | >= 3 weak paragraphs, absolute | >= max(3, 30% of paragraphs scored) | 3 of 6 paragraphs is a pattern; 3 of 100 is a paper. Was 0.96 on full papers, 0.00 on 400 w excerpts of the same prose |
+| low-opening-diversity | unique ratio over all sentences | mean of 40-sentence window ratios | whole-document ratio decays by Zipf alone as n grows; windows measure the local monotony the detector is after |
+| repeated_formulae | min_count 3, absolute | max(3, 1.5/1000w) | any domain term is a repeated 4-gram in 12k words |
+| coinage_candidates | min_count 2, absolute | max(2, 1.0/1000w) | scaling stops long-document inflation only; its matched-length misfires (1.00 at every band) are GH-188, not solved here |
+
+Deliberately left absolute, with the reason at the definition: none — every
+whole-document count detector is now scaled. Per-sentence judgments
+(nominalization >= 4 in one sentence, comparative pairs in one sentence) are
+local evidence and were never length-sensitive.
+
+Verification: GH-186 banded eval before vs after, human class avg detectors
+fired — target roughly flat across 400/800/1500/2500; ai-class rates must not
+fall. Results recorded on GH-187.
