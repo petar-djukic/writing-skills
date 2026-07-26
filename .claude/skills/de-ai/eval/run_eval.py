@@ -32,6 +32,10 @@ BASELINE = os.path.join(HERE, "baseline.json")
 # retune it or demote it to advisory (documented gate, see README).
 HUMAN_FIRE_GATE = 0.20
 
+# Samples written after this year may carry AI diction. We do not filter on it —
+# what belongs in the corpus is the curator's decision — but we say so.
+AI_ERA_YEAR = 2022
+
 
 def corpus_files(cls):
     d = os.path.join(HERE, cls)
@@ -41,6 +45,72 @@ def corpus_files(cls):
         os.path.join(d, f) for f in os.listdir(d)
         if f.endswith((".md", ".tex")) and not f.startswith(".")
     )
+
+
+def human_from_writing_voice(start=None, role="author-voice"):
+    """Author-designated human prose from the consuming repository.
+
+    `.claude/` is a symlink into the shared skills repo, so eval/human/ is not
+    a per-repo directory — anything dropped there lands in the public skills
+    repo. That is why it has stayed empty, and it is the wrong place to ask
+    anyone to put their own writing.
+
+    The samples already exist somewhere better. A repository that uses these
+    skills carries writing-voice/, whose author-voice exemplars are exactly
+    what this class needs: prose the author designated as theirs, certified by
+    the manifest, sitting in their own repo. We walk up to find it with the
+    same discovery rule voice_anchors.py uses, and read rather than copy — the
+    text never enters the skills repo, so a private corpus stays private.
+
+    Returns (files, meta). meta carries the provenance the baseline records
+    instead of the text.
+    """
+    sys.path.insert(0, SCRIPTS) if SCRIPTS not in sys.path else None
+    try:
+        import voice_anchors
+    except ImportError:
+        return [], {"source": None, "reason": "voice_anchors.py not importable"}
+
+    d = voice_anchors.discover(start or os.getcwd())
+    if not d:
+        return [], {"source": None,
+                    "reason": "no writing-voice/ found from the working directory"}
+    try:
+        exemplars = voice_anchors.load_manifest(d)   # returns the exemplar list
+    except Exception as e:                           # malformed manifest is not fatal
+        return [], {"source": d, "reason": f"manifest unreadable: {e}"}
+
+    files, years, late = [], [], []
+    for ex in exemplars:
+        if ex.get("role") != role:
+            continue
+        p = os.path.join(d, ex.get("file", ""))
+        if not os.path.isfile(p):
+            continue
+        files.append(p)
+        y = ex.get("year")
+        years.append(y)
+        # Curating the corpus is the curator's job, not ours — we use what the
+        # manifest lists. But a sample written after generative AI arrived may
+        # carry AI diction, and as ground truth for "what human prose looks
+        # like" that is circular. Warn; do not silently drop.
+        if isinstance(y, int) and y > AI_ERA_YEAR:
+            late.append(f"{ex.get('id') or os.path.basename(p)} ({y})")
+
+    known = [y for y in years if isinstance(y, int)]
+    meta = {
+        "source": d,
+        "role": role,
+        "files": len(files),
+        "years": [min(known), max(known)] if known else None,
+    }
+    if late:
+        meta["warning"] = (
+            f"{len(late)} sample(s) dated after {AI_ERA_YEAR} are in the human "
+            f"class: {', '.join(late)}. Post-{AI_ERA_YEAR} prose may carry AI "
+            f"diction, which makes it circular as ground truth. Left in — "
+            f"curating the corpus is the curator's call.")
+    return sorted(files), meta
 
 
 def run_lexical(path):
@@ -81,8 +151,11 @@ def evaluate():
     report = {"classes": {}, "detectors": {}, "verdict_accuracy": {}}
     per_class_hits = {}
 
+    human_meta = None
     for cls in ("human", "ai"):
         files = corpus_files(cls)
+        if cls == "human" and not files:
+            files, human_meta = human_from_writing_voice()
         per_file = {}
         verdicts = {}
         for f in files:
@@ -95,6 +168,10 @@ def evaluate():
             "files": len(files),
             "verdicts": verdicts,
         }
+        if cls == "human" and human_meta:
+            # Provenance, not text: where the samples came from, so a baseline
+            # is interpretable without the private corpus being present.
+            report["classes"][cls]["source"] = human_meta
 
     # per-detector fire rates per class
     all_detectors = set()
@@ -125,9 +202,12 @@ def evaluate():
         },
     }
     if not hu_v:
+        why = (human_meta or {}).get("reason") or "no human samples found"
         report["verdict_accuracy"]["human_clean"]["note"] = (
-            "human corpus empty — populate eval/human/ (see README); "
-            "false-positive rates unmeasured until then")
+            f"human corpus empty ({why}). Run from a repository that carries "
+            "writing-voice/, or see README. False-positive rates are unmeasured "
+            "until then, which makes the <=20% human-fire gate vacuous — every "
+            "detector passes that half for free.")
     return report
 
 
@@ -135,20 +215,40 @@ def main():
     update = "--update-baseline" in sys.argv
     report = evaluate()
 
-    if not corpus_files("ai") and not corpus_files("human"):
-        print("No corpus files found under eval/human or eval/ai.", file=sys.stderr)
+    if not corpus_files("ai") and not report["classes"]["human"]["files"]:
+        print("No corpus files found under eval/ai, and no human samples "
+              "discovered from the working directory.", file=sys.stderr)
         sys.exit(2)
+
+    # To stderr so it is seen even when stdout is piped into jq or a baseline.
+    src = report["classes"]["human"].get("source") or {}
+    if src.get("warning"):
+        print(f"WARNING: {src['warning']}", file=sys.stderr)
 
     regressions = []
     if os.path.exists(BASELINE) and not update:
         base = json.load(open(BASELINE))
+        # The human corpus lives in whichever repository you run from, so two
+        # runs can be measuring different prose. Comparing human rates across
+        # different corpora reports genre differences as detector regressions.
+        now_src = (report["classes"]["human"].get("source") or {}).get("source")
+        was_src = (base.get("classes", {}).get("human", {}).get("source") or {}).get("source")
+        same_corpus = now_src == was_src
+        if not same_corpus:
+            report["baseline_corpus_mismatch"] = {
+                "baseline": was_src, "current": now_src,
+                "note": ("human-rate comparison skipped: the baseline was built "
+                         "from a different corpus. ai-class rates and verdict "
+                         "accuracy are still comparable."),
+            }
         # regression: a detector's human fire rate rose above baseline,
         # or verdict accuracy dropped.
-        for det, row in report["detectors"].items():
-            hr = row["human"]["rate"]
-            br = base.get("detectors", {}).get(det, {}).get("human", {}).get("rate")
-            if hr is not None and br is not None and hr > br:
-                regressions.append(f"{det}: human fire rate {br} -> {hr}")
+        if same_corpus:
+            for det, row in report["detectors"].items():
+                hr = row["human"]["rate"]
+                br = base.get("detectors", {}).get(det, {}).get("human", {}).get("rate")
+                if hr is not None and br is not None and hr > br:
+                    regressions.append(f"{det}: human fire rate {br} -> {hr}")
         for key in ("ai_flagged", "human_clean"):
             now = report["verdict_accuracy"][key]
             was = base.get("verdict_accuracy", {}).get(key, {})

@@ -77,6 +77,14 @@ are additive, never required.
 
 - **Pangram check** — an optional external measurement, and the only consumer
   that sends text off the machine. Governed by the consent rule below.
+- **de-ai's eval harness** — uses the `author-voice` exemplars as the human
+  class when calibrating detector false-positive rates. It reads them in place
+  and records provenance rather than text, so a private corpus stays private;
+  the skills directory is shared by symlink, and samples copied into it would
+  be published with the skills. What belongs in the corpus is the curator's
+  call, but the harness warns about exemplars dated after 2022, since prose
+  written once generative AI was available is circular as ground truth for what
+  human prose looks like.
 
 Reference implementation of the directory: `petar-djukic/autogenic-systems`
 (`writing-voice/`, 28 exemplars — 24 `author-voice`, 4 `venue-voice`).
