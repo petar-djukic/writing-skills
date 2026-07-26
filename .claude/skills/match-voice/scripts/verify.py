@@ -17,6 +17,8 @@ Checks:
              reads "**The context stays clean.** An autonomous loop..." as
              prose and returns a plain declarative sentence: every number and
              citation survives, and the section's visual structure does not.
+  dashes     the rewrite may not add em-dashes the original lacked — the
+             cheapest way for a model to fake punch (GH-243)
   similarity n-gram overlap against the anchor passages, so the model does not
              simply copy the exemplars (reuses match-structure's shingle guard)
 
@@ -71,6 +73,17 @@ def _markup_spans(text):
     n_italic = (len(ITALIC_STAR.findall(without_bold))
                 + len(ITALIC_USCORE.findall(without_bold)))
     return {"code": n_code, "bold": n_bold, "italic": n_italic}
+
+
+# Em-dash and its spaced-hyphen equivalent. A dash the original did not have is
+# manufactured punch (GH-243): measured at 7 -> 10 and 7 -> 15 across two
+# articles, against a house limit of 2.0 per 500 words. Counted outside code
+# spans, where a double hyphen is a CLI flag rather than punctuation.
+EM_DASH = re.compile(r"—|(?<=\s)--?(?=\s)")
+
+
+def _dashes(text):
+    return len(EM_DASH.findall(CODE_SPAN.sub(" ", text)))
 
 
 def _citation_keys(text):
@@ -196,6 +209,18 @@ def verify(original, rewritten, anchors_json=None, max_shared_run=8):
                                    "gone; a bold lead-in carries the section's "
                                    "visual structure"})
 
+    # An added em-dash is the most legible signal of "punch" a model has, and it
+    # reaches for it when told to match a punchy register. Fatal rather than
+    # advisory because the rewrite prompt now forbids it, so a dash here means a
+    # stated constraint was ignored and one retry is cheap. Removing dashes is
+    # fine — that direction is not the failure.
+    o_d, r_d = _dashes(original), _dashes(rewritten)
+    if r_d > o_d:
+        findings.append({"check": "dashes", "severity": "fatal",
+                         "detail": f"em-dash count rose {o_d} -> {r_d}; the "
+                                   "rewrite manufactured punctuation the "
+                                   "original did not have"})
+
     o_a, r_a = _acronyms(original), _acronyms(rewritten)
     for term, n in o_a.items():
         if r_a.get(term, 0) < n:
@@ -213,6 +238,7 @@ def verify(original, rewritten, anchors_json=None, max_shared_run=8):
         "findings": findings,
         "similarity": sim,
         "markup": {"original": o_m, "rewrite": r_m},
+        "dashes": {"original": o_d, "rewrite": r_d},
         "note": "mechanical gate only — Claude must still judge bidirectional "
                 "entailment and run the filter-tells lexical scan before splicing",
     }
