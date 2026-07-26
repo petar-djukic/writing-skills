@@ -86,43 +86,20 @@ def pangram_scan(path, work, tag):
     return resp, os.path.splitext(payload)[0] + ".spans.json"
 
 
-def register_metrics(path):
-    """The local register numbers that move opposite to a falling AI score."""
-    r = run(["python3", os.path.join(FILTER_TELLS, "detect-structural.py"),
-             path, "--json"])
-    try:
-        d = json.loads(r.stdout)
-        if isinstance(d, list):
-            d = d[0]
-        m = d.get("metrics", {})
-    except (json.JSONDecodeError, IndexError, AttributeError):
-        return {}
-    return {k: m[k] for k in ("passive_enabling_per_500w", "salad_rate_per_100",
-                              "opening_diversity") if k in m}
-
-
 def report_register(article, draft):
-    """Print register metrics before -> after, and flag divergence.
+    """Register markers before -> after, via the shared reporter (GH-222).
 
-    A falling AI score with worsening register is the GH-219 failure: the
-    objective met, the prose worse. Printing both together is what makes that
-    visible instead of something you notice a week later.
+    One marker vocabulary everywhere: the numbers in issues and the numbers in
+    run output are the same numbers. A falling AI score with rising markers is
+    the GH-219/GH-220 failure — the objective met, the prose worse.
     """
-    b, a = register_metrics(article), register_metrics(draft)
-    if not b or not a:
-        return
-    print("\nlocal register (lower is plainer, except opening_diversity):")
-    worse = []
-    for k in sorted(set(b) & set(a)):
-        arrow = "->"
-        bad = (a[k] > b[k]) if k != "opening_diversity" else (a[k] < b[k])
-        print(f"  {k:26} {b[k]} {arrow} {a[k]}{'   WORSE' if bad else ''}")
-        if bad:
-            worse.append(k)
-    if worse:
-        print("  A falling AI score with worsening register is the score-only "
-              "optimum, not a better draft — check the anchors (SKILL.md).",
-              file=sys.stderr)
+    r = run([sys.executable, os.path.join(SHARED, "register_markers.py"),
+             "--compare", article, draft])
+    if r.returncode == 0 and r.stdout.strip():
+        print()
+        print(r.stdout.rstrip())
+        if r.stderr.strip():
+            print(r.stderr.rstrip(), file=sys.stderr)
 
 
 def pangram_delta(before, after):
