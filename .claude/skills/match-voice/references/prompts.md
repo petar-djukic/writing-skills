@@ -31,6 +31,7 @@ failure. Keep it concrete — a generic "try again" wastes the attempt.
 | markup dropped | `Reproduce the markdown formatting exactly: every **bold**, *italic*, and \`code\` span, in the same places. A paragraph that opens with a bold sentence must still open with one — that is a lead-in, not ordinary prose.` |
 | similarity violation | `You reused a long phrase from an anchor. Write the same content in that register using your own wording.` |
 | register still off (filter-tells) | `The result still reads as generic AI prose (<flagged terms>). Follow the anchors' plainer rhythm and concrete vocabulary.` |
+| conversational filler (rate rose against the original) | `You replaced corporate vocabulary with chatty filler — just/actually/really/basically went from <b> to <a> per 500 words. State the claim without the softener.` |
 
 After the configured number of retries, keep the original paragraph and record
 the failure. A kept original is a correct outcome, not an error — an 8B model

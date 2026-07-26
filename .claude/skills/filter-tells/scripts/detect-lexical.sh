@@ -56,6 +56,22 @@ ISSUES_FOUND=0
 CANDIDATES_FOUND=0
 declare -a RESULTS=()
 
+# Conversational-filler hits per 500 words above which the scan FAILS. Empty by
+# default, which means report the rate and fail on nothing.
+#
+# It is empty because calibration refused a value (GH-233). Measured on the
+# reference venue-voice corpus — Dan Luu, Julia Evans, Krugman, Rands, Yegge,
+# Fowler — published human essays run 2.1 to 15.6 filler per 500 words. That is
+# not a defect; it is the register, and it is the register a punchy rewrite is
+# aiming at. Meanwhile technical documentation in this repository runs 0.0 to
+# 1.7, and the author's own articles 0.2 to 0.3. Any threshold that catches a
+# rewrite drifting to 2.8 also condemns every essay in the anchor corpus.
+#
+# So the useful signal is movement, not level: a document whose own rate went
+# 0.3 -> 2.8 regressed, and register_markers.py --compare is what says so. Set
+# this variable to gate on an absolute level when you know the register you want.
+FILLER_DENSITY_MAX="${FILLER_DENSITY_MAX:-}"
+
 # --- Category: Chat-turn residue (assistant voice; highest severity) ---
 # Text from the model's conversational wrapper committed into the document
 # body. Not a style pattern — the assistant speaking. Any hit fails the scan;
@@ -506,6 +522,35 @@ ORNATE_REGISTER=(
   "buys .* with"
 )
 
+# --- Category: Conversational filler (density-scored) ---
+# The register a rewrite escapes INTO once it leaves corporate vocabulary
+# behind. Measured on two articles re-emitted with clipped venue anchors
+# (GH-233): " just " went 1 -> 10 and 1 -> 15, " actually " 1 -> 7 and 0 -> 15,
+# and the register gate passed every one of them. BANNED_WORDS holds the
+# corporate class (leverage, robust) and FALSE_EMPHASIS the formal one
+# (crucially, notably); neither holds these, so filler was the one machine
+# register with no gate in front of it.
+#
+# Density, never a denylist. These are high-frequency legitimate English and the
+# author's own prose carries them — the measured baseline is 1 occurrence, not
+# 0. A per-hit match would fire on every human paragraph that uses "just" once,
+# make the gate noise, and teach operators to ignore it. That is why they are
+# not in FALSE_EMPHASIS already. What moved between original and draft was the
+# rate, so the rate is what is scored.
+CONVERSATIONAL_FILLER=(
+  '\bjust\b'
+  '\bactually\b'
+  '\breally\b'
+  '\bbasically\b'
+  '\bsimply\b'
+  '\bhonestly\b'
+  '\bliterally\b'
+  '\bpretty much\b'
+  '\bkind of\b'
+  '\bsort of\b'
+  '\ba bit\b'
+)
+
 # --- Category: CoT structural patterns (definite) ---
 COT_STRUCTURAL=(
   "is not a monolithic"
@@ -789,6 +834,57 @@ run_on_file() {
       ISSUES_FOUND=1
       if [[ "$JSON_MODE" == "--json" ]]; then
         RESULTS+=("{\"line\": 0, \"category\": \"ornate-register-density\", \"pattern\": \"density\", \"text\": \"${ornate_density} per 500w exceeds 4.0\"}")
+      fi
+    fi
+  fi
+
+  if [[ "$JSON_MODE" != "--json" ]]; then
+    echo ""
+    echo "--- Conversational Filler (density-scored) ---"
+  fi
+  scan_candidates "conversational-filler" "${CONVERSATIONAL_FILLER[@]}"
+
+  # Filler density per 500 words. The measured separation is wide: the two
+  # hand-edited originals sat at 0.3 and 0.2 per 500w, their machine rewrites at
+  # 2.8 and 6.8. The threshold sits below both rewrites and well above ordinary
+  # human usage, so an author who writes "just" now and then is not flagged.
+  #
+  # Occurrences, not matching lines: `grep -c` counts lines, and a markdown
+  # paragraph is one long line, so ten "just" in a paragraph would count once.
+  # `-o | wc -l` is the same number on BSD and GNU grep; `-oc` is not.
+  local filler_total=0
+  for pattern in "${CONVERSATIONAL_FILLER[@]}"; do
+    local fc
+    # `|| true` inside the pipeline: grep exits 1 on no match, and with
+    # `set -o pipefail` that would abort the scan mid-category.
+    fc=$({ grep -ioE "$pattern" "$FILE" 2>/dev/null || true; } | wc -l | tr -d ' ')
+    [[ -n "$fc" ]] && filler_total=$((filler_total + fc))
+  done
+  local filler_words
+  filler_words=$(wc -w < "$FILE")
+  if [[ "$filler_words" -gt 0 ]]; then
+    local filler_density
+    filler_density=$(awk "BEGIN {printf \"%.1f\", $filler_total / $filler_words * 500}")
+    if [[ -z "$FILLER_DENSITY_MAX" ]]; then
+      # Reported, not judged. A level says which register this is, not whether
+      # it is wrong; compare against the document's own earlier rate for that.
+      if [[ "$JSON_MODE" != "--json" ]]; then
+        echo ""
+        echo "  Conversational-filler density: ${filler_density}/500w (advisory; "
+        echo "  set FILLER_DENSITY_MAX to gate, or compare with register_markers.py)"
+      else
+        RESULTS+=("{\"line\": 0, \"category\": \"conversational-filler-density\", \"severity\": \"candidate\", \"pattern\": \"density\", \"text\": \"${filler_density} per 500w (advisory)\"}")
+      fi
+    else
+      if [[ "$JSON_MODE" != "--json" ]]; then
+        echo ""
+        echo "  Conversational-filler density: ${filler_density}/500w (flag above ${FILLER_DENSITY_MAX})"
+      fi
+      if awk "BEGIN {exit !($filler_density > $FILLER_DENSITY_MAX)}"; then
+        ISSUES_FOUND=1
+        if [[ "$JSON_MODE" == "--json" ]]; then
+          RESULTS+=("{\"line\": 0, \"category\": \"conversational-filler-density\", \"pattern\": \"density\", \"text\": \"${filler_density} per 500w exceeds ${FILLER_DENSITY_MAX}\"}")
+        fi
       fi
     fi
   fi

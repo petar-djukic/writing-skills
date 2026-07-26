@@ -66,7 +66,39 @@ Line-numbered matches by category — banned words, clichés, false emphasis,
 narrative-pivot frames, mechanical transitions. Instant and free. Accepts files
 or directories (`*.md` recursively).
 
-Two categories need calibration rather than obedience.
+Two categories are scored by **density** rather than per hit, because their
+words are legitimate individually and only the rate says anything.
+**Ornate register** flags above 4.0 per 500 words. **Conversational filler** —
+`just`, `actually`, `really`, `basically`, `simply` — is the register a rewrite
+lands in when it stops sounding corporate, and it is **reported, not gated**.
+
+That asymmetry is a calibration result, not an oversight. The banned-word list
+holds `leverage` and `robust`, false emphasis holds `crucially` and `notably`,
+and filler was the one machine register with nothing in front of it — a rewrite
+that traded corporate vocabulary for chatty filler passed every check (GH-233).
+The obvious fix, a threshold, does not survive contact with the corpus:
+
+| prose | filler per 500 words |
+|---|---|
+| this repository's documentation, 17 files | 0.0–1.7 |
+| the author's own articles | 0.2–0.3 |
+| the two machine rewrites that prompted the check | 2.8 and 6.8 |
+| the reference venue-voice corpus — Dan Luu, Evans, Krugman, Rands, Yegge, Fowler | 2.1–15.6 |
+
+Every value that catches the rewrites also condemns every essay in the anchor
+corpus, which is the register a punchy rewrite is steering toward. A level tells
+you which register a document is in; it cannot tell you the document got worse.
+
+So filler is judged on **movement against the document's own earlier rate**:
+
+```bash
+python3 <agent-dir>/scripts/register_markers.py --compare <before> <after>
+```
+
+which reports `filler/500w  0.3 -> 2.8  REGRESSED`. Set `FILLER_DENSITY_MAX` to
+gate on an absolute level when you already know the register you want.
+
+Two other categories need calibration rather than obedience.
 **Marketing/hype vocabulary** (`venue-jargon`) is human register flagged as
 venue-inappropriate jargon, not as an AI tell — and never flag quoted text or a
 source's own title. **CoT candidates** are patterns that may be scaffolding and

@@ -42,7 +42,9 @@ NUM_NOTE = ("Preserve every number and figure exactly as written in the original
             "add, remove, renumber, or invent any number. Do not turn prose into a "
             "numbered or bulleted list.")
 REG_NOTE = ("Avoid corporate and AI-typical vocabulary (leverage, robust, seamless, "
-            "delve, comprehensive, crucial). Plain declarative technical prose.")
+            "delve, comprehensive, crucial). Do not trade it for chatty filler "
+            "either: no just, actually, really, basically, simply, honestly. "
+            "Plain declarative technical prose.")
 MARKUP_NOTE = ("Reproduce the markdown formatting of the original exactly: every **bold** "
                "span, *italic* span, and `code` span, in the same places. If the "
                "paragraph opens with a bold sentence, your rewrite must open with a "
