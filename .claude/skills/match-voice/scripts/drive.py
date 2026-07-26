@@ -43,6 +43,10 @@ NUM_NOTE = ("Preserve every number and figure exactly as written in the original
             "numbered or bulleted list.")
 REG_NOTE = ("Avoid corporate and AI-typical vocabulary (leverage, robust, seamless, "
             "delve, comprehensive, crucial). Plain declarative technical prose.")
+MARKUP_NOTE = ("Reproduce the markdown formatting of the original exactly: every **bold** "
+               "span, *italic* span, and `code` span, in the same places. If the "
+               "paragraph opens with a bold sentence, your rewrite must open with a "
+               "bold sentence too — it is a lead-in, not ordinary prose.")
 
 
 def run(cmd, **kw):
@@ -175,6 +179,21 @@ def anchor_provenance(a, article):
               "precision, try --stratum pre-ai", file=sys.stderr)
 
 
+def restore_full_bold(original, candidate):
+    """Re-wrap a candidate whose original was a single wholly-bold paragraph.
+
+    A deterministic repair, and deliberately narrow. When the original is bold
+    from end to end the emphasis belongs to the whole block, so restoring it
+    cannot attach it to the wrong span. A leading bold sentence is the opposite
+    case — where the lead-in ends up in the rewrite is not knowable here, so
+    that one is the gate's business (GH-232) and gets retried, not patched.
+    """
+    o, c = original.strip(), candidate.strip()
+    if o.startswith("**") and o.endswith("**") and not c.startswith("**"):
+        return "**" + c + "**"
+    return candidate
+
+
 def parse_paragraphs(path, min_words):
     """Return (lines, fm_close, paragraphs, coverage, unaccounted).
 
@@ -280,13 +299,18 @@ def main():
             if rw.returncode != 0 or not rw.stdout.strip():
                 rec["status"] = "rewrite-error"; rec["err"] = (rw.stderr or "")[:200]
                 break
-            cf = f"{work}/p{n:02d}.cand.txt"; open(cf, "w").write(rw.stdout.strip())
+            # Repair before verifying, not at assembly time: the gate now checks
+            # markup (GH-232), so a candidate the driver would have patched on
+            # the way out has to be patched before the gate reads it, or the
+            # repair and the check disagree about the same paragraph.
+            cand_text = restore_full_bold(txt, rw.stdout.strip())
+            cf = f"{work}/p{n:02d}.cand.txt"; open(cf, "w").write(cand_text)
             vf = run(["python3", f"{SK}/verify.py", "--original", pf, "--rewrite", cf,
                       "--anchors-json", ajf, "--json"])
             de = run(["bash", DEAI, cf])
             if vf.returncode == 0 and de.returncode == 0:
                 rec["status"] = "accepted-mechanical"
-                rec["cand"] = rw.stdout.strip()
+                rec["cand"] = cand_text
                 rec["attempt"] = attempt + 1
                 break
             # classify for the retry note
@@ -294,6 +318,8 @@ def main():
             notes = []
             if '"numbers"' in fj or '"citations"' in fj or '"terms"' in fj:
                 notes.append(NUM_NOTE)
+            if '"markup"' in fj:
+                notes.append(MARKUP_NOTE)
             if '"similarity"' in fj:
                 notes.append(COPY_NOTE)
             if de.returncode != 0:
@@ -310,12 +336,9 @@ def main():
     out_lines = list(lines)
     for n in sorted(accept, reverse=True):
         s, e = rng[n]
-        orig = "\n".join(out_lines[s - 1:e])
-        cand = accept[n]
-        if orig.strip().startswith("**") and orig.strip().endswith("**") \
-                and not cand.strip().startswith("**"):
-            cand = "**" + cand.strip() + "**"
-        out_lines[s - 1:e] = [cand]
+        # The wholly-bold repair happens before the gate now, so an accepted
+        # candidate already carries the markup it is going to carry.
+        out_lines[s - 1:e] = [accept[n]]
     open(out, "w").write("\n".join(out_lines))
     json.dump(results, open(f"{work}/results.json", "w"), indent=2)
 

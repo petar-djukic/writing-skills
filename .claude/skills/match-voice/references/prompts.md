@@ -11,7 +11,8 @@ The template lives in the script so the client is self-contained. Its shape:
 - **Voice anchors first** — the author's own passages, retrieved by topic. The
   instruction is to match their register, not to copy their phrases.
 - **Preservation rules, stated as hard constraints** — citation keys verbatim
-  (`[@key]`, `\citep{key}`), every number and unit, no added or removed claims.
+  (`[@key]`, `\citep{key}`), every number and unit, inline markup where it
+  stands, no added or removed claims.
 - **Scope** — one paragraph, no merging, no splitting, no headings.
 - **Output discipline** — the paragraph alone, no preamble. Small models like
   to explain themselves; the client also strips a wrapping pair of quotes.
@@ -27,6 +28,7 @@ failure. Keep it concrete — a generic "try again" wastes the attempt.
 | number altered/invented | `The number <n> changed. Copy all numbers and units exactly; do not round, convert, or add figures.` |
 | technical term dropped | `You dropped the term <TERM>. Keep domain terms and acronyms as written.` |
 | citation syntax changed | `You rewrote [@key] as \\citep{key}. Reproduce citations in the SAME syntax as the source paragraph — do not convert between pandoc and natbib.` |
+| markup dropped | `Reproduce the markdown formatting exactly: every **bold**, *italic*, and \`code\` span, in the same places. A paragraph that opens with a bold sentence must still open with one — that is a lead-in, not ordinary prose.` |
 | similarity violation | `You reused a long phrase from an anchor. Write the same content in that register using your own wording.` |
 | register still off (filter-tells) | `The result still reads as generic AI prose (<flagged terms>). Follow the anchors' plainer rhythm and concrete vocabulary.` |
 

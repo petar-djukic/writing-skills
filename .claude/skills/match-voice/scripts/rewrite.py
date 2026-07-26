@@ -49,9 +49,10 @@ VOICE ANCHORS (match this register — sentence rhythm, vocabulary, directness):
 RULES:
 1. Preserve every fact, number, unit, and citation key EXACTLY as written. Citation keys look like [@key] or \\citep{{key}} — copy them verbatim, never reword or drop them.
 2. Preserve the meaning completely. Do not add claims, do not remove claims.
-3. Rewrite only this one paragraph. Do not merge it with others, do not split the topic, do not add a heading.
-4. Match the anchors' voice, but do NOT copy phrases from them — write the same content in that register.
-5. Output ONLY the rewritten paragraph. No preamble, no explanation, no quotes around it.
+3. Preserve the markdown formatting: every **bold** span, *italic* span, and `code` span stays, in the same place. If the paragraph opens with a bold sentence, your rewrite opens with a bold sentence — it is a lead-in, not ordinary prose.
+4. Rewrite only this one paragraph. Do not merge it with others, do not split the topic, do not add a heading.
+5. Match the anchors' voice, but do NOT copy phrases from them — write the same content in that register.
+6. Output ONLY the rewritten paragraph. No preamble, no explanation, no quotes around it.
 {retry_note}
 PARAGRAPH TO REWRITE:
 {paragraph}"""
