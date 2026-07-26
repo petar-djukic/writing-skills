@@ -107,10 +107,31 @@ def main():
                           role="author-voice") == [], \
             "a hard filter with no topical match returns nothing, not noise"
 
-        # 6. Nothing similar returns nothing rather than noise.
+        # 6. Stratum cuts ACROSS roles — the distinction role cannot express.
+        strat = corpus(os.path.join(tmp, "strat"), [])
+        import textwrap
+        for name, role, yr, extra in (("old_paper.md", "author-voice", 2007, ""),
+                                      ("old_punch.md", "venue-voice", 2011, ""),
+                                      ("new_essay.md", "venue-voice", 2026, ""),
+                                      ("claimed.md", "venue-voice", 2024,
+                                       "    pre_ai: true\n")):
+            open(os.path.join(strat, name), "w").write(ACADEMIC)
+            with open(os.path.join(strat, "manifest.yaml"), "a") as f:
+                f.write(f"  - id: {name[:-3]}\n    file: {name}\n"
+                        f"    role: {role}\n    year: {yr}\n{extra}")
+        pre = {os.path.basename(p) for p, _ in va.sample_paths(strat, pre_ai=True)}
+        assert pre == {"old_paper.md", "old_punch.md", "claimed.md"}, pre
+        #    ...and the curator's explicit flag beats the year: claimed.md is
+        #    2024 but marked pre_ai, and it is included.
+        assert "claimed.md" in pre and "new_essay.md" not in pre
+        #    A pre-AI filter spans both roles, which --role alone cannot do.
+        assert {r for _, r in va.sample_paths(strat, pre_ai=True)} == \
+            {"author-voice", "venue-voice"}
+
+        # 7. Nothing similar returns nothing rather than noise.
         assert va.anchors(d, "zzzz qqqq xxxx", k=3) == []
 
-        # 7. An empty corpus is a normal state, not a crash.
+        # 8. An empty corpus is a normal state, not a crash.
         assert va.anchors(corpus(os.path.join(tmp, "empty"), []), "anything") == []
 
         print("test_voice_anchors: all assertions passed (no network)")

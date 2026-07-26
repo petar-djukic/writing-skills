@@ -76,11 +76,40 @@ def load_manifest(voice_dir: str):
     return data.get("exemplars") or []
 
 
-def sample_paths(voice_dir: str, role: str = None):
-    """[(path, role)] for manifest exemplars whose file exists."""
+# Prose written once generative AI was widely available may carry AI diction,
+# which makes it circular as a diction anchor. The default boundary; a manifest
+# that states `pre_ai` per exemplar overrides it, because where the line falls
+# for a given piece is the curator's knowledge, not arithmetic.
+AI_ERA_YEAR = 2022
+
+
+def is_pre_ai(ex: dict) -> bool:
+    """Whether an exemplar is safe to anchor DICTION on.
+
+    Explicit `pre_ai` wins: a curator may know a 2023 piece was drafted before
+    they had model access, or that a 2021 piece was not. Absent, fall back to
+    the year, and treat an undated sample as pre-AI — the corpora that predate
+    this field are pre-AI by construction.
+    """
+    if "pre_ai" in ex:
+        return bool(ex["pre_ai"])
+    y = ex.get("year")
+    return True if not isinstance(y, int) else y < AI_ERA_YEAR
+
+
+def sample_paths(voice_dir: str, role: str = None, pre_ai: bool = None):
+    """[(path, role)] for manifest exemplars whose file exists.
+
+    pre_ai=True restricts to diction-safe samples ACROSS roles, which is the
+    distinction role alone cannot express: the pre-AI punch anchors are
+    venue-voice, and so are the AI-era samples that must never anchor diction
+    (GH-217).
+    """
     out = []
     for ex in load_manifest(voice_dir):
         if role and ex.get("role") != role:
+            continue
+        if pre_ai is not None and is_pre_ai(ex) != pre_ai:
             continue
         p = os.path.join(voice_dir, ex.get("file", ""))
         if os.path.exists(p):
@@ -198,7 +227,8 @@ def _cos(a, b):
 AUTHOR_VOICE_WEIGHT = 1.5
 
 
-def anchors(voice_dir: str, passage: str, k: int = 3, role: str = None):
+def anchors(voice_dir: str, passage: str, k: int = 3, role: str = None,
+            pre_ai: bool = None):
     """Top-k exemplar passages most topically similar to `passage`.
 
     author-voice is weighted, not privileged absolutely: at comparable
@@ -210,7 +240,7 @@ def anchors(voice_dir: str, passage: str, k: int = 3, role: str = None):
     something an operator has to re-derive by hand.
     """
     cands = []
-    for path, r in sample_paths(voice_dir, role=role):
+    for path, r in sample_paths(voice_dir, role=role, pre_ai=pre_ai):
         for p in _passages(path):
             cands.append({"file": os.path.basename(path), "role": r, "text": p})
     if not cands:
@@ -261,7 +291,9 @@ def cmd_profile(args):
 def cmd_anchors(args):
     d = _resolve_dir(args)
     text = sys.stdin.read() if args.text == "-" else open(args.text).read()
-    got = anchors(d, text, k=args.k, role=args.role)
+    got = anchors(d, text, k=args.k, role=args.role,
+                  pre_ai=(True if args.stratum == "pre-ai"
+                          else False if args.stratum == "ai-era" else None))
     print(json.dumps({"writing_voice": d, "k": args.k, "anchors": got},
                      indent=2, ensure_ascii=False))
 
@@ -286,6 +318,8 @@ def main():
     an.add_argument("--for", dest="for_file")
     an.add_argument("-k", type=int, default=3)
     an.add_argument("--role", choices=["author-voice", "venue-voice"])
+    an.add_argument("--stratum", choices=["pre-ai", "ai-era"],
+                    help="pre-ai restricts to diction-safe samples across roles")
     an.set_defaults(func=cmd_anchors)
 
     args = p.parse_args()
