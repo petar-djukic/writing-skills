@@ -70,6 +70,31 @@ For DRIFTED, quote the specific span and say which direction failed.
 Do not accept a rewrite that reads better but claims differently — that is the
 failure mode this whole pipeline exists to prevent.
 
+### Two inversions that cleared the mechanical gate
+
+Both are from one run (GH-233), and both are why this judgment cannot be handed
+to `verify.py`. Each preserves every number and reads more fluently than the
+original.
+
+> **original:** Five sentences became two, and nothing the reader needed went with them.
+>
+> **rewrite:** Five sentences were collapsed into two, and in the process, everything the reader actually needed was gone.
+
+The original says the compression cost the reader nothing. The rewrite says it
+cost the reader everything. Same numbers, same citations, opposite claim — and
+nothing lexical distinguishes them, because the inversion lives in the
+relationship between "nothing" and "went with them".
+
+> **original:** The third pass needs a real reader.
+>
+> **rewrite:** The third pass requires a human reader.
+
+Here "a real reader" meant a strong model, as the following sentence made
+explicit. The rewrite resolved the ambiguity the wrong way and contradicted the
+next paragraph. A paragraph is judged against the original, but its *referents*
+live in the paragraphs around it: when the source is ambiguous, check what the
+neighbours commit it to before accepting a reading.
+
 ## Register check (filter-tells)
 
 The last gate step runs the filter-tells lexical scan on the candidate. A rewrite that
