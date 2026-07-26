@@ -68,7 +68,10 @@ def human_from_writing_voice(start=None, role="author-voice"):
     Returns (files, meta). meta carries the provenance the baseline records
     instead of the text.
     """
-    sys.path.insert(0, SCRIPTS) if SCRIPTS not in sys.path else None
+    stylo = os.path.normpath(os.path.join(os.path.dirname(HERE), "..",
+                                          "match-voice", "scripts"))
+    if stylo not in sys.path:
+        sys.path.insert(0, stylo)
     try:
         import voice_anchors
     except ImportError:

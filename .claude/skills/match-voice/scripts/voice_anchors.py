@@ -91,13 +91,13 @@ def sample_paths(voice_dir: str, role: str = None):
 # --- baseline profile --------------------------------------------------------
 
 def _style_module(script_dir: str):
-    """Import match-voice's style.py from the sibling skill directory.
+    """Import style.py — same skill since GH-196 (anchors are profile work).
 
     Every agent surface carries the full skill set, so this relative sibling
     path resolves wherever the skill is installed.
     """
     sibling = os.path.normpath(
-        os.path.join(script_dir, "..", "..", "match-voice", "scripts"))
+        os.path.join(script_dir))
     if sibling not in sys.path:
         sys.path.insert(0, sibling)
     try:

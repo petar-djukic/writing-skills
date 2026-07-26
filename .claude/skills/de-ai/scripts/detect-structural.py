@@ -35,7 +35,12 @@ import statistics
 from pathlib import Path
 from collections import Counter
 
-import detex  # LaTeX -> prose preprocessing (same dir)
+_SHARED = __import__("os").path.normpath(__import__("os").path.join(
+    __import__("os").path.dirname(__import__("os").path.abspath(__file__)),
+    "..", "..", "..", "scripts"))
+if _SHARED not in sys.path:
+    sys.path.insert(0, _SHARED)
+import detex  # LaTeX -> prose preprocessing (shared scripts, GH-196)
 
 # --- Thresholds ---
 THRESHOLDS = {

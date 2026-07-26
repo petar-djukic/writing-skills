@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Fixture test for detex.py. Run: python3 testdata/test_detex.py
+"""Fixture test for detex.py. Run: python3 <surface>/scripts/test_detex.py
 
 Asserts the .tex path and the .md path agree on a paragraph present in both
 forms, and that the sample's known LaTeX findings are handled.
@@ -9,7 +9,7 @@ import re
 import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(0, os.path.dirname(HERE))
+sys.path.insert(0, HERE)
 import detex as dx  # noqa: E402
 
 
@@ -18,8 +18,8 @@ def _norm(s):
 
 
 def main():
-    tex = open(os.path.join(HERE, "sample.tex")).read()
-    md = open(os.path.join(HERE, "sample.md")).read()
+    tex = open(os.path.join(HERE, "testdata_sample.tex")).read()
+    md = open(os.path.join(HERE, "testdata_sample.md")).read()
 
     prose, line_map = dx.detex(tex)
     assert len(prose.split("\n")) == len(line_map), "line map length mismatch"

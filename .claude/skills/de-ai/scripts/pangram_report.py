@@ -48,12 +48,14 @@ FLAG_SCORE = 0.5
 
 
 def _md_paragraphs():
-    sys.path.insert(0, SK) if SK not in sys.path else None
+    shared = os.path.normpath(os.path.join(SK, "..", "..", "..", "scripts"))
+    if shared not in sys.path:
+        sys.path.insert(0, shared)
     try:
         import md_paragraphs
         return md_paragraphs
     except ImportError as e:
-        sys.exit(f"could not import md_paragraphs.py from {SK}: {e}")
+        sys.exit(f"could not import md_paragraphs.py from {shared}: {e}")
 
 
 def build_payload(path, min_words=0, sep="\n\n"):

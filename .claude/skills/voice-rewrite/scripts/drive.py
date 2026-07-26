@@ -40,16 +40,17 @@ def run(cmd, **kw):
 
 
 def _md_paragraphs():
-    """The canonical extractor lives in de-ai (GH-167): one parser, so a block
-    this driver treats as prose is the same block the metrics and anchors see."""
-    sibling = os.path.normpath(os.path.join(SK, "..", "..", "de-ai", "scripts"))
+    """One canonical extractor (GH-167), at the shared scripts root (GH-196):
+    a block this driver treats as prose is the same block the metrics and the
+    anchors see."""
+    sibling = os.path.normpath(os.path.join(SK, "..", "..", "..", "scripts"))
     if sibling not in sys.path:
         sys.path.insert(0, sibling)
     try:
         import md_paragraphs
         return md_paragraphs
     except ImportError as e:
-        sys.exit(f"could not import de-ai md_paragraphs.py from {sibling}: {e}")
+        sys.exit(f"could not import md_paragraphs.py from {sibling}: {e}")
 
 
 def parse_paragraphs(path, min_words):
