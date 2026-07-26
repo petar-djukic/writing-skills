@@ -2,15 +2,20 @@
 """tune-anchors: sweep anchor selections and report the selection rule.
 
 Three commands:
-  sweep   run match-voice over (article × arm) pairs, record register markers
+  sweep   run match-voice over (article × arm) pairs, tighten, record markers
   rank    score arms on the register composite, emit blind manifest
   verify  scan top K with Pangram, record detector results
+
+Pipeline per trial (full sweep):
+  1. drive.py  — voice rewrite via anchor-selected passages
+  2. tighten.py — remove AI-register artifacts (same model family)
+  3. measure   — register markers on the tightened output
 
 Usage:
   tune_anchors.py sweep --voice-dir D --articles a.md,b.md \
                         --arms "tags~clipped","role=venue-voice" \
                         [--n 24] [--model gemma4:12b] [--out ledger.yaml] \
-                        [--dry-run]
+                        [--dry-run] [--no-tighten]
   tune_anchors.py rank  --ledger ledger.yaml [--blind]
   tune_anchors.py verify --ledger ledger.yaml --top 3 [--budget 10]
 """
@@ -23,6 +28,7 @@ import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 MATCH_VOICE = os.path.normpath(os.path.join(HERE, "..", "..", "match-voice", "scripts"))
+TIGHTEN = os.path.normpath(os.path.join(HERE, "..", "..", "tighten-style", "scripts"))
 SHARED = os.path.normpath(os.path.join(HERE, "..", "..", "..", "scripts"))
 STYLO = os.path.normpath(os.path.join(HERE, "..", "..", "match-structure", "scripts"))
 
@@ -53,6 +59,23 @@ def _register_markers():
 def _run(cmd, **kw):
     return subprocess.run(cmd, capture_output=True, text=True,
                           errors="replace", **kw)
+
+
+def _extract_markers(rm, path):
+    """Extract register markers from a draft file into the ledger format.
+
+    Returns a flat dict with keys matching _RANK_KEYS plus filler_per_500.
+    """
+    text = open(path, encoding="utf-8", errors="replace").read()
+    m = rm.markers(text)
+    p = m["per_1000"]
+    return {
+        "passive_per_1k": round(p["passive"], 2),
+        "agentive_per_1k": round(p["agentive"], 2),
+        "nominalization_per_1k": round(p["nominalization"], 2),
+        "connectives_per_1k": round(p["connectives"], 2),
+        "filler_per_500": round(m["filler_per_500"], 2),
+    }
 
 
 # --- sweep -------------------------------------------------------------------
@@ -120,15 +143,19 @@ def _sweep_dry_run(voice_dir, articles, arms, k, out_path):
         print(f"\nledger: {out_path} ({len(lg.trials)} trials)")
 
 
-def _sweep_full(voice_dir, articles, arms, n, model, out_path):
-    """Full sweep: runs drive.py per (article, arm), captures register markers
-    and structural metrics. Requires Ollama."""
+def _sweep_full(voice_dir, articles, arms, n, model, out_path, tighten):
+    """Full sweep: runs drive.py then tighten.py per (article, arm), captures
+    register markers and structural metrics. Requires Ollama."""
     rm = _register_markers()
     lg = ledger.Ledger.load(out_path) if out_path else ledger.Ledger()
 
     drive_py = os.path.join(MATCH_VOICE, "drive.py")
     if not os.path.exists(drive_py):
         sys.exit(f"drive.py not found at {drive_py}")
+
+    tighten_py = os.path.join(TIGHTEN, "tighten.py")
+    if tighten and not os.path.exists(tighten_py):
+        sys.exit(f"tighten.py not found at {tighten_py}")
 
     structural_py = os.path.normpath(os.path.join(
         HERE, "..", "..", "filter-tells", "scripts", "detect-structural.py"))
@@ -160,18 +187,38 @@ def _sweep_full(voice_dir, articles, arms, n, model, out_path):
                 continue
             print(r.stdout[-500:] if len(r.stdout) > 500 else r.stdout)
 
-            # Capture register markers from the draft
+            # The voice draft is the input to tighten
             draft = art_path.replace(".md", ".vr-draft.md")
-            reg = {}
-            if os.path.exists(draft):
-                text = open(draft, encoding="utf-8", errors="replace").read()
-                m = rm.markers(text)
-                reg = {k: round(v, 2) for k, v in m.items()
-                       if v is not None and k != "words"}
+            if not os.path.exists(draft):
+                print(f"  no draft produced — skipping", file=sys.stderr)
+                continue
+
+            # Run tighten on the voice draft
+            tightened = False
+            if tighten:
+                tight_out = draft.replace(".md", ".tight.md")
+                tcmd = [sys.executable, tighten_py, "--article", draft,
+                        "--model", model, "--out", tight_out]
+                tr = _run(tcmd)
+                if tr.returncode == 0 and os.path.exists(tight_out):
+                    draft = tight_out
+                    tightened = True
+                    print(f"  tightened: {os.path.basename(tight_out)}")
+                    if tr.stdout.strip():
+                        lines = tr.stdout.strip().split("\n")
+                        for line in lines[-6:]:
+                            print(f"    {line}")
+                else:
+                    print(f"  tighten failed (using voice draft): "
+                          f"{(tr.stderr or tr.stdout)[:200]}",
+                          file=sys.stderr)
+
+            # Capture register markers from the final draft
+            reg = _extract_markers(rm, draft)
 
             # Capture structural metrics
             struct = {}
-            if os.path.exists(draft) and os.path.exists(structural_py):
+            if os.path.exists(structural_py):
                 sr = _run([sys.executable, structural_py, draft, "--json"])
                 if sr.returncode in (0, 1) and sr.stdout.strip():
                     try:
@@ -185,20 +232,16 @@ def _sweep_full(voice_dir, articles, arms, n, model, out_path):
                     except (json.JSONDecodeError, IndexError, TypeError):
                         pass
 
-            # Preserve the draft under a unique name so later arms don't
-            # overwrite it (GH-254). Keyed by article + arm hash so the blind
-            # read step can locate it from the ledger.
-            saved_draft = None
-            if os.path.exists(draft):
-                import hashlib, shutil
-                drafts_dir = os.path.join(os.path.dirname(out_path or "ledger.yaml"), "drafts")
-                os.makedirs(drafts_dir, exist_ok=True)
-                art_stem = os.path.splitext(os.path.basename(art_path))[0]
-                arm_hash = hashlib.sha256(arm_label.encode()).hexdigest()[:8]
-                dest = os.path.join(drafts_dir, f"{art_stem}-{arm_hash}.md")
-                shutil.copy2(draft, dest)
-                saved_draft = dest
-                print(f"  draft saved: {dest}")
+            # Preserve the draft under a unique name (GH-254).
+            import hashlib, shutil
+            drafts_dir = os.path.join(os.path.dirname(out_path or "ledger.yaml"), "drafts")
+            os.makedirs(drafts_dir, exist_ok=True)
+            art_stem = os.path.splitext(os.path.basename(art_path))[0]
+            arm_hash = hashlib.sha256(arm_label.encode()).hexdigest()[:8]
+            dest = os.path.join(drafts_dir, f"{art_stem}-{arm_hash}.md")
+            shutil.copy2(draft, dest)
+            saved_draft = dest
+            print(f"  draft saved: {dest}")
 
             va = _voice_anchors()
             pool_size = len(va.sample_paths(voice_dir, **kwargs))
@@ -212,6 +255,7 @@ def _sweep_full(voice_dir, articles, arms, n, model, out_path):
                 register_markers=reg,
                 structural_metrics=struct,
                 draft_path=saved_draft,
+                tightened=tightened,
             )
             lg.append(trial)
 
@@ -244,14 +288,17 @@ def cmd_sweep(args):
         sys.exit("no articles specified")
 
     out_path = args.out or "ledger.yaml"
+    tighten = not args.no_tighten
     print(f"sweep: {len(articles)} articles × {len(arms)} arms"
-          f"{' (dry-run)' if args.dry_run else ''}")
+          f"{' (dry-run)' if args.dry_run else ''}"
+          f"{' (no-tighten)' if not tighten else ''}")
     print(f"voice-dir: {voice_dir}\n")
 
     if args.dry_run:
         _sweep_dry_run(voice_dir, articles, arms, args.k, out_path)
     else:
-        _sweep_full(voice_dir, articles, arms, args.n, args.model, out_path)
+        _sweep_full(voice_dir, articles, arms, args.n, args.model, out_path,
+                    tighten)
 
 
 # --- rank --------------------------------------------------------------------
@@ -415,6 +462,8 @@ def main():
     sw.add_argument("--out", help="ledger path (default: ledger.yaml)")
     sw.add_argument("--dry-run", action="store_true",
                     help="retrieval only — no model, no cost")
+    sw.add_argument("--no-tighten", action="store_true",
+                    help="skip the tighten step (rank on raw voice draft)")
     sw.set_defaults(func=cmd_sweep)
 
     rk = sub.add_parser("rank", help="score arms on register composite")

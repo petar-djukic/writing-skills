@@ -155,6 +155,35 @@ def test_load_missing_file():
     print("  load missing file: passed (returns empty ledger)")
 
 
+def test_tightened_field():
+    """The tightened flag round-trips through the ledger."""
+    tmp = tempfile.mkdtemp(prefix="test-tightened-")
+    try:
+        path = os.path.join(tmp, "ledger.yaml")
+        lg = ledger.Ledger(path)
+
+        lg.append(ledger.Trial(article="a.md", arm="arm-a", model="test",
+                               tightened=True))
+        lg.append(ledger.Trial(article="b.md", arm="arm-b", model="test",
+                               tightened=False))
+        lg.append(ledger.Trial(article="c.md", arm="arm-c", model="test"))
+        lg.save()
+
+        lg2 = ledger.Ledger.load(path)
+        assert lg2.trials[0].tightened is True
+        assert lg2.trials[1].tightened is False
+        assert lg2.trials[2].tightened is False
+
+        d = lg2.trials[0].to_dict()
+        assert d["tightened"] is True
+        d2 = lg2.trials[1].to_dict()
+        assert "tightened" not in d2, "False tightened should be omitted"
+
+        print("  tightened field: passed")
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
 def main():
     test_parse_arm()
     test_parse_arm_errors()
@@ -163,6 +192,7 @@ def main():
     test_ledger_queries()
     test_update_detector()
     test_load_missing_file()
+    test_tightened_field()
     print("test_ledger: all assertions passed")
 
 

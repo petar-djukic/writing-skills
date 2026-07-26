@@ -247,12 +247,46 @@ def test_verify_budget_guard():
         shutil.rmtree(tmp, ignore_errors=True)
 
 
+def test_extract_markers():
+    """_extract_markers produces flat keys matching _RANK_KEYS."""
+    tmp = tempfile.mkdtemp(prefix="test-extract-")
+    try:
+        prose = os.path.join(tmp, "sample.md")
+        with open(prose, "w") as f:
+            f.write("The algorithm was evaluated under offered load. "
+                    "Results are summarized by the authors. "
+                    "The implementation of the optimization "
+                    "provides a significant improvement over baseline.\n")
+
+        SHARED_DIR = os.path.normpath(os.path.join(SCRIPTS, "..", "..", "..", "scripts"))
+        if SHARED_DIR not in sys.path:
+            sys.path.insert(0, SHARED_DIR)
+        import register_markers as rm
+
+        result = tune_anchors._extract_markers(rm, prose)
+
+        assert "passive_per_1k" in result, f"missing passive_per_1k: {result}"
+        assert "agentive_per_1k" in result
+        assert "nominalization_per_1k" in result
+        assert "connectives_per_1k" in result
+        assert "filler_per_500" in result
+        for k, v in result.items():
+            assert isinstance(v, float), f"{k} should be float, got {type(v)}"
+
+        mag = tune_anchors._register_magnitude(result)
+        assert mag > 0, f"sample prose should have nonzero magnitude: {mag}"
+        print(f"  extract_markers: passed (magnitude={mag})")
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
 def main():
     test_dry_run_produces_ledger()
     test_empty_pool_skipped()
     test_ledger_accumulates()
     test_rank_sorts_by_distance()
     test_verify_budget_guard()
+    test_extract_markers()
     print("test_sweep: all assertions passed (no network, no Ollama)")
 
 

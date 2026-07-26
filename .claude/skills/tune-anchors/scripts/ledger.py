@@ -101,12 +101,12 @@ class Trial:
 
     __slots__ = ("article", "arm", "model", "dry_run", "anchor_count",
                  "pool_size", "register_markers", "structural_metrics",
-                 "detector_result", "draft_path")
+                 "detector_result", "draft_path", "tightened")
 
     def __init__(self, article, arm, model=None, dry_run=False,
                  anchor_count=0, pool_size=0,
                  register_markers=None, structural_metrics=None,
-                 detector_result=None, draft_path=None):
+                 detector_result=None, draft_path=None, tightened=False):
         self.article = article
         self.arm = arm
         self.model = model
@@ -117,6 +117,7 @@ class Trial:
         self.structural_metrics = structural_metrics or {}
         self.detector_result = detector_result
         self.draft_path = draft_path
+        self.tightened = tightened
 
     def to_dict(self):
         d = {
@@ -135,6 +136,8 @@ class Trial:
             d["detector_result"] = self.detector_result
         if self.draft_path:
             d["draft_path"] = self.draft_path
+        if self.tightened:
+            d["tightened"] = True
         return d
 
     @classmethod
@@ -150,6 +153,7 @@ class Trial:
             structural_metrics=d.get("structural_metrics"),
             detector_result=d.get("detector_result"),
             draft_path=d.get("draft_path"),
+            tightened=d.get("tightened", False),
         )
 
 
