@@ -27,7 +27,7 @@ source paper.
   draft in the working directory. Look for `.md` files that contain `[@`
   citations.
 - **Database:** `references.yaml` in the working directory (or at the nearest
-  ancestor that has one). This is the CSL-YAML bibliography that pandoc and
+  ancestor that has one). This is the Citation Style Language (CSL) YAML bibliography that pandoc and
   `update-references` both use.
 - **PDFs/papers:** `<db-dir>/pdfs/` and `<db-dir>/papers/` — the same locations
   `update-references` uses. If a paper was already fetched, reuse its markdown.

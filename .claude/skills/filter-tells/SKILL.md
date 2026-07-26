@@ -56,63 +56,54 @@ The blindness runs in **both directions**. The scripts flag the bland AI directi
 
 Run Prompt 0 from [perplexity-prompts.md](./references/perplexity-prompts.md) on the document before looking at any script output. The cold read answers what no metric can: could a plain reader follow this on one pass, and is the register appropriate for the venue? Record the COLD_VERDICT — it anchors nothing and is anchored by nothing.
 
-### Step 1: Run Lexical Scan (No Model Required)
-
-Run the lexical detection script to find banned words, AI clichés, false emphasis, narrative-pivot frames, and mechanical transitions:
+### Step 1: Lexical scan (no model)
 
 ```bash
-bash .claude/skills/filter-tells/scripts/detect-lexical.sh <file-or-dir> [file-or-dir ...]
+bash <filter-tells>/scripts/detect-lexical.sh <file-or-dir> ...
 ```
 
-Accepts a single file, multiple files, or directories (scans `*.md` recursively).
+Line-numbered matches by category — banned words, clichés, false emphasis,
+narrative-pivot frames, mechanical transitions. Instant and free. Accepts files
+or directories (`*.md` recursively).
 
-This produces line-numbered matches grouped by category. Zero-cost, instant results.
+Two categories need calibration rather than obedience.
+**Marketing/hype vocabulary** (`venue-jargon`) is human register flagged as
+venue-inappropriate jargon, not as an AI tell — and never flag quoted text or a
+source's own title. **CoT candidates** are patterns that may be scaffolding and
+may be ordinary prose; they do not fail the scan. Carry them to Step 3, where
+the removal test decides: delete the sentence and re-read the paragraph, and if
+nothing is lost it was scaffolding.
 
-The script also flags **Marketing/Hype Vocabulary** (`venue-jargon`) — frontier models, cutting-edge, best-in-class, and friends. Calibration matters: these are human-register words, flagged as venue-inappropriate undefined jargon, not as AI tells. Do not flag quoted text or paraphrases of a source's own title.
+[reading-scan-output.md](./references/reading-scan-output.md) lists the
+candidate patterns and what each metric means.
 
-The script also outputs **CoT candidates**, broad patterns that *may* be CoT scaffolding but also appear in legitimate prose. These include:
-- "This/These/That ... is/are" (property announcements)
-- "What X is/does/means is Y" (wh-cleft constructions)
-- "Consider X" (imperative example introductions)
-- "not only X but Y" (correlative conjunctions)
-- "Two distinct X define..." (enumeration announcements)
-- "This is where...", "That's where...", sentence-initial "Enter X" (bare stage-setting openers, `narrative-pivot-candidate` — the specific completions like "comes into play" and "here's the kicker" are hard flags)
-
-Candidates do not fail the scan. Instead, carry them forward to Step 3 (semantic analysis) for LLM verification. For each candidate, the LLM applies the removal test: delete the sentence, re-read the paragraph. If no information is lost, it was scaffolding; if information is lost, it is genuine content and should be kept. Wh-clefts and "Consider" imperatives should usually be reworded even when they carry real content, because they read as AI regardless of intent.
-
-### Step 2: Run Structural Analysis (No Model Required)
-
-Run the structural detection script to measure burstiness, parallelism, paragraph uniformity, and density metrics:
+### Step 2: Structural analysis (no model)
 
 ```bash
-python3 .claude/skills/filter-tells/scripts/detect-structural.py <file-or-dir> [file-or-dir ...]
+python3 <filter-tells>/scripts/detect-structural.py <file-or-dir> ...
 ```
 
-Accepts a single file, multiple files, or directories (scans `*.md` recursively).
-Default threshold is `strict`. Use `--threshold=medium` for drafts, `--threshold=relaxed` for early notes.
+Default threshold `strict`; `--threshold=medium` for drafts, `relaxed` for
+early notes. A verdict of `likely-ai`, `suspicious`, or `suspicious-overshoot`
+sends you to Step 3. See
+[reading-scan-output.md](./references/reading-scan-output.md) for the metric
+signals, and [opening-diversity-fixes.md](./references/opening-diversity-fixes.md)
+when `opening_diversity` fires — it is the hardest to fix, since it means
+rewriting sentence openings across the document.
 
-Review the metrics output. Key signals:
-- `sentence_length_std < 4.0` = unnaturally uniform (AI); `> ~40` = overshoot suspicion (tuned against this check)
-- `opening_diversity < 0.6` = repetitive sentence starts (AI), typically "The" dominance
-- `dash_density > 3.0` = em-dash overuse (AI)
-- `plain_sentence_rate < 0.25` = almost no rest beats; every sentence performs (overshoot)
-- `punch_clustering > 0.3` = paragraphs habitually close on a punch (overshoot)
-- `salad_rate_per_100 > 10` = jargon-dense sentences without function-word joints
-- repeated formulae listed = coined phrases re-emitted across the document
-- `opener_duplication` reported = the abstract and introduction share their first sentence (cross-document check; a reviewer reads the same opener twice)
-- `paragraph_schema` block = advisory Gopen & Swan / Williams proxies (topic_overlap, cohesion, subject_churn, anaphoric openers); low-topic paragraphs carry to Prompt 9
-- `verdict: likely-ai`, `suspicious`, or `suspicious-overshoot` = proceed to Pass 3
-
-**Voice distance (positive check — catches unnamed tells).** When a voice corpus exists — a `references.yaml` with summarized papers at or above the working directory, or one the user names — build/refresh the profile and pass it to the scan:
+**Voice distance — the positive check.** The named detectors are a denylist: a
+tell must be known to be caught. Distance from a human corpus is the
+complement, catching deviations nobody has named yet.
 
 ```bash
-python3 .claude/skills/match-structure/scripts/style.py --db <db> corpus   # writes voice-profile.json
-python3 .claude/skills/filter-tells/scripts/detect-structural.py <files> --voice-profile=<db-dir>/voice-profile.json
+python3 <match-structure>/scripts/style.py --db <db> corpus     # writes voice-profile.json
+python3 <filter-tells>/scripts/detect-structural.py <files> --voice-profile=<db-dir>/voice-profile.json
 ```
 
-The named detectors are a denylist — a tell must be known to be caught. Distance from the target corpus is the complement: a new wrinkle is a deviation from human-corpus statistics whether or not anyone has named it yet. The `voice_distance` block reports z-scores for the rhythm metrics; for the full comparison (passive/hedges/citations/vocabulary), run `style.py --db <db> compare <draft>`. **Verdict rule: a document that passes every named check but sits far from the corpus profile (any |z| ≥ 2) is NOT clean** — report "passes named checks; voice-distance high" and route to Step 3 with the deviating metrics (and their direction) as seeds. No corpus available → skip this check with a one-line note; everything else behaves as before.
-
-If `opening_diversity` is flagged, load [opening-diversity-fixes.md](./references/opening-diversity-fixes.md) for six rewrite techniques (prepositional shift, gerund lead, infinitive purpose, subordinating conjunction, front-weighting, referential lead). This is the hardest issue to fix because it requires rewriting many sentences across the document.
+**A document that passes every named check but sits far from the corpus
+profile (any |z| ≥ 2) is NOT clean.** Report "passes named checks;
+voice-distance high" and route to Step 3 with the deviating metrics and their
+direction as seeds. No corpus, no check — say so in one line and continue.
 
 ### Step 3: Semantic Analysis (Requires Opus) — MANDATORY
 
@@ -176,69 +167,39 @@ Anything the independent evaluator flags goes back through Step 4. A rewrite is 
 
 ## Voice injection (when the repository defines a target voice)
 
-A writing repository may carry a `writing-voice/` directory of exemplar
-samples — the contract is in the repository's writing-voice rule (manifest
-schema, `author-voice`/`venue-voice` roles, discovery). When one is
-discoverable from the file under review, filter-tells measures against it and steers
-rewrites toward it. **Absent, everything below is skipped and behavior is
-exactly as before** — voice features are additive.
+A writing repository may carry a `writing-voice/` directory of exemplars — the
+contract, manifest schema, and `author-voice`/`venue-voice` roles are in this
+repository's writing-voice rule. When one is discoverable from the file under
+review, measure against it and steer rewrites toward it. **Absent, all of this
+is skipped and behaviour is exactly as before.**
 
-**1. Discover.**
-
-```bash
-python3 .claude/skills/filter-tells/scripts/voice_anchors.py discover <file>
-```
-
-**2. Baseline profile.** Build (or refresh) a style profile over the
-exemplars, then feed it to the structural scan as the baseline:
+The scripts live in `match-structure`, where exemplar retrieval belongs with
+the rest of the profile work.
 
 ```bash
-python3 .claude/skills/filter-tells/scripts/voice_anchors.py profile --for <file>
-python3 .claude/skills/filter-tells/scripts/detect-structural.py <file> \
+python3 <match-structure>/scripts/voice_anchors.py discover <file>
+python3 <match-structure>/scripts/voice_anchors.py profile --for <file>
+python3 <filter-tells>/scripts/detect-structural.py <file> \
   --voice-profile=<repo>/writing-voice/.voice-profile.json
+python3 <match-structure>/scripts/voice_anchors.py anchors --text <passage-file>|- --for <file> -k 3
 ```
 
-The `voice_distance` block then reports each metric as a distance from the
-author's own register rather than only against fixed thresholds. (This is the
-same mechanism GH-121 added for a match-structure corpus profile — one baseline
-flag, two sources, no second overlapping option.) The profile is cached in
-`writing-voice/.voice-profile.json` and rebuilt only when a sample's mtime
-changes; `--force` overrides.
+With the profile passed in, `voice_distance` reports each metric as a distance
+from the author's own register rather than against fixed thresholds — the same
+mechanism a match-structure corpus profile uses, one flag with two sources. The
+profile caches in `writing-voice/.voice-profile.json` and rebuilds when a
+sample's mtime changes; `--force` overrides.
 
-**3. Rewrite anchors.** Before rewriting a flagged passage, retrieve the
-topically nearest exemplar passages and inject them into the rewrite prompt's
-`{voice_anchors}` slot (see rewrite-instructions.md):
+**Anchors are the point of the feature.** Before rewriting a flagged passage,
+retrieve the topically nearest exemplars (tf-idf over paragraphs, stdlib,
+preferring `author-voice`) and inject them into the rewrite prompt's
+`{voice_anchors}` slot — see rewrite-instructions.md. A rewrite with no target
+register aims only at *not tripping detectors*, and that is the documented
+cause of overshoot into uniform polish. Anchors give it a register that exists.
 
-```bash
-python3 .claude/skills/filter-tells/scripts/voice_anchors.py anchors --text <passage-file>|- --for <file> -k 3
-```
-
-Retrieval is tf-idf over paragraph-level passages (stdlib, no embeddings),
-preferring `author-voice`. This is the point of the whole feature: a rewrite
-with no target register aims only at *not tripping detectors*, which is the
-documented cause of overshoot into uniform polish. Anchors give it a register
-that exists.
-
-**4. Overshoot guard.** Pass the same anchors into Prompt 7. Drift from the
-anchors toward heavier polish is an overshoot signal even when every surface
-check passes — the anchors make "too sleek" measurable against something
-concrete instead of a judgment call.
-
-**Which model rewrites.** The steps above keep the rewrite inside this loop:
-Claude flags the passage and Claude rewrites it, with the anchors as its
-target. That is one model grading and fixing its own prose — cheap and usually
-fine, but its output still carries this model's lexical habits, which is
-exactly what a reader detects. When that matters, hand the rewrite to the
-`match-voice` skill instead: it sends the paragraph and the same anchors to
-a different model family (Ollama; local `gemma4:12b` by default) and Claude
-switches roles from author to judge, gating every candidate on citation and
-number preservation, meaning entailment, anchor-copy similarity, and register.
-Use this skill's rewrite for speed and for passages where the tell is
-structural; use `match-voice` when the prose itself must stop sounding like
-Claude wrote it.
-
-Persona extraction from these exemplars belongs to `match-structure`, which
-accepts the manifest as a curated source; filter-tells does not reimplement it.
+Pass the same anchors into Prompt 7. Drift toward heavier polish is an
+overshoot signal even when every surface check passes: the anchors make "too
+sleek" measurable against something concrete.
 
 ## Paragraph extraction (shared)
 
@@ -401,4 +362,4 @@ python3 .claude/skills/filter-tells/scripts/detect-structural.py <file-or-dir> -
 
 Quick Mode is for working drafts. It is **not** valid for a publication verdict. Quick Mode catches the surface-detectable patterns. The rhetorical patterns that account for most of the AI signal are invisible to the scripts and require Step 3. Do not report a verdict based on Quick Mode output alone.
 
-Working and specification documents are the exception that most needs more than Quick Mode: an SRD or design doc another session will execute is exactly where compressed-conversation phrases accumulate (undefined coinages, metaphors for mechanisms, editorializing adjectives). When the scripts surface `coinage_candidates` or `editorializing` hits on such a document, run Prompt 8 (whole-document, mandatory) and Prompt 8b before signing off — a spec that ships private vocabulary to an executor who was not in the conversation is a defect Quick Mode cannot rule on.
+Working and specification documents are the exception that most needs more than Quick Mode: a system requirements document or design doc another session will execute is exactly where compressed-conversation phrases accumulate (undefined coinages, metaphors for mechanisms, editorializing adjectives). When the scripts surface `coinage_candidates` or `editorializing` hits on such a document, run Prompt 8 (whole-document, mandatory) and Prompt 8b before signing off — a spec that ships private vocabulary to an executor who was not in the conversation is a defect Quick Mode cannot rule on.

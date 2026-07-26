@@ -18,7 +18,8 @@ This skill turns "find me what's been written about this" into a small,
 repeatable pipeline: read what the user is working on, search arXiv (and, for
 off-arXiv work, Semantic Scholar or Google Scholar) for related papers,
 download the relevant ones, read
-them, write a summary per paper, and keep a CSL-YAML database so work is never
+them, write a summary per paper, and keep a Citation Style Language (CSL) YAML
+database so work is never
 repeated and versions stay current.
 
 The standing interests are LLMs, AI agents, finite state machines, and
@@ -35,7 +36,7 @@ like this:
 
 - **Database:** `references.yaml` under the current working directory, unless
   an existing one is already nearby (look for a `references.yaml` at or above
-  the CWD and reuse it). Pass the chosen path as `--db` to every script call so
+  the working directory and reuse it). Pass the chosen path as `--db` to every script call so
   search, fetch, and record all agree. If only a legacy `arxiv/papers.yaml`
   exists, the scripts read it transparently and convert on next write.
 - **PDFs:** `<db-dir>/pdfs/` (transient — they exist to be read; they don't need
@@ -68,7 +69,7 @@ artifacts together regardless of the working directory.
 
 ## The database format
 
-The database is CSL-YAML — a bare YAML list with no root key. Each entry has
+The database is CSL (Citation Style Language) YAML — a bare list with no root key. Each entry has
 standard CSL fields that pandoc understands (`id`, `type`, `title`, `author`,
 `container-title`, `URL`, `issued`) plus skill-internal fields (`status`,
 `version`, `pdf_path`, `arxiv_id`, etc.) that pandoc ignores. This means the

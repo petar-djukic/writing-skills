@@ -90,10 +90,23 @@ TERM_OF_ART_HINTS = (
     "robust statistics", "robust control", "robust estimator", "key performance",
     "api key", "a key", "no key", "the key", "key is", "keys", "key file",
     "whose key", "key does not", "key/value", "by key", "sort key",
+    "root key", "missing key", "-<key>", "key of", "keyed", "per key",
+    "citation key", "key (used", "key,", "<key>",
 )
 
 # TS-14: abbreviation defined on first use in a section.
 ABBREV = re.compile(r"\b([A-Z]{2,6})\b")
+# An all-caps English word is emphasis, not an abbreviation. Writers capitalize
+# for stress ("do NOT commit", "the TOP of the file") and flagging those buries
+# the real jargon — eight findings on one SKILL.md were all emphasis.
+EMPHASIS_WORDS = {
+    "THE", "AND", "OR", "NOT", "ONLY", "MORE", "LESS", "ALL", "ANY", "TOP",
+    "BOTTOM", "TO", "IS", "ARE", "DO", "DONT", "NEVER", "ALWAYS", "MUST",
+    "SHALL", "BEFORE", "AFTER", "FIRST", "LAST", "ONE", "TWO", "NEW", "OLD",
+    "YES", "NO", "RUN", "DRAFT", "STOP", "THIS", "THAT", "WHY", "HOW", "WHAT",
+    "EVERY", "EACH", "BOTH", "SAME", "REAL", "OWN", "WITH", "FROM", "INTO",
+    "RULE", "STEP", "NOTE", "ONE-", "FIX", "ADD", "CUT", "USE",
+}
 ABBREV_SKIP = {"AI", "API", "CPU", "GPU", "RAM", "URL", "HTTP", "HTTPS", "JSON",
                "YAML", "XML", "HTML", "CSV", "PDF", "SQL", "TCP", "UDP", "IP",
                "OK", "ID", "IDS", "US", "UK", "EU", "GH", "TS", "MIT", "IEEE",
@@ -104,7 +117,8 @@ ABBREV_SKIP = {"AI", "API", "CPU", "GPU", "RAM", "URL", "HTTP", "HTTPS", "JSON",
                # Filename placeholders and language keywords are not
                # abbreviations: prd[NNN], SELECT ALL, git HEAD.
                "NN", "NNN", "N", "XX", "YYYY", "ALL", "HEAD", "MAIN", "EOF",
-               "GET", "POST", "PUT", "JSON5", "UTC"}
+               "GET", "POST", "PUT", "JSON5", "UTC",
+               "GB", "MB", "KB", "TB", "MS", "GHZ", "RAM"}
 
 
 def load_prose(path):
@@ -198,11 +212,16 @@ def check(path):
             continue
         if idx not in prose_lines:
             continue
+        # Both orders define an abbreviation: "Citation Style Language (CSL)"
+        # and "CSL (Citation Style Language)". Only the first was recognised,
+        # so the reverse form still reported the term as undefined.
         for m in re.finditer(r"\b([A-Z][A-Za-z]*(?:\s+[A-Za-z]+){0,4})\s+\(([A-Z]{2,6})\)", raw):
             defined.add(m.group(2))
+        for m in re.finditer(r"\b([A-Z]{2,6})\s+\([A-Z][A-Za-z]*(?:\s+[A-Za-z]+){1,4}\)", raw):
+            defined.add(m.group(1))
         for m in ABBREV.finditer(raw):
             a = m.group(1)
-            if a in ABBREV_SKIP or a in defined:
+            if a in ABBREV_SKIP or a in EMPHASIS_WORDS or a in defined:
                 continue
             defined.add(a)        # report once per section
             findings.append(find("TS-14", idx, f"'{a}' used without expansion"

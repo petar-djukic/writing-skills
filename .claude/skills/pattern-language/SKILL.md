@@ -99,7 +99,7 @@ in the format spec and is judged by reading, not by the script.
 The file carries substantial prose (intents, contexts, solutions). Run the
 `filter-tells` skill over it — pattern languages are exactly where coined-bigram and
 compressed-conversation tells accumulate, and every coined *pattern name* is
-deliberate but everything else must survive a cold reader.
+intentional but everything else must survive a cold reader.
 
 ## Repairing an existing language
 
