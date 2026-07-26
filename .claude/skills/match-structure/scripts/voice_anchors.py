@@ -247,6 +247,18 @@ def _cos(a, b):
 # silently become a partition again.
 AUTHOR_VOICE_WEIGHT = 1.5
 
+# Diction-specific weight (GH-245). A rewrite's word choice comes from whatever
+# anchors retrieval selects; when venue-voice dominates, the model copies their
+# conversational register — filler, contractions, asides — producing what looks
+# like a prose defect but is anchor drift. Measured (GH-238 calibration): two
+# articles moved from 0.2-0.3 filler/500w to 2.8-6.8, matching the venue-voice
+# corpus at 2.1-15.6.
+#
+# 2.5 means a venue-voice passage must be ~2.5x more relevant than an author-
+# voice one to outrank it for diction. Shape retrieval (for_diction=False) still
+# uses the gentler 1.5 — rhythm and directness borrow freely from venue-voice.
+AUTHOR_VOICE_DICTION_WEIGHT = 2.5
+
 
 def anchors(voice_dir: str, passage: str, k: int = 3, role: str = None,
             pre_ai: bool = None, tags=None, for_diction: bool = True):
@@ -256,10 +268,15 @@ def anchors(voice_dir: str, passage: str, k: int = 3, role: str = None,
     similarity it wins, but a clearly nearer venue-voice passage outranks it.
     An explicit `role` still filters hard.
 
+    When for_diction=True (the default, and what a rewrite wants), author-voice
+    gets a stronger boost — the model copies diction from whatever it sees, so
+    the word-choice source matters more than the shape source.
+
     Each returned anchor carries its `score`, its `weighted` score, and its
     `role`, so an inappropriate mix is visible in the output rather than
     something an operator has to re-derive by hand.
     """
+    w = AUTHOR_VOICE_DICTION_WEIGHT if for_diction else AUTHOR_VOICE_WEIGHT
     cands = []
     for path, r in sample_paths(voice_dir, role=role, pre_ai=pre_ai,
                                 tags=tags, for_diction=for_diction):
@@ -270,12 +287,12 @@ def anchors(voice_dir: str, passage: str, k: int = 3, role: str = None,
     vecs, df, n = _tfidf_vectors([c["text"] for c in cands])
     q_tf = Counter(_tokens(passage))
     total = sum(q_tf.values()) or 1
-    qv = {w: (c / total) * math.log((1 + n) / (1 + df[w]) + 1)
-          for w, c in q_tf.items()}
+    qv = {w_: (c / total) * math.log((1 + n) / (1 + df[w_]) + 1)
+          for w_, c in q_tf.items()}
     for c, v in zip(cands, vecs):
         c["score"] = round(_cos(qv, v), 4)
         c["weighted"] = round(
-            c["score"] * (AUTHOR_VOICE_WEIGHT if c["role"] == "author-voice" else 1.0), 4)
+            c["score"] * (w if c["role"] == "author-voice" else 1.0), 4)
     cands.sort(key=lambda c: c["weighted"], reverse=True)
     return [c for c in cands[:k] if c["score"] > 0]
 

@@ -89,9 +89,10 @@ def main():
 
         # 4. Every anchor reports score, weighted, and role, so an
         #    inappropriate mix is visible without re-deriving it by hand.
+        #    Default is for_diction=True, so the diction weight applies.
         for c in va.anchors(d, "Ship it.", k=2):
             assert {"score", "weighted", "role", "file", "text"} <= set(c), c
-            expect = round(c["score"] * (va.AUTHOR_VOICE_WEIGHT
+            expect = round(c["score"] * (va.AUTHOR_VOICE_DICTION_WEIGHT
                                          if c["role"] == "author-voice" else 1.0), 4)
             assert abs(c["weighted"] - expect) < 1e-9, c
 

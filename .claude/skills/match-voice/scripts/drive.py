@@ -284,8 +284,10 @@ def anchor_provenance(a, article, paras, full=False):
     filt = " ".join(x for x in (f"role={a.role}" if a.role else "",
                                 f"stratum={a.stratum}" if a.stratum else "",
                                 f"tags={a.anchor_tags}" if a.anchor_tags else "") if x)
+    weight = va.AUTHOR_VOICE_DICTION_WEIGHT
     print(f"anchors: {len(paths)} exemplars available from {d}")
     print(f"         pool {dict(mix)}{'  [' + filt + ']' if filt else ''}")
+    print(f"         author-voice weight {weight}x (diction mode)")
 
     for name in inert_filters(va, d, a):
         print(f"         INERT FILTER {name} selects the whole pool — it is not "
