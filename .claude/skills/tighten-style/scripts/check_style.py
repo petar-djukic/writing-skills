@@ -88,13 +88,18 @@ TERM_OF_ART_HINTS = (
     "critical section", "critical path", "critical point", "key exchange",
     "public key", "private key", "key management", "primary key", "foreign key",
     "robust statistics", "robust control", "robust estimator", "key performance",
+    "api key", "a key", "no key", "the key", "key is", "keys", "key file",
 )
 
 # TS-14: abbreviation defined on first use in a section.
 ABBREV = re.compile(r"\b([A-Z]{2,6})\b")
 ABBREV_SKIP = {"AI", "API", "CPU", "GPU", "RAM", "URL", "HTTP", "HTTPS", "JSON",
                "YAML", "XML", "HTML", "CSV", "PDF", "SQL", "TCP", "UDP", "IP",
-               "OK", "ID", "IDS", "US", "UK", "EU", "GH", "TS", "MIT", "IEEE"}
+               "OK", "ID", "IDS", "US", "UK", "EU", "GH", "TS", "MIT", "IEEE",
+               # Repo vocabulary: universal here, so flagging it measures house
+               # style rather than undefined jargon.
+               "PR", "PRD", "PRDS", "LOC", "README", "VISION", "WT", "CI", "CLI",
+               "SDK", "MCP", "OS", "UI", "UX", "TODO", "NDA", "OCR", "PDFS"}
 
 
 def load_prose(path):
