@@ -20,8 +20,11 @@ fell); 2 = corpus/setup problem.
 
 import json
 import os
+import re
+import shutil
 import subprocess
 import sys
+import tempfile
 from collections import Counter
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -147,7 +150,122 @@ def run_structural(path):
     return d.get("verdict", "?"), fired
 
 
-def evaluate():
+# Length bands for the matched-length pass. The lowest is the ai class's own
+# range; the highest is a long article. Detector thresholds were tuned around
+# the short end, so the bands show what happens as a draft grows.
+LENGTH_BANDS = (400, 800, 1500, 2500)
+
+# Below this fraction of the target the excerpt is not representative of the
+# band, so the document is skipped for it and counted rather than padded.
+BAND_TOLERANCE = 0.7
+
+
+def word_count(path):
+    try:
+        with open(path, encoding="utf-8", errors="replace") as f:
+            return len(f.read().split())
+    except OSError:
+        return 0
+
+
+def length_stats(paths):
+    """n / median / min / max words. The distribution the first measurement hid."""
+    w = sorted(word_count(p) for p in paths)
+    if not w:
+        return {"n": 0, "median": None, "min": None, "max": None}
+    mid = len(w) // 2
+    median = w[mid] if len(w) % 2 else (w[mid - 1] + w[mid]) // 2
+    return {"n": len(w), "median": median, "min": w[0], "max": w[-1]}
+
+
+def excerpt(path, target):
+    """Consecutive whole paragraphs totalling ~target words, or None.
+
+    Deterministic: same file and target give the same excerpt every run, or
+    rates wander between runs for reasons nobody can trace. Whole paragraphs
+    only — a word-slice would hand the detectors truncated sentences and
+    measure the truncation.
+
+    Starts after the first two body paragraphs to skip abstract-like openings,
+    which are their own register and would bias short bands.
+    """
+    try:
+        with open(path, encoding="utf-8", errors="replace") as f:
+            text = f.read()
+    except OSError:
+        return None
+    paras = [p for p in re.split(r"\n\s*\n", text)
+             if len(p.split()) >= 40 and not p.strip().startswith(("#", "|", "```"))]
+    if len(paras) < 3:
+        return None
+    acc, total = [], 0
+    for p in paras[2:]:
+        acc.append(p)
+        total += len(p.split())
+        if total >= target:
+            break
+    if total < target * BAND_TOLERANCE:
+        return None
+    return "\n\n".join(acc)
+
+
+def measure_bands(class_paths, bands=LENGTH_BANDS):
+    """Fire rates per class per length band, comparing like with like.
+
+    A detector at 0.00 in one band and 0.96 in another is the whole signal —
+    averaging the bands together destroys exactly what this exists to show.
+    """
+    out = {}
+    tmp = tempfile.mkdtemp(prefix="eval-bands-")
+    try:
+        for band in bands:
+            row = {}
+            for cls, paths in class_paths.items():
+                hits, verdicts, used, skipped = [], [], 0, 0
+                for p in paths:
+                    ex = excerpt(p, band)
+                    if ex is None:
+                        skipped += 1
+                        continue
+                    f = os.path.join(tmp, f"{cls}-{band}-{used}.md")
+                    with open(f, "w", encoding="utf-8") as fh:
+                        fh.write(ex)
+                    verdict, s_fired = run_structural(f)
+                    hits.append(s_fired | run_lexical(f))
+                    verdicts.append(verdict)
+                    used += 1
+                dets = {}
+                if used:
+                    for det in sorted(set().union(*hits) if hits else set()):
+                        n = sum(1 for h in hits if det in h)
+                        dets[det] = round(n / used, 2)
+                # Report the verdict spread, not just a binary. "suspicious"
+                # and "likely-ai" are different experiences for a writer, and
+                # collapsing them makes the headline rate mean whichever one
+                # the reader assumes.
+                row[cls] = {
+                    "documents": used,
+                    "skipped_too_short": skipped,
+                    "verdicts": dict(Counter(verdicts)),
+                    "non_clean_rate": (
+                        round(sum(1 for v in verdicts
+                                  if v not in ("clean", "minor-issues")) / used, 2)
+                        if used else None),
+                    "ai_verdict_rate": (
+                        round(sum(1 for v in verdicts
+                                  if v in ("likely-ai", "suspicious-overshoot")) / used, 2)
+                        if used else None),
+                    "avg_detectors_fired": (
+                        round(sum(len(h) for h in hits) / used, 1) if used else None),
+                    "detectors": dets,
+                }
+            out[str(band)] = row
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+    return out
+
+
+def evaluate(bands=False):
     report = {"classes": {}, "detectors": {}, "verdict_accuracy": {}}
     per_class_hits = {}
 
@@ -167,7 +285,9 @@ def evaluate():
         report["classes"][cls] = {
             "files": len(files),
             "verdicts": verdicts,
+            "length": length_stats(files),
         }
+        report["classes"][cls]["_paths"] = list(files)
         if cls == "human" and human_meta:
             # Provenance, not text: where the samples came from, so a baseline
             # is interpretable without the private corpus being present.
@@ -201,6 +321,31 @@ def evaluate():
             "of": len(hu_v),
         },
     }
+    # The confound that produced the original 20-over-gate figure: comparing a
+    # 5,889-word median against a 332-word one and calling the difference a
+    # false-positive rate. Name it in the output so it cannot hide again.
+    hl = report["classes"].get("human", {}).get("length", {})
+    al = report["classes"].get("ai", {}).get("length", {})
+    if hl.get("median") and al.get("median"):
+        ratio = max(hl["median"], al["median"]) / min(hl["median"], al["median"])
+        if ratio >= 2:
+            report["length_mismatch"] = {
+                "human_median": hl["median"], "ai_median": al["median"],
+                "ratio": round(ratio, 1),
+                "note": (f"class medians differ by {ratio:.1f}x "
+                         f"(human {hl['median']}, ai {al['median']}). Overall "
+                         f"per-detector rates below are not a false-positive "
+                         f"rate — they partly measure length. Use the "
+                         f"length_bands section, which compares like with like."),
+            }
+
+    if bands:
+        report["length_bands"] = measure_bands(
+            {c: report["classes"][c].get("_paths", []) for c in ("human", "ai")})
+
+    for c in ("human", "ai"):
+        report["classes"].get(c, {}).pop("_paths", None)
+
     if not hu_v:
         why = (human_meta or {}).get("reason") or "no human samples found"
         report["verdict_accuracy"]["human_clean"]["note"] = (
@@ -213,7 +358,8 @@ def evaluate():
 
 def main():
     update = "--update-baseline" in sys.argv
-    report = evaluate()
+    bands = "--bands" in sys.argv
+    report = evaluate(bands=bands)
 
     if not corpus_files("ai") and not report["classes"]["human"]["files"]:
         print("No corpus files found under eval/ai, and no human samples "
