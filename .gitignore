@@ -7,3 +7,9 @@ __pycache__/
 # Local credentials, symlinked in per-machine. Never committed — this repo is public.
 .secrets
 .secrets/
+
+# Vendored npm dependencies — reconstructible from the committed package.json
+# and package-lock.json (npm ci). 3,443 files / 52 MB were tracked here for a
+# month before anyone noticed (GH-183); opencode behaves identically with the
+# directory absent, and provisions its own deps when it wants them.
+node_modules/
