@@ -124,6 +124,8 @@ def anchor_flags(a):
         f += ["--role", a.role]
     if a.stratum:
         f += ["--stratum", a.stratum]
+    if a.anchor_tags:
+        f += ["--tags", a.anchor_tags]
     return f
 
 
@@ -150,10 +152,12 @@ def anchor_provenance(a, article):
         return
     pre = (True if a.stratum == "pre-ai"
            else False if a.stratum == "ai-era" else None)
-    paths = va.sample_paths(d, role=a.role, pre_ai=pre)
+    tags = a.anchor_tags.split(",") if a.anchor_tags else None
+    paths = va.sample_paths(d, role=a.role, pre_ai=pre, tags=tags)
     mix = Counter(r for _, r in paths)
     filt = " ".join(x for x in (f"role={a.role}" if a.role else "",
-                                f"stratum={a.stratum}" if a.stratum else "") if x)
+                                f"stratum={a.stratum}" if a.stratum else "",
+                                f"tags={a.anchor_tags}" if a.anchor_tags else "") if x)
     print(f"anchors: {len(paths)} exemplars from {d}")
     print(f"         {dict(mix)}{'  [' + filt + ']' if filt else ''}")
     if not paths:
@@ -190,6 +194,10 @@ def main():
                          "upward from the article)")
     ap.add_argument("--role", choices=["author-voice", "venue-voice"],
                     help="hard filter anchors to one role")
+    ap.add_argument("--anchor-tags",
+                    help="comma-separated register tags; similarity still "
+                         "ranks WITHIN the selected pool. Use when the register "
+                         "that fits is not the one topically nearest")
     ap.add_argument("--stratum", choices=["pre-ai", "ai-era"],
                     help="pre-ai restricts anchors to diction-safe samples "
                          "across roles — use it when the draft needs punch and "

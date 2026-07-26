@@ -54,6 +54,7 @@ def main():
                    help="hard filter to one role")
     p.add_argument("--stratum", choices=["pre-ai", "ai-era"],
                    help="pre-ai restricts to diction-safe samples across roles")
+    p.add_argument("--tags", help="comma-separated register tags")
     p.add_argument("--json", action="store_true", help="emit the raw anchor records")
     args = p.parse_args()
 
@@ -68,6 +69,7 @@ def main():
 
     passage = sys.stdin.read() if args.text == "-" else open(args.text).read()
     got = va.anchors(voice_dir, passage, k=args.k, role=args.role,
+                     tags=(args.tags.split(",") if args.tags else None),
                      pre_ai=(True if args.stratum == "pre-ai"
                              else False if args.stratum == "ai-era" else None))
     if args.json:
