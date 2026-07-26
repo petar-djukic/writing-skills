@@ -101,12 +101,12 @@ class Trial:
 
     __slots__ = ("article", "arm", "model", "dry_run", "anchor_count",
                  "pool_size", "register_markers", "structural_metrics",
-                 "detector_result")
+                 "detector_result", "draft_path")
 
     def __init__(self, article, arm, model=None, dry_run=False,
                  anchor_count=0, pool_size=0,
                  register_markers=None, structural_metrics=None,
-                 detector_result=None):
+                 detector_result=None, draft_path=None):
         self.article = article
         self.arm = arm
         self.model = model
@@ -116,6 +116,7 @@ class Trial:
         self.register_markers = register_markers or {}
         self.structural_metrics = structural_metrics or {}
         self.detector_result = detector_result
+        self.draft_path = draft_path
 
     def to_dict(self):
         d = {
@@ -132,6 +133,8 @@ class Trial:
             d["structural_metrics"] = dict(self.structural_metrics)
         if self.detector_result is not None:
             d["detector_result"] = self.detector_result
+        if self.draft_path:
+            d["draft_path"] = self.draft_path
         return d
 
     @classmethod
@@ -146,6 +149,7 @@ class Trial:
             register_markers=d.get("register_markers"),
             structural_metrics=d.get("structural_metrics"),
             detector_result=d.get("detector_result"),
+            draft_path=d.get("draft_path"),
         )
 
 
