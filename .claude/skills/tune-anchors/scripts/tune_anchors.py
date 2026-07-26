@@ -185,6 +185,21 @@ def _sweep_full(voice_dir, articles, arms, n, model, out_path):
                     except (json.JSONDecodeError, IndexError, TypeError):
                         pass
 
+            # Preserve the draft under a unique name so later arms don't
+            # overwrite it (GH-254). Keyed by article + arm hash so the blind
+            # read step can locate it from the ledger.
+            saved_draft = None
+            if os.path.exists(draft):
+                import hashlib, shutil
+                drafts_dir = os.path.join(os.path.dirname(out_path or "ledger.yaml"), "drafts")
+                os.makedirs(drafts_dir, exist_ok=True)
+                art_stem = os.path.splitext(os.path.basename(art_path))[0]
+                arm_hash = hashlib.sha256(arm_label.encode()).hexdigest()[:8]
+                dest = os.path.join(drafts_dir, f"{art_stem}-{arm_hash}.md")
+                shutil.copy2(draft, dest)
+                saved_draft = dest
+                print(f"  draft saved: {dest}")
+
             va = _voice_anchors()
             pool_size = len(va.sample_paths(voice_dir, **kwargs))
             trial = ledger.Trial(
@@ -196,6 +211,7 @@ def _sweep_full(voice_dir, articles, arms, n, model, out_path):
                 pool_size=pool_size,
                 register_markers=reg,
                 structural_metrics=struct,
+                draft_path=saved_draft,
             )
             lg.append(trial)
 
@@ -358,9 +374,21 @@ def cmd_verify(args):
 
     for _dist, trial in to_scan:
         print(f"  scanning {trial.article} × {trial.arm}...")
-        # We'd need the actual draft file path to scan — for now this is the
-        # scaffold; the full implementation would locate or regenerate the draft.
-        print(f"    (scan placeholder — requires draft file)")
+        if not trial.draft_path or not os.path.exists(trial.draft_path):
+            print(f"    SKIP — no draft file (re-run sweep to generate one)")
+            continue
+        r = _run([sys.executable, pangram_py, "--text", trial.draft_path, "--json"])
+        if r.returncode != 0 or not r.stdout.strip():
+            print(f"    scan failed: {(r.stderr or 'no response').strip()[:200]}")
+            continue
+        try:
+            result = json.loads(r.stdout)
+            fraction = result.get("fraction_ai")
+            if fraction is not None:
+                trial.detector_result = round(fraction * 100, 1)
+                print(f"    AI: {trial.detector_result}%")
+        except (json.JSONDecodeError, TypeError):
+            print(f"    could not parse response")
 
     if args.ledger:
         lg.save(args.ledger)
