@@ -49,8 +49,8 @@ the anchor-retrieval step when ranking ties.
 ## Two independent axes
 
 `role` says **whose voice** a sample is. `pre_ai` says **whether it is safe to
-anchor diction on**. They are independent, and the second cannot be expressed
-by the first:
+anchor diction on**. They are independent, and the first cannot express
+the second:
 
 | Stratum | role | anchor for |
 |---|---|---|
@@ -75,6 +75,48 @@ makes it circular as a diction anchor. `pre_ai` is optional and the year infers
 it, but an explicit value wins: where the line falls for a given piece is the
 curator's knowledge, not arithmetic — a 2023 draft may predate their model
 access, and a 2021 one may not.
+
+## The third axis: register tags
+
+`role` says whose voice. `pre_ai` says whether its diction is safe to copy.
+Neither answers **which register suits this article**, and retrieval cannot
+supply it — embedding similarity matches topic, and the register that fits is
+often the one *least* topically similar, so similarity ranks it last.
+
+Measured on a 113-exemplar corpus: for an economics paragraph, the eleven
+Krugman samples ranked no better than 25th of 2,420 passages, because Krugman
+writes about copper and hot dogs while the draft was about software.
+
+```yaml
+- id: krugman-1998-the-accidental-theorist
+  role: venue-voice
+  year: 1998
+  tags: [economics, numbers, parable, diction]
+- id: fowler-2015-technical-debt
+  role: venue-voice
+  year: 2015
+  tags: [medium, named-pattern, structure-only, workflow]
+  pre_ai: false
+```
+
+Tags **select the pool**; similarity still ranks within it. Pass none and
+behaviour is unchanged.
+
+`structure-only` is a tag with teeth: it means *anchor shape on this, never
+diction*. Samples carrying it are excluded from diction anchoring unless
+requested by name, because otherwise `--anchor-tags workflow` would quietly
+admit a shape reference into a voice rewrite. Fowler's bliki is the worked
+case — a legitimate structure reference whose clean modern prose is the
+register a rewrite is escaping.
+
+The A/B behind this (GH-229), one article and one model: tag-selected anchors
+took a published piece from an external score of 100% to 17.9% and held the
+passive rate at the author's own level, where similarity-selected anchors
+moved the score not at all and nearly doubled passive. The tag arm rewrote
+*fewer* paragraphs to get there.
+
+Articles usually carry the query already — front matter `tags:`, and in some
+repositories `Altitude:` / `Move:` from `pattern-language.yaml`.
 
 ## Roles and precedence
 

@@ -105,6 +105,8 @@ the GH-215 failure, and it costs a whole rewrite to discover afterwards.
 | default — nearest passages, author-voice weighted | none |
 | diction-safe only (exclude AI-era samples) | `--stratum pre-ai` |
 | **punch: the pre-AI peer essays** | `--role venue-voice --stratum pre-ai` |
+| **register that topic will not find** | `--anchor-tags economics` |
+| shape references, deliberately | `--anchor-tags structure-only` |
 | a specific corpus | `--voice-dir <path>` |
 
 The last combination is what a repository README means by "anchor on the Yegge
@@ -112,6 +114,19 @@ and Beck samples". `--stratum pre-ai` alone is often not enough: it removes the
 AI-era samples, but if the remaining peer essays are not *topically* near the
 draft, the academic papers still win on similarity. Forcing the role is how you
 say "punch matters more than topic here".
+
+**Tags are the axis similarity cannot reach.** Retrieval matches topic, and the
+register that fits an article is often the one least topically similar — on a
+113-exemplar corpus, an economics paragraph ranked the Krugman samples no
+better than 25th of 2,420. Tags select the pool and similarity ranks within it,
+so `--anchor-tags economics` returns Krugman at a *third* the similarity score
+of the software essays it displaced. Measured (GH-229): that swap took a
+published article from an external score of 100% to 17.9% while holding the
+passive rate at the author's own level.
+
+`structure-only` samples are held out of diction anchoring unless you ask for
+them by name — they are shape references, and their prose is often the register
+you are escaping.
 
 Anchors used per paragraph, with scores, land in `results.json` — so a bad mix
 is diagnosable after the fact without re-running retrieval by hand.
