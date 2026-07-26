@@ -3,7 +3,7 @@
 
 No network, no API key, no credits. Every HTTP call is stubbed, so the suite
 stays runnable by anyone — which matters because the real API costs money per
-call and the free tier is 4 scans a day.
+call.
 
 Fixtures are transcribed from the documented examples at
 https://docs.pangram.com/api-reference/ai-detection.

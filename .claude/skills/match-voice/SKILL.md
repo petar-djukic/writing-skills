@@ -263,7 +263,11 @@ scan uploads the article and the draft to a third party that retains both —
 the opposite of the local-first reason this skill exists — so the driver never
 uploads on its own, not even with a key sitting in the environment. See the
 upload rule in the `writing-voice/` directory rule before answering. A full
-comparison costs two scans against a free tier of four a day.
+comparison costs two scans. How much of an allowance that spends depends on the
+account, and nothing here enforces a ceiling: run `pangram.py --check` first,
+which confirms the key and the endpoint and spends nothing, and read the
+account's own answer from the API — 402 for exhausted credits, 429 for too many
+requests. Do not plan a session around a remembered daily number.
 
 Without the flag, or without a key, the driver runs unchanged and says the
 check was skipped. That is the normal state, not a degraded one; if the

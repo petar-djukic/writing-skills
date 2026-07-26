@@ -251,9 +251,12 @@ anything (`drive.py --pangram`) — the one moment it can still be captured. Bot
 skills invoke the same two scripts from the shared root; neither owns them.
 
 Only prose is submitted — the shared extractor drops code fences, tables, and front matter, which both keeps non-prose from skewing a prose detector
-and holds down cost. Billing counts started 1,000-word blocks with a one-unit
-minimum, and the free tier is four scans a day, so a full before/after
-comparison spends half of it.
+and holds down cost, since billing counts started 1,000-word blocks. A full
+before/after comparison costs two scans. What an account allows is the
+account's business and no limit is enforced here, so check rather than
+remember: `pangram.py --check` confirms the key and the endpoint without
+spending a scan, and the API reports 402 when credits run out and 429 when
+requests arrive too fast.
 
 Read the result as three document fractions (`fraction_ai`,
 `fraction_ai_assisted`, `fraction_human`) plus per-paragraph scores. There is
