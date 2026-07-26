@@ -67,7 +67,7 @@ NEGATIVE_FORM = {
     r"\bnot important\b": "'trifling' / 'minor'",
     r"\bnot able to\b": "'cannot'",
     r"\bnot (?:the same|identical)\b": "'differs'",
-    r"\bnot un\w+\b": "state it positively",
+    r"\bnot un(?!do|der|dergo|pack|til|less|ion)\w+\b": "state it positively",
 }
 
 # TS-05: intensifiers that measure nothing.
@@ -75,6 +75,7 @@ NEGATIVE_FORM = {
 # than" — and "rather than" is what TS-01 recommends as a replacement, so
 # flagging it would have the catalog contradict itself.
 INTENSIFIERS = r"\b(very|really|quite|extremely|incredibly|truly|highly|vastly|utterly|considerably|rather(?!\s+than))\b"
+DEMONSTRATIVE_VERY = re.compile(r"\b(?:these|this|those|that)\s+very\b")
 
 # TS-08: hedges. A stack of them in one sentence is the finding, not one.
 HEDGES = r"\b(may|might|could|perhaps|possibly|arguably|somewhat|fairly|seems? to|appears? to|suggests? that|tends? to|relatively|generally|typically|often)\b"
@@ -136,20 +137,31 @@ def check(path):
     for idx, raw in enumerate(lines, 1):
         if idx not in prose_lines:
             continue
-        low = raw.lower()
+        # Join the following prose line so wrapped phrases match as written.
+        nxt = lines[idx] if idx < len(lines) and (idx + 1) in prose_lines else ""
+        low = (raw + " " + nxt).lower()
+        own = len(raw)          # a match must start within this line
 
         for pat, fix in NEEDLESS.items():
             for m in re.finditer(pat, low):
-                findings.append(find("TS-01", idx, f"needless words: '{m.group(0)}'",
-                                     raw.strip(), fix))
+                if m.start() < own:
+                    findings.append(find("TS-01", idx, f"needless words: '{m.group(0)}'",
+                                         raw.strip(), fix))
         for pat, fix in NEGATIVE_FORM.items():
             for m in re.finditer(pat, low):
-                findings.append(find("TS-03", idx, f"negative form: '{m.group(0)}'",
-                                     raw.strip(), fix))
+                if m.start() < own:
+                    findings.append(find("TS-03", idx, f"negative form: '{m.group(0)}'",
+                                         raw.strip(), fix))
         for m in re.finditer(INTENSIFIERS, low):
-            findings.append(find("TS-05", idx, f"empty intensifier: '{m.group(0)}'",
-                                 raw.strip(), "delete, or strengthen the word it props up"))
+            if m.group(0) == "very" and DEMONSTRATIVE_VERY.search(
+                    low[max(0, m.start() - 12):m.end()]):
+                continue        # "these very detectors" = precisely these
+            if m.start() < own:
+                findings.append(find("TS-05", idx, f"empty intensifier: '{m.group(0)}'",
+                                     raw.strip(), "delete, or strengthen the word it props up"))
         for m in re.finditer(IMPORTANCE, low):
+            if m.start() >= own:
+                continue
             span = para_of.get(idx, re.sub(r"[`*_]", "", low))
             if any(h in span for h in TERM_OF_ART_HINTS):
                 continue          # term of art — the exception is load-bearing
