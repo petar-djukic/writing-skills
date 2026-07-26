@@ -7,11 +7,26 @@ detector changes measurable.
 
 ## Layout
 
-- `human/` — prose the author wrote without model assistance. **Currently
-  empty: only the author can designate these.** Wanted: a handful of pieces
-  per genre in use (article, paper section, spec prose), saved as `.md` or
-  `.tex`. Until populated, false-positive rates are unmeasured and
-  `run_eval.py` says so in its output.
+- **Human samples come from the repository you run in, not from this
+  directory.** `run_eval.py` walks up from the working directory to find
+  `writing-voice/` and uses its `author-voice` exemplars as the human class —
+  the same discovery rule the rest of the prose skills use. Run the harness
+  from a repository that carries one:
+
+  ```bash
+  cd ~/GITHUB/<a-writing-repo>
+  python3 <de-ai>/eval/run_eval.py
+  ```
+
+  This matters because `.claude/` is a symlink into the shared skills repo. A
+  sample dropped into `eval/human/` does not land in your project — it lands in
+  the public skills repo, alongside everyone else's. Reading from
+  `writing-voice/` keeps a private corpus private: the harness reads the files
+  and records provenance, never the text.
+
+- `human/` — an optional local override, used only when it contains files. Left
+  empty on purpose. Anything placed here is published with the skills, so use
+  it only for prose you would publish anyway.
 - `ai/` — unedited model drafts, each labeled in a header comment (generator,
   date, register, "never edited"). Seeded with three Claude-generated samples
   covering the known registers: bland assistant, overshoot ("LinkedIn voice"),
@@ -25,8 +40,13 @@ detector changes measurable.
 
 ## Labeling rules
 
-- `human/`: written before model assistance, or verifiably hand-written.
+- Human samples: written before model assistance, or verifiably hand-written.
   When in doubt, leave it out — a mislabeled sample poisons every rate.
+  Curating `writing-voice/` is the curator's job, not the harness's; the
+  harness uses what the manifest lists. It does warn about any exemplar dated
+  after 2022, because prose written once generative AI was available may carry
+  AI diction, and that is circular as ground truth for what human prose looks
+  like. The warning does not drop the sample — that call is the curator's.
 - `ai/`: raw model output only. An edited draft is neither class.
 - Every file carries a header comment stating its provenance and label
   rationale.
