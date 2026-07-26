@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Offline tests for pangram_report.py. Run: python3 testdata/test_pangram_report.py
+"""Offline tests for pangram_report.py. Run: python3 <surface>/scripts/test_pangram_report.py
 
 No network, no API key. Responses are synthesised against the real span offsets
 of pangram_sample.md, so the window->paragraph mapping is exercised on genuine
@@ -10,10 +10,10 @@ import os
 import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(0, os.path.dirname(HERE))
+sys.path.insert(0, HERE)
 import pangram_report as pr  # noqa: E402
 
-SAMPLE = os.path.join(HERE, "pangram_sample.md")
+SAMPLE = os.path.join(HERE, "testdata_pangram_sample.md")
 
 
 def response(spans, scores, fracs=(0.7, 0.2, 0.1), verdict="Mixed"):

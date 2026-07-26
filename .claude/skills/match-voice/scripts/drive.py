@@ -9,21 +9,29 @@ The driver applies the MECHANICAL gate only. Meaning entailment is a judgment
 call and stays with the reviewing model (references/prompts.md); the emitted
 draft is a set of candidates, not an accepted result.
 
-Paragraph extraction and the coverage audit come from filter-tells's
-md_paragraphs.py, the canonical extractor shared by the prose skills: every
-body line is classified (prose / heading / figure / table / code / reference /
-blockquote / list / rule / blank), and a nonempty unaccounted list means the
-parser skipped prose.
+Paragraph extraction and the coverage audit come from md_paragraphs.py, the
+canonical extractor shared by the prose skills: every body line is classified
+(prose / heading / figure / table / code / reference / blockquote / list / rule
+/ blank), and a nonempty unaccounted list means the parser skipped prose.
+
+With --pangram the driver also measures whether the rewrite worked, scanning
+the article before it starts and the draft when it finishes (GH-212). The
+baseline has to be captured first because it cannot be reconstructed once the
+paragraphs are replaced — which is why this belongs in the driver and not in a
+procedure someone is expected to remember afterwards.
 
 Usage:
   python3 drive.py --article <path.md> [--model gemma4:12b] [--out <path>]
                    [--retries 2] [--min-words 12] [--temperature 0.7]
-                   [--coverage-only]
+                   [--coverage-only] [--pangram]
 """
 import argparse, json, os, re, subprocess, sys, tempfile
 
 SK = os.path.dirname(os.path.abspath(__file__))
 DEAI = os.path.normpath(os.path.join(SK, "..", "..", "filter-tells", "scripts", "detect-lexical.sh"))
+SHARED = os.path.normpath(os.path.join(SK, "..", "..", "..", "scripts"))
+PANGRAM = os.path.join(SHARED, "pangram.py")
+PANGRAM_REPORT = os.path.join(SHARED, "pangram_report.py")
 
 COPY_NOTE = ("Write the paragraph entirely in your own words. The example passages are a "
              "STYLE guide only — do NOT reuse any run of more than a few words from them. "
@@ -53,6 +61,42 @@ def _md_paragraphs():
         sys.exit(f"could not import md_paragraphs.py from {sibling}: {e}")
 
 
+def pangram_scan(path, work, tag):
+    """Build the prose-only payload for one file and scan it.
+
+    Returns (response_path, spans_path), or None when the payload or the scan
+    fails — no key, no credits, no network. A failure here is reported and the
+    rewrite continues: the measurement is an outcome check, never a gate.
+    """
+    payload = os.path.join(work, f"{tag}.payload.txt")
+    p = run(["python3", PANGRAM_REPORT, "payload", "--article", path, "--out", payload])
+    if p.returncode != 0:
+        print(f"pangram: {tag} payload failed — {(p.stderr or p.stdout).strip()[:200]}",
+              file=sys.stderr)
+        return None
+    resp = os.path.join(work, f"{tag}.json")
+    s = run(["python3", PANGRAM, "--text", payload, "--json"])
+    if s.returncode != 0 or not s.stdout.strip():
+        print(f"pangram: {tag} scan skipped — {(s.stderr or 'no response').strip()[:200]}",
+              file=sys.stderr)
+        return None
+    open(resp, "w").write(s.stdout)
+    return resp, os.path.splitext(payload)[0] + ".spans.json"
+
+
+def pangram_delta(before, after):
+    """Print fraction_ai before -> after and the still-flagged worklist."""
+    r = run(["python3", PANGRAM_REPORT, "report", "--response", after[0],
+             "--spans", after[1], "--baseline", before[0],
+             "--baseline-spans", before[1]])
+    if r.returncode != 0:
+        print(f"pangram: comparison failed — {(r.stderr or '').strip()[:200]}",
+              file=sys.stderr)
+        return
+    print("\nexternal check (Pangram, article -> draft):")
+    print(r.stdout.rstrip())
+
+
 def parse_paragraphs(path, min_words):
     """Return (lines, fm_close, paragraphs, coverage, unaccounted).
 
@@ -74,6 +118,11 @@ def main():
     ap.add_argument("--temperature", default="0.7")
     ap.add_argument("--coverage-only", action="store_true",
                     help="parse + coverage audit only; no model calls")
+    ap.add_argument("--pangram", action="store_true",
+                    help="measure the rewrite against an external detector. "
+                         "UPLOADS this article and the draft to a third party "
+                         "that retains them; passing the flag is the consent, "
+                         "and it is asked for per document. Costs two scans.")
     a = ap.parse_args()
 
     art = os.path.abspath(a.article)
@@ -95,6 +144,17 @@ def main():
         sys.exit(1 if unaccounted else 0)
 
     work = tempfile.mkdtemp(prefix="match-voice-")
+
+    # Baseline first: once the paragraphs are replaced the article's reading is
+    # gone, and a comparison discovered later is simply unavailable.
+    baseline = None
+    if a.pangram:
+        print(f"external check: scanning {os.path.basename(art)} for a baseline")
+        baseline = pangram_scan(art, work, "before")
+        if baseline is None:
+            print("external check: no baseline, so the comparison is skipped; "
+                  "the rewrite runs unchanged", file=sys.stderr)
+
     results = []
     for n, (s, e, txt) in enumerate(paras, 1):
         rec = {"n": n, "lines": [s, e], "words": len(txt.split()), "orig": txt}
@@ -171,6 +231,24 @@ def main():
     print("\nMechanical gate only. Before accepting the draft: run the meaning-"
           "entailment review (references/prompts.md) on each accepted paragraph, "
           "and filter-tells over the assembled file.")
+
+    # The outcome measure, last because it is the result of the run. Without a
+    # baseline there is nothing to compare, so the second scan is not spent.
+    if not a.pangram:
+        print("\nexternal check: skipped (no --pangram). The gate proves the "
+              "candidates kept their citations, numbers, and meaning; it cannot "
+              "say whether the prose stopped reading as machine-written.")
+    elif not baseline:
+        print("\nexternal check: skipped — no baseline was captured, so there is "
+              "nothing to compare this draft against.")
+    else:
+        after = pangram_scan(out, work, "after")
+        if after:
+            pangram_delta(baseline, after)
+        else:
+            print(f"\nexternal check: the draft scan failed. The baseline stands "
+                  f"at {baseline[0]}, so a later scan of this draft can still be "
+                  f"compared against it.")
 
 
 if __name__ == "__main__":

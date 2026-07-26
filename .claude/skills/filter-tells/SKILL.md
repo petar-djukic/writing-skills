@@ -239,14 +239,16 @@ directory rule. A key in the environment is not consent. No key, or a declined
 prompt, means skip and say so — never substitute a local result for it.
 
 ```bash
-python3 <filter-tells>/scripts/pangram.py --check                      # key + reachability, spends nothing
-python3 <filter-tells>/scripts/pangram_report.py payload --article <file.md>   # prose-only payload + span map
-python3 <filter-tells>/scripts/pangram.py --text <file>.payload.txt --json > before.json
-python3 <filter-tells>/scripts/pangram_report.py report --response before.json --spans <file>.payload.spans.json
+python3 <agent-dir>/scripts/pangram.py --check                      # key + reachability, spends nothing
+python3 <agent-dir>/scripts/pangram_report.py payload --article <file.md>   # prose-only payload + span map
+python3 <agent-dir>/scripts/pangram.py --text <file>.payload.txt --json > before.json
+python3 <agent-dir>/scripts/pangram_report.py report --response before.json --spans <file>.payload.spans.json
 ```
 
-Add `--baseline before.json` after a rewrite to report what moved. The baseline
-must be captured **before** the rewrite; it cannot be reconstructed afterwards.
+What this skill takes is a point-in-time reading. The before/after comparison
+belongs to match-voice, whose driver captures the baseline before it rewrites
+anything (`drive.py --pangram`) — the one moment it can still be captured. Both
+skills invoke the same two scripts from the shared root; neither owns them.
 
 Only prose is submitted — code fences, tables, and front matter are excluded by
 the shared extractor, which both keeps non-prose from skewing a prose detector

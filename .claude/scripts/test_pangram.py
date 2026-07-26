@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Offline tests for pangram.py. Run: python3 testdata/test_pangram.py
+"""Offline tests for pangram.py. Run: python3 <surface>/scripts/test_pangram.py
 
 No network, no API key, no credits. Every HTTP call is stubbed, so the suite
 stays runnable by anyone — which matters because the real API costs money per
@@ -15,11 +15,11 @@ import urllib.error
 import urllib.request
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(0, os.path.dirname(HERE))
+sys.path.insert(0, HERE)
 import pangram as pg  # noqa: E402
 
-SUCCESS = json.load(open(os.path.join(HERE, "pangram_success.json")))
-FAILED = json.load(open(os.path.join(HERE, "pangram_failed.json")))
+SUCCESS = json.load(open(os.path.join(HERE, "testdata_pangram_success.json")))
+FAILED = json.load(open(os.path.join(HERE, "testdata_pangram_failed.json")))
 
 
 class Stub:
