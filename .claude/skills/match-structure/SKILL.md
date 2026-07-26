@@ -128,7 +128,7 @@ three highest-impact changes, and the report path.
 ## Exemplar blueprints (mimic a specific paper or venue)
 
 When the user wants to mimic specific papers rather than the corpus average
-("mimic these two ICML papers"), extract a voice persona blueprint following
+("mimic these two conference papers"), extract a voice persona blueprint following
 **Part 3** of `voice-analysis-instructions.md`: one mini-blueprint per
 exemplar (sentence mechanics, lexicon and tone, signposting and transitions,
 formatting quirks — every claim quoted, never summarizing content), then a
@@ -143,7 +143,7 @@ The default behavior is to advise. When the user explicitly asks to rewrite
 ("apply this voice to my draft", "rewrite my intro in the corpus voice"),
 follow `references/style-application-instructions.md` exactly: section by
 section, few-shot exemplar excerpts of the same section type, consensus
-patterns only unless the user asks to mimic an author, and the critical
+patterns only unless the user asks to mimic an author, and the
 rules — never touch data, equations, numbers, or citations; never copy
 exemplar phrasing; output to `<draft-stem>-rewritten.md`.
 

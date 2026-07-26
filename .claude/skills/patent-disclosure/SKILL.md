@@ -56,7 +56,7 @@ Section 9 fact traces to the context file or the user.
 ### 1. Claim first
 
 Draft (or receive) the claim and treat it as the north star: enumerate
-its limitations, confirm each is a deliberate technical element, and
+its limitations, confirm each is an intentional technical element, and
 verify material exists to support every one. Offer the three-scope ladder
 (broad / medium / narrow) from the framework reference.
 
@@ -64,9 +64,10 @@ verify material exists to support every one. Offer the three-scope ladder
 
 Follow the search strategy in the framework reference. For academic
 literature, delegate to the `update-references` skill — build arXiv and
-Scholar queries from the claim's key terms; results land in
+Scholar queries from the claim's defining terms; results land in
 `references.yaml` and feed Section 3.C. Patent databases (Google Patents,
-Espacenet, USPTO, WIPO) and standards bodies are searched directly, with
+Espacenet, the US Patent and Trademark Office, the World Intellectual Property
+Organization) and standards bodies are searched directly, with
 assignees from the context file. Record the closest prior art explicitly.
 
 ### 3. Write in the recommended order
