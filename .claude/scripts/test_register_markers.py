@@ -38,8 +38,14 @@ def main():
 
     # 2. Direction, the thing reports rely on: bureaucratic sits far from
     #    plain, and each text sits at distance zero from itself.
-    assert rm.distance(b, p) > 20, rm.distance(b, p)
+    #    Scaled (the default): each axis contributes comparably, so a
+    #    bureaucratic/plain pair separates clearly without nominalization
+    #    magnitude deciding the answer on its own (GH-229).
+    assert rm.distance(b, p) > 1.0, rm.distance(b, p)
     assert rm.distance(b, b) == 0.0
+    #    Unscaled is available and much larger in magnitude — it is what the
+    #    A/B in GH-229 showed to be misleading, kept only for comparison.
+    assert rm.distance(b, p, scaled=False) > rm.distance(b, p)
 
     # 3. Irregular participles are passives too — "is done", "was written"
     #    would otherwise slip the -ed pattern.

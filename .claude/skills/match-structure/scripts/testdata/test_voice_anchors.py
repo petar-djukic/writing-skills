@@ -128,10 +128,47 @@ def main():
         assert {r for _, r in va.sample_paths(strat, pre_ai=True)} == \
             {"author-voice", "venue-voice"}
 
-        # 7. Nothing similar returns nothing rather than noise.
+        # 7. Tags select the pool; similarity still ranks WITHIN it. The
+        #    register that fits is often the one LEAST topically similar, so
+        #    this deliberately overrides similarity — measured on the reference
+        #    corpus, tag selection returns Krugman at 0.04 over Yegge at 0.14.
+        tagd = corpus(os.path.join(tmp, "tagged"), [])
+        for name, role, tags in (("econ.md", "venue-voice", "[economics, diction]"),
+                                 ("soft.md", "venue-voice", "[workflow, diction]"),
+                                 ("shape.md", "venue-voice", "[workflow, structure-only]")):
+            open(os.path.join(tagd, name), "w").write(
+                ACADEMIC if name == "econ.md" else PUNCHY)
+            with open(os.path.join(tagd, "manifest.yaml"), "a") as f:
+                f.write(f"  - id: {name[:-3]}\n    file: {name}\n"
+                        f"    role: {role}\n    tags: {tags}\n")
+        sel = {os.path.basename(p) for p, _ in va.sample_paths(tagd, tags=["economics"])}
+        assert sel == {"econ.md"}, sel
+
+        #    structure-only is excluded from DICTION anchoring even when its
+        #    other tags match — otherwise --anchor-tags workflow quietly admits
+        #    a shape reference into a voice rewrite.
+        sel = {os.path.basename(p) for p, _ in va.sample_paths(tagd, tags=["workflow"])}
+        assert sel == {"soft.md"}, sel
+        #    ...but it is available when asked for by name, or for shape.
+        sel = {os.path.basename(p) for p, _ in va.sample_paths(tagd, tags=["structure-only"])}
+        assert "shape.md" in sel, sel
+        sel = {os.path.basename(p) for p, _ in
+               va.sample_paths(tagd, tags=["workflow"], for_diction=False)}
+        assert "shape.md" in sel, sel
+
+        #    No tags passed: unchanged behaviour apart from the structure-only
+        #    exclusion, which is the point of the label.
+        sel = {os.path.basename(p) for p, _ in va.sample_paths(tagd)}
+        assert sel == {"econ.md", "soft.md"}, sel
+
+        #    A tag matching nothing yields nothing, rather than falling back to
+        #    every sample — silently ignoring the filter would be worse.
+        assert va.sample_paths(tagd, tags=["nonexistent"]) == []
+
+        # 8. Nothing similar returns nothing rather than noise.
         assert va.anchors(d, "zzzz qqqq xxxx", k=3) == []
 
-        # 8. An empty corpus is a normal state, not a crash.
+        # 9. An empty corpus is a normal state, not a crash.
         assert va.anchors(corpus(os.path.join(tmp, "empty"), []), "anything") == []
 
         print("test_voice_anchors: all assertions passed (no network)")

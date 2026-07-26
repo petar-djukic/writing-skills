@@ -97,19 +97,40 @@ def is_pre_ai(ex: dict) -> bool:
     return True if not isinstance(y, int) else y < AI_ERA_YEAR
 
 
-def sample_paths(voice_dir: str, role: str = None, pre_ai: bool = None):
+def sample_paths(voice_dir: str, role: str = None, pre_ai: bool = None,
+                 tags=None, for_diction: bool = True):
     """[(path, role)] for manifest exemplars whose file exists.
 
-    pre_ai=True restricts to diction-safe samples ACROSS roles, which is the
-    distinction role alone cannot express: the pre-AI punch anchors are
-    venue-voice, and so are the AI-era samples that must never anchor diction
-    (GH-217).
+    Three independent axes, none expressible by another:
+
+      role        whose voice it is
+      pre_ai      whether its diction is safe to copy (GH-217)
+      tags        which REGISTER it is — the axis retrieval cannot supply,
+                  because similarity matches topic, and the register that fits
+                  an article is often the one least topically similar. Measured
+                  on the reference corpus: for an economics paragraph, the 11
+                  Krugman samples rank no better than 25th of 2,420 (GH-226).
+
+    `structure-only` is a tag in the reference corpus, and it means what it
+    says: anchor SHAPE on this sample, never diction. for_diction=True (the
+    default, and what a rewrite wants) excludes it — otherwise
+    `--anchor-tags workflow` would quietly admit a structure-only sample into a
+    diction rewrite, which is what the label exists to prevent. Ask for it by
+    name (`--anchor-tags structure-only`) or pass for_diction=False when you
+    genuinely want shape references.
     """
+    want = {t.strip().lower() for t in (tags or []) if t.strip()}
     out = []
     for ex in load_manifest(voice_dir):
         if role and ex.get("role") != role:
             continue
         if pre_ai is not None and is_pre_ai(ex) != pre_ai:
+            continue
+        have = {str(x).lower() for x in (ex.get("tags") or [])}
+        # Excluded from diction anchoring unless asked for by name.
+        if for_diction and "structure-only" in have and "structure-only" not in want:
+            continue
+        if want and not (want & have):
             continue
         p = os.path.join(voice_dir, ex.get("file", ""))
         if os.path.exists(p):
@@ -228,7 +249,7 @@ AUTHOR_VOICE_WEIGHT = 1.5
 
 
 def anchors(voice_dir: str, passage: str, k: int = 3, role: str = None,
-            pre_ai: bool = None):
+            pre_ai: bool = None, tags=None, for_diction: bool = True):
     """Top-k exemplar passages most topically similar to `passage`.
 
     author-voice is weighted, not privileged absolutely: at comparable
@@ -240,7 +261,8 @@ def anchors(voice_dir: str, passage: str, k: int = 3, role: str = None,
     something an operator has to re-derive by hand.
     """
     cands = []
-    for path, r in sample_paths(voice_dir, role=role, pre_ai=pre_ai):
+    for path, r in sample_paths(voice_dir, role=role, pre_ai=pre_ai,
+                                tags=tags, for_diction=for_diction):
         for p in _passages(path):
             cands.append({"file": os.path.basename(path), "role": r, "text": p})
     if not cands:
@@ -292,6 +314,7 @@ def cmd_anchors(args):
     d = _resolve_dir(args)
     text = sys.stdin.read() if args.text == "-" else open(args.text).read()
     got = anchors(d, text, k=args.k, role=args.role,
+                  tags=(args.tags.split(",") if args.tags else None),
                   pre_ai=(True if args.stratum == "pre-ai"
                           else False if args.stratum == "ai-era" else None))
     print(json.dumps({"writing_voice": d, "k": args.k, "anchors": got},
@@ -320,6 +343,8 @@ def main():
     an.add_argument("--role", choices=["author-voice", "venue-voice"])
     an.add_argument("--stratum", choices=["pre-ai", "ai-era"],
                     help="pre-ai restricts to diction-safe samples across roles")
+    an.add_argument("--tags", help="comma-separated register tags; similarity "
+                                   "still ranks WITHIN the selected pool")
     an.set_defaults(func=cmd_anchors)
 
     args = p.parse_args()
