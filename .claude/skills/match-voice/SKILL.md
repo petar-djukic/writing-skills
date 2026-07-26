@@ -18,6 +18,41 @@ belonged to the stylometry skill, now `match-structure`** — if you invoked
 
 # match-voice (Ollama rewrites, Claude judges)
 
+## The objective, and its constraint
+
+**Minimize the Pangram AI score — subject to the gate holding and the anchors
+being appropriate to the draft.** The constraint is not decoration. Optimizing
+the score alone has a known optimum, and it is not prose you want.
+
+Recorded run (GH-219): a hand-written, twice-hand-edited published article went
+from **AI 77.8% to AI 0.0%**, Mixed to Human, all 25 paragraphs "improved". By
+the score alone, a total success. What it produced:
+
+| before | after |
+|---|---|
+| The grouping does two jobs. | Grouping serves two primary purposes. First, … |
+| Let the orchestrator run git, not the agents. | Git operations are executed by the orchestrator rather than the agents. |
+| One structural detail deserves attention before it becomes a bug. | A specific structural detail must be noted. |
+
+The local register metrics moved the other way in the same run:
+`passive_enabling_per_500w` 0.0 → 0.5, `salad_rate_per_100` 5.5 → 8.3,
+`opening_diversity` 0.72 → 0.67. Academic passive-voice prose scores zero.
+
+Two facts sit behind this. Pangram rated the author's own hand-written prose
+77.8% AI, and `filter-tells` catches only 24% of real AI documents (GH-192).
+**Neither detector is a reliable proxy for "reads as human" on its own.** The
+score is evidence, and a score that falls while the register metrics worsen is
+evidence of the wrong thing.
+
+The cause of that run was anchors, not the objective: retrieval was showing the
+model IEEE papers for a punchy blog post (GH-216). Fix the anchors and the
+objective is reachable without the failure mode — which is why the driver now
+prints the exemplar mix before it starts.
+
+There is deliberately **no automatic quality gate on the Pangram number**. One
+run is not a threshold, and inventing one from it would be the overfitting
+GH-188 warned about.
+
 The rewriting model is deliberately **not** Claude. filter-tells detects and steers
 within the Claude loop (GH-156); this skill hands the rewrite itself to a
 different model family so the prose decorrelates from Claude's own lexical

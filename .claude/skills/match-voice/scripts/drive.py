@@ -33,6 +33,7 @@ DEAI = os.path.normpath(os.path.join(SK, "..", "..", "filter-tells", "scripts", 
 SHARED = os.path.normpath(os.path.join(SK, "..", "..", "..", "scripts"))
 PANGRAM = os.path.join(SHARED, "pangram.py")
 PANGRAM_REPORT = os.path.join(SHARED, "pangram_report.py")
+FILTER_TELLS = os.path.normpath(os.path.join(SK, "..", "..", "filter-tells", "scripts"))
 
 COPY_NOTE = ("Write the paragraph entirely in your own words. The example passages are a "
              "STYLE guide only — do NOT reuse any run of more than a few words from them. "
@@ -83,6 +84,45 @@ def pangram_scan(path, work, tag):
         return None
     open(resp, "w").write(s.stdout)
     return resp, os.path.splitext(payload)[0] + ".spans.json"
+
+
+def register_metrics(path):
+    """The local register numbers that move opposite to a falling AI score."""
+    r = run(["python3", os.path.join(FILTER_TELLS, "detect-structural.py"),
+             path, "--json"])
+    try:
+        d = json.loads(r.stdout)
+        if isinstance(d, list):
+            d = d[0]
+        m = d.get("metrics", {})
+    except (json.JSONDecodeError, IndexError, AttributeError):
+        return {}
+    return {k: m[k] for k in ("passive_enabling_per_500w", "salad_rate_per_100",
+                              "opening_diversity") if k in m}
+
+
+def report_register(article, draft):
+    """Print register metrics before -> after, and flag divergence.
+
+    A falling AI score with worsening register is the GH-219 failure: the
+    objective met, the prose worse. Printing both together is what makes that
+    visible instead of something you notice a week later.
+    """
+    b, a = register_metrics(article), register_metrics(draft)
+    if not b or not a:
+        return
+    print("\nlocal register (lower is plainer, except opening_diversity):")
+    worse = []
+    for k in sorted(set(b) & set(a)):
+        arrow = "->"
+        bad = (a[k] > b[k]) if k != "opening_diversity" else (a[k] < b[k])
+        print(f"  {k:26} {b[k]} {arrow} {a[k]}{'   WORSE' if bad else ''}")
+        if bad:
+            worse.append(k)
+    if worse:
+        print("  A falling AI score with worsening register is the score-only "
+              "optimum, not a better draft — check the anchors (SKILL.md).",
+              file=sys.stderr)
 
 
 def pangram_delta(before, after):
@@ -319,6 +359,9 @@ def main():
         after = pangram_scan(out, work, "after")
         if after:
             pangram_delta(baseline, after)
+            # Beside the score, never instead of it: the two moving in
+            # opposite directions is the whole GH-219 finding.
+            report_register(art, out)
         else:
             print(f"\nexternal check: the draft scan failed. The baseline stands "
                   f"at {baseline[0]}, so a later scan of this draft can still be "
