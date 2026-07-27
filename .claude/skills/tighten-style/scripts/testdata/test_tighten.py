@@ -122,8 +122,7 @@ def main():
         m2, s2 = tn._sentence_stats("")
         assert m2 == 0.0 and s2 == 0.0
 
-        # 7. --sent-floor reverts candidates that push below the floor.
-        #    Stub returns a very short rewrite — floor should revert it.
+        # 7. --sent-floor is advisory (GH-268): candidate accepted, warning logged.
         def shorten(prompt, **kw):
             return "Cache expires early."
 
@@ -142,9 +141,10 @@ def main():
                             "--sent-floor", "20", "10", "--retries", "0"],
                            shorten)
         result = open(out4).read()
-        assert "distributed scheduling" in result, (
-            "floor should revert the too-short candidate")
-        assert "reverted-floor" in out_txt or "Cache expires" not in result
+        assert "Cache expires" in result, (
+            "floor is advisory — candidate should be kept")
+        assert "sent-floor advisory" in out_txt, (
+            "floor warning should appear in output")
 
         print("test_tighten: all assertions passed (no server)")
     finally:
