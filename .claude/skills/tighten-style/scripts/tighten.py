@@ -113,7 +113,7 @@ def pangram_scan(path, work, tag):
 
 
 def pangram_delta(before, after):
-    """Print fraction_ai before -> after using pangram_report report."""
+    """Print Pangram before -> after using pangram_report report."""
     r = run([sys.executable, PANGRAM_REPORT, "report", "--response", after[0],
              "--spans", after[1], "--baseline", before[0],
              "--baseline-spans", before[1]])

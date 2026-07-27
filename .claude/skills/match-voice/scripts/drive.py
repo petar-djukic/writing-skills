@@ -335,13 +335,27 @@ def _yaml_scalar(v):
     return s
 
 
-def _fraction_ai(response_path):
-    """fraction_ai as a percentage from a saved Pangram response, or None."""
+def _pangram_summary(response_path):
+    """All three fractions, segment counts, and mean window score from a saved response."""
     try:
         with open(response_path) as f:
-            return json.load(f).get("fraction_ai")
+            r = json.load(f)
     except (OSError, json.JSONDecodeError):
         return None
+    windows = r.get("windows") or []
+    scores = [w["ai_assistance_score"] for w in windows
+              if w.get("ai_assistance_score") is not None]
+    mean_ws = round(sum(scores) / len(scores), 4) if scores else None
+    return {
+        "fraction_ai": r.get("fraction_ai"),
+        "fraction_ai_assisted": r.get("fraction_ai_assisted"),
+        "fraction_human": r.get("fraction_human"),
+        "num_ai": r.get("num_ai_segments", 0),
+        "num_ai_assisted": r.get("num_ai_assisted_segments", 0),
+        "num_human": r.get("num_human_segments", 0),
+        "mean_window_score": mean_ws,
+        "num_windows": len(windows),
+    }
 
 
 def write_manifest(path, a, voice_dir, results, pangram=None):
@@ -379,10 +393,22 @@ def write_manifest(path, a, voice_dir, results, pangram=None):
                                        counts.get("rewrite-error", 0)))
     if pangram:
         before, after = pangram
-        # scope named explicitly: the driver submits a prose-only payload, so
-        # these will not match a whole-file scan done by hand.
-        out.append("  pangram: {scope: prose-only, before: %s, after: %s}"
-                   % (_yaml_scalar(before), _yaml_scalar(after)))
+        out.append("  pangram:")
+        out.append("    scope: prose-only")
+        for label, p in [("before", before), ("after", after)]:
+            if p is None:
+                out.append(f"    {label}: null")
+            else:
+                out.append(f"    {label}:")
+                out.append(f"      fraction_ai: {p['fraction_ai']}")
+                out.append(f"      fraction_ai_assisted: {p['fraction_ai_assisted']}")
+                out.append(f"      fraction_human: {p['fraction_human']}")
+                out.append(f"      num_ai: {p['num_ai']}")
+                out.append(f"      num_ai_assisted: {p['num_ai_assisted']}")
+                out.append(f"      num_human: {p['num_human']}")
+                mws = p['mean_window_score']
+                out.append(f"      mean_window_score: {mws if mws is not None else 'null'}")
+                out.append(f"      num_windows: {p['num_windows']}")
     open(path, "w").write("\n".join(out) + "\n")
     return anchor_files
 
@@ -605,7 +631,7 @@ def main():
             # Beside the score, never instead of it: the two moving in
             # opposite directions is the whole GH-219 finding.
             report_register(art, out)
-            pangram_pair = (_fraction_ai(baseline[0]), _fraction_ai(after[0]))
+            pangram_pair = (_pangram_summary(baseline[0]), _pangram_summary(after[0]))
         else:
             print(f"\nexternal check: the draft scan failed. The baseline stands "
                   f"at {baseline[0]}, so a later scan of this draft can still be "
