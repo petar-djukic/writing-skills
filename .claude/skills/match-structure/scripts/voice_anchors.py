@@ -187,9 +187,13 @@ def build_profile(voice_dir: str, force: bool = False):
 
 # --- anchor retrieval (tf-idf over paragraph passages) -----------------------
 
+_FM = re.compile(r"\A---\s*\n.*?\n(?:---|\.\.\.)\s*\n", re.DOTALL)
+
+
 def _passages(path, min_words=40, max_words=220):
     """Prose paragraphs of a sample, skipping headings/lists/code."""
     text = open(path, encoding="utf-8", errors="replace").read()
+    text = _FM.sub("", text)
     text = re.sub(r"```.*?```", " ", text, flags=re.DOTALL)
     out = []
     for para in re.split(r"\n\s*\n", text):
