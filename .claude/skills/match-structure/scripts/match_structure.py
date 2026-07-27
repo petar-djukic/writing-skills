@@ -25,8 +25,10 @@ Usage:
     match_structure.py DRAFT.md --rewrite                # rewrite w/ latest blueprint
     match_structure.py DRAFT.md --exemplar P1 --rewrite  # extract + rewrite
 
-Requires: ANTHROPIC_API_KEY (or an active `ant auth login` profile),
-the `anthropic` package, and PyYAML.
+Requires: PyYAML and an Ollama server for the default model (gemma4:12b).
+Pass --model claude-opus-4-8 to use the Anthropic API instead (needs
+ANTHROPIC_API_KEY or an active `ant auth login` profile, and the
+`anthropic` package).
 """
 
 import argparse
@@ -38,18 +40,15 @@ import subprocess
 import sys
 from datetime import date
 
-try:
-    import anthropic
-except ImportError:
-    sys.exit("The anthropic package is required. Install with: python3 -m pip install --user anthropic")
-
 SKILL_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 STYLE_PY = os.path.join(SKILL_DIR, "scripts", "style.py")
+MATCH_VOICE = os.path.normpath(os.path.join(SKILL_DIR, "..", "match-voice", "scripts"))
 ANALYSIS_MD = os.path.join(SKILL_DIR, "references", "voice-analysis-instructions.md")
 APPLICATION_MD = os.path.join(SKILL_DIR, "references", "style-application-instructions.md")
 REPORT_TEMPLATE = os.path.join(SKILL_DIR, "references", "comparison-report-template.md")
 
-MODEL = "claude-opus-4-8"
+DEFAULT_MODEL = os.environ.get("MATCH_VOICE_MODEL", "gemma4:12b")
+DEFAULT_ENDPOINT = os.environ.get("OLLAMA_ENDPOINT", "http://localhost:11434")
 MAX_EXCERPT_CHARS = 12000          # per paper in comparison mode
 MAX_CORPUS_CHARS = 350000          # ~100K tokens
 FEWSHOT_CHARS = 2500               # per exemplar excerpt in rewrite prompts
@@ -69,10 +68,23 @@ def read(path):
         return f.read()
 
 
-def call_model(client, system, content_blocks, max_tokens=16000):
-    """One streamed API call; system may be a string or content-block list."""
+def _is_claude(model):
+    return model.startswith("claude-")
+
+
+def _get_anthropic_client():
+    try:
+        import anthropic
+    except ImportError:
+        sys.exit("The anthropic package is required for claude-* models. "
+                 "Install with: python3 -m pip install --user anthropic")
+    return anthropic.Anthropic()
+
+
+def _call_claude(client, model, system, content_blocks, max_tokens=16000):
+    """One streamed Anthropic API call."""
     with client.messages.stream(
-        model=MODEL,
+        model=model,
         max_tokens=max_tokens,
         thinking={"type": "adaptive"},
         system=system,
@@ -83,6 +95,35 @@ def call_model(client, system, content_blocks, max_tokens=16000):
     if not text.strip():
         sys.exit(f"Empty response (stop_reason: {response.stop_reason})")
     return text, response.usage
+
+
+def _call_ollama(endpoint, model, system, content_blocks):
+    """One Ollama generation call, matching the interface call_model uses."""
+    if MATCH_VOICE not in sys.path:
+        sys.path.insert(0, MATCH_VOICE)
+    import rewrite as rw
+    sys_text = system if isinstance(system, str) else "\n\n".join(
+        b["text"] for b in system if b.get("type") == "text")
+    user_text = "\n\n".join(
+        b["text"] for b in content_blocks if b.get("type") == "text")
+    prompt = f"{sys_text}\n\n{user_text}"
+    text = rw.generate(prompt, endpoint=endpoint, model=model,
+                       temperature=0.7, timeout=600)
+    if not text or not text.strip():
+        sys.exit("Empty response from Ollama")
+
+    class _Usage:
+        output_tokens = len(text.split()) * 2  # rough estimate
+    return text.strip(), _Usage()
+
+
+def call_model(backend, system, content_blocks, max_tokens=16000):
+    """Dispatch to Claude or Ollama based on backend config."""
+    if backend["type"] == "claude":
+        return _call_claude(backend["client"], backend["model"],
+                            system, content_blocks, max_tokens)
+    return _call_ollama(backend["endpoint"], backend["model"],
+                        system, content_blocks)
 
 
 def resolve_paper(spec, db_path):
@@ -137,7 +178,7 @@ def split_document(text):
 # Blueprint extraction (--exemplar)
 # --------------------------------------------------------------------------- #
 
-def extract_blueprint(client, exemplars, db_dir, name=None):
+def extract_blueprint(backend, exemplars, db_dir, name=None):
     """Two-stage extraction. exemplars: list of (id, path). Returns blueprint path."""
     instructions = read(ANALYSIS_MD)
     usage_notes = []
@@ -158,7 +199,7 @@ def extract_blueprint(client, exemplars, db_dir, name=None):
             "cache_control": {"type": "ephemeral"},
         }]
         print(f"Extracting style from {ex_id}...", file=sys.stderr)
-        mini, usage = call_model(client, system, content)
+        mini, usage = call_model(backend, system, content)
         minis.append((ex_id, mini))
         usage_notes.append({"call": f"extract:{ex_id}",
                             "output_tokens": usage.output_tokens})
@@ -182,7 +223,7 @@ def extract_blueprint(client, exemplars, db_dir, name=None):
         )
         print(f"Synthesizing blueprint from {len(minis)} exemplars...",
               file=sys.stderr)
-        merged, usage = call_model(client, system,
+        merged, usage = call_model(backend, system,
                                    [{"type": "text", "text": joined}])
         ids = ", ".join(ex_id for ex_id, _ in minis)
         blueprint = (f"---\nexemplars: [{ids}]\ndate: {date.today()}\n---\n\n"
@@ -244,7 +285,7 @@ def verify_section(original, rewritten):
     }
 
 
-def rewrite_draft(client, draft_path, blueprint_path, source_papers, mimic):
+def rewrite_draft(backend, draft_path, blueprint_path, source_papers, mimic):
     """Section-by-section rewrite. Returns (out_path, verification, out_tokens)."""
     draft_text = read(draft_path)
     blueprint = read(blueprint_path)
@@ -289,7 +330,7 @@ def rewrite_draft(client, draft_path, blueprint_path, source_papers, mimic):
                      "Output only the rewritten section body."),
         }]
         print(f"Rewriting section {idx}: {chunk['section']}...", file=sys.stderr)
-        new_body, usage = call_model(client, system, content)
+        new_body, usage = call_model(backend, system, content)
         total_out += usage.output_tokens
 
         heading = (chunk["heading"] + "\n") if chunk["heading"] else ""
@@ -348,7 +389,7 @@ def load_corpus(db_path):
     return "\n\n---\n\n".join(blocks), len(blocks)
 
 
-def run_compare(client, args, db_dir):
+def run_compare(backend, args, db_dir):
     run_style(["--db", args.db, "corpus"])
     metric_diff = run_style(["--db", args.db, "compare", args.draft])
     corpus_block, n_papers = load_corpus(args.db)
@@ -370,7 +411,7 @@ def run_compare(client, args, db_dir):
                   f"# Draft to compare\n\n{read(args.draft)}\n\n"
                   f"Today's date: {date.today()}. Write the comparison report now.")},
     ]
-    report, usage = call_model(client, system, content)
+    report, usage = call_model(backend, system, content)
 
     stem = os.path.splitext(os.path.basename(args.draft))[0]
     out_path = args.out or os.path.join(db_dir, "voice-reports", f"{stem}-voice.md")
@@ -397,6 +438,11 @@ def main():
                    help="blueprint to apply (default: most recent voice-blueprint-*.md, else voice-profile.md)")
     p.add_argument("--mimic", action="store_true",
                    help="also apply single-author idiosyncrasies")
+    p.add_argument("--model", default=DEFAULT_MODEL,
+                   help="model for generation (claude-* uses Anthropic API, "
+                        "anything else uses Ollama)")
+    p.add_argument("--endpoint", default=DEFAULT_ENDPOINT,
+                   help="Ollama endpoint (ignored for claude-* models)")
     args = p.parse_args()
 
     if not args.draft and not args.exemplar:
@@ -405,14 +451,28 @@ def main():
         p.error("--rewrite requires a draft")
 
     db_dir = os.path.dirname(os.path.abspath(args.db))
-    client = anthropic.Anthropic()
+
+    if _is_claude(args.model):
+        backend = {"type": "claude", "model": args.model,
+                   "client": _get_anthropic_client()}
+    else:
+        if MATCH_VOICE not in sys.path:
+            sys.path.insert(0, MATCH_VOICE)
+        import rewrite as rw
+        ok, msg = rw.check_server(args.endpoint, args.model)
+        if not ok:
+            sys.exit(msg)
+        print(f"model: {msg}", file=sys.stderr)
+        backend = {"type": "ollama", "model": args.model,
+                   "endpoint": args.endpoint}
+
     summary = {}
 
     exemplars = [resolve_paper(spec, args.db) for spec in args.exemplar]
 
     if exemplars:
         blueprint_path, usage_notes = extract_blueprint(
-            client, exemplars, db_dir, name=args.name)
+            backend, exemplars, db_dir, name=args.name)
         summary["blueprint"] = blueprint_path
         summary["extraction_calls"] = usage_notes
         if args.blueprint is None:
@@ -423,7 +483,7 @@ def main():
         source_papers = exemplars or [
             (e.get("id"), path) for e, path in style.select_corpus(args.db)][:3]
         out_path, verification, out_tokens = rewrite_draft(
-            client, args.draft, blueprint_path, source_papers, args.mimic)
+            backend, args.draft, blueprint_path, source_papers, args.mimic)
         summary["rewritten"] = out_path
         summary["blueprint_used"] = blueprint_path
         summary["verification"] = {
@@ -452,7 +512,7 @@ def main():
                   "rewritten draft.", file=sys.stderr)
 
     elif args.draft:
-        summary["compare"] = run_compare(client, args, db_dir)
+        summary["compare"] = run_compare(backend, args, db_dir)
 
     print(json.dumps(summary, indent=2, ensure_ascii=False))
 

@@ -64,8 +64,9 @@ RUN="pixi run --manifest-path <skill>/../../pixi.toml python"
 ```
 
 This supplies PyYAML and the `anthropic` package, so no `pip install` is
-needed. `match_structure.py` still needs `ANTHROPIC_API_KEY` (or an active
-`ant auth login`) at run time — pixi manages packages, not secrets.
+needed. The default model (`gemma4:12b`) needs only a running Ollama server.
+Pass `--model claude-opus-4-8` to use the Anthropic API instead (needs
+`ANTHROPIC_API_KEY` or an active `ant auth login`).
 
 ## The workflow (interactive)
 
@@ -165,13 +166,17 @@ corpus" (omit `--baseline`).
 ## Headless mode
 
 `match_structure.py` runs every mode without an interactive session, assembling
-prompts from this skill's own `references/` files (single source of truth)
-and calling `claude-opus-4-8` with adaptive thinking and streaming. Stable
-content blocks (corpus, blueprint) are prompt-cached.
+prompts from this skill's own `references/` files (single source of truth).
+By default it uses `gemma4:12b` via Ollama (matching `match-voice` and
+`tighten-style`); pass `--model claude-opus-4-8` to use the Anthropic API
+with adaptive thinking and streaming.
 
 ```bash
-# Compare a draft against the corpus profile (one API call)
+# Compare a draft against the corpus profile (default: gemma4:12b via Ollama)
 $RUN <skill>/scripts/match_structure.py <draft.md> --db <db-path>
+
+# Same, but using Claude (needs ANTHROPIC_API_KEY)
+$RUN <skill>/scripts/match_structure.py <draft.md> --db <db-path> --model claude-opus-4-8
 
 # Extract a blueprint from exemplars (one call each + synthesis)
 $RUN <skill>/scripts/match_structure.py --db <db-path> \
@@ -191,9 +196,9 @@ paper with the original draft as baseline; flagged passages are listed in
 the JSON summary and a warning is printed. Reports land in
 `<db-dir>/voice-reports/`; usage stats print to stdout.
 
-Requires `ANTHROPIC_API_KEY` (or an active `ant auth login` profile) at run
-time; the `anthropic` package itself comes from the pixi environment. Suitable
-for CI, cron, or a mage target.
+A `claude-*` model is fine for *analysis* (blueprint extraction, comparison
+reports) — that output never lands in the article. The default matters for
+`--rewrite`, whose output does. Suitable for CI, cron, or a mage target.
 
 ## Exemplar sources
 
