@@ -65,9 +65,17 @@ BOLD_RE = re.compile(r"(\*\*|__)(?=\S)(.+?)(?<=\S)\1", re.DOTALL)
 # Shared helpers
 # --------------------------------------------------------------------------- #
 
+_FM = re.compile(r"\A---\s*\n.*?\n(?:---|\.\.\.)\s*\n", re.DOTALL)
+
+
 def read(path):
     with open(path) as f:
         return f.read()
+
+
+def read_prose(path):
+    """Read a markdown file, stripping YAML frontmatter."""
+    return _FM.sub("", read(path))
 
 
 def _is_claude(model):
@@ -187,7 +195,7 @@ def extract_blueprint(backend, exemplars, db_dir, name=None):
 
     minis = []
     for ex_id, path in exemplars:
-        text = read(path)
+        text = read_prose(path)
         system = (
             "You are the exemplar-extraction stage of the match-structure skill. "
             "Follow Part 3 Stage 1 of the instructions below: produce a "
@@ -409,7 +417,7 @@ def excerpt_paper(path, section_texts):
         if name in section_texts:
             parts.append(f"### [{name}]\n{section_texts[name].strip()}")
     if not parts:
-        return read(path)[:MAX_EXCERPT_CHARS]
+        return read_prose(path)[:MAX_EXCERPT_CHARS]
     return "\n\n".join(parts)[:MAX_EXCERPT_CHARS]
 
 
@@ -466,7 +474,7 @@ def run_compare(backend, args, db_dir):
          "cache_control": {"type": "ephemeral"}},
         {"type": "text",
          "text": (f"# Quantitative diff (style.py compare)\n\n```json\n{metric_diff}\n```\n\n"
-                  f"# Draft to compare\n\n{read(args.draft)}\n\n"
+                  f"# Draft to compare\n\n{read_prose(args.draft)}\n\n"
                   f"Today's date: {date.today()}. Write the comparison report now.")},
     ]
     report, usage = call_model(backend, system, content)
@@ -576,9 +584,9 @@ def main():
         summary["output_tokens"] = out_tokens
 
         # Plagiarism guard: rewritten vs every source, baseline = original.
-        against = [(ex_id, read(path)) for ex_id, path in source_papers]
+        against = [(ex_id, read_prose(path)) for ex_id, path in source_papers]
         sim = style.similarity_report(
-            read(out_path), against, n=8, baseline_text=read(args.draft))
+            read_prose(out_path), against, n=8, baseline_text=read_prose(args.draft))
         flagged = sim["total_flagged_matches"]
         summary["similarity"] = {
             "flagged_matches": flagged,
