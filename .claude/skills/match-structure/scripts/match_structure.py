@@ -57,6 +57,8 @@ sys.path.insert(0, os.path.dirname(STYLE_PY))
 import style  # noqa: E402  (section detection, corpus selection, similarity)
 
 NUMBER_RE = re.compile(r"\d+(?:\.\d+)?%?")
+BIBLIO_LINE_RE = re.compile(r"^\[\d+\]\s", re.MULTILINE)
+BOLD_RE = re.compile(r"(\*\*|__)(?=\S)(.+?)(?<=\S)\1", re.DOTALL)
 
 
 # --------------------------------------------------------------------------- #
@@ -285,6 +287,32 @@ def verify_section(original, rewritten):
     }
 
 
+def _count_paragraphs(text):
+    """Count non-empty paragraph blocks separated by blank lines."""
+    return sum(1 for p in re.split(r"\n\s*\n", text.strip()) if p.strip())
+
+
+def _strip_added_bold(original, rewritten):
+    """Remove bold spans the model added that the original did not have."""
+    orig_bold = len(BOLD_RE.findall(original))
+    new_bold = len(BOLD_RE.findall(rewritten))
+    if new_bold > orig_bold:
+        return BOLD_RE.sub(r"\2", rewritten)
+    return rewritten
+
+
+def _is_passthrough(chunk):
+    """Sections that should never be sent to the model."""
+    if chunk["section"] in ("front", "references"):
+        return True
+    body = chunk["body"].strip()
+    if len(body) < 200:
+        return True
+    if BIBLIO_LINE_RE.search(body):
+        return True
+    return False
+
+
 def rewrite_draft(backend, draft_path, blueprint_path, source_papers, mimic):
     """Section-by-section rewrite. Returns (out_path, verification, out_tokens)."""
     draft_text = read(draft_path)
@@ -300,7 +328,9 @@ def rewrite_draft(backend, draft_path, blueprint_path, source_papers, mimic):
     system = [{
         "type": "text",
         "text": (f"{application}\n\n{mimic_note}\n\n"
-                 f"# Voice blueprint\n\n{blueprint}"),
+                 f"# Voice blueprint\n\n{blueprint}\n\n"
+                 "CRITICAL: Do not add bold (**) formatting that the "
+                 "original does not have."),
         "cache_control": {"type": "ephemeral"},
     }]
 
@@ -311,10 +341,11 @@ def rewrite_draft(backend, draft_path, blueprint_path, source_papers, mimic):
 
     for idx, chunk in enumerate(chunks):
         body = chunk["body"]
-        if chunk["section"] == "front" or len(body.strip()) < 200:
+        if _is_passthrough(chunk):
             rewritten_parts.append((chunk["heading"] or "") + body)
             continue
 
+        orig_para_count = _count_paragraphs(body)
         excerpts = fewshot_excerpts(source_papers, chunk["section"])
         excerpt_block = "\n\n".join(
             f"### Style demonstration ({ex_id}, {chunk['section']}) — do NOT reuse its phrasing\n\n{text}"
@@ -326,15 +357,25 @@ def rewrite_draft(backend, draft_path, blueprint_path, source_papers, mimic):
                      f"{excerpt_block}\n\n"
                      f"# Draft section to rewrite (type: {chunk['section']})\n\n"
                      f"{body}\n\n"
-                     "Rewrite this section now, following the critical rules. "
+                     f"Rewrite this section now, following the critical rules. "
+                     f"Return exactly {orig_para_count} paragraphs. "
                      "Output only the rewritten section body."),
         }]
         print(f"Rewriting section {idx}: {chunk['section']}...", file=sys.stderr)
         new_body, usage = call_model(backend, system, content)
         total_out += usage.output_tokens
 
+        new_body = _strip_added_bold(body, new_body.strip())
+        new_para_count = _count_paragraphs(new_body)
+        if new_para_count != orig_para_count:
+            print(f"  section {idx}: paragraph count mismatch "
+                  f"({orig_para_count} -> {new_para_count}), keeping original",
+                  file=sys.stderr)
+            rewritten_parts.append((chunk["heading"] or "") + body)
+            continue
+
         heading = (chunk["heading"] + "\n") if chunk["heading"] else ""
-        rewritten_parts.append(f"{heading}\n{new_body.strip()}\n")
+        rewritten_parts.append(f"{heading}\n{new_body}\n")
 
         key = f"{idx}:{chunk['section']}"
         verification[key] = verify_section(body, new_body)
@@ -372,16 +413,26 @@ def excerpt_paper(path, section_texts):
     return "\n\n".join(parts)[:MAX_EXCERPT_CHARS]
 
 
-def load_corpus(db_path):
-    corpus = style.select_corpus(db_path)
-    if not corpus:
-        sys.exit("No corpus papers found (need status: summarized entries "
-                 f"with md_path in {db_path}). Run update-references first.")
+def load_corpus(db_path, voice_dir=None, role=None, tags=None, pre_ai=None):
+    if voice_dir:
+        tag_list = [t.strip() for t in tags.split(",")] if tags else None
+        corpus = style.select_voice_corpus(voice_dir, role=role,
+                                           tags=tag_list, pre_ai=pre_ai)
+        if not corpus:
+            sys.exit(f"No exemplars found in {voice_dir}/manifest.yaml "
+                     f"matching role={role}, tags={tags}, stratum={pre_ai}")
+    else:
+        corpus = style.select_corpus(db_path)
+        if not corpus:
+            sys.exit("No corpus papers found (need status: summarized entries "
+                     f"with md_path in {db_path}). Run update-references first.")
     blocks, total = [], 0
     for entry, md_path in corpus:
+        label = entry.get("id") or os.path.basename(md_path)
+        title = entry.get("title") or entry.get("notes") or ""
         text = read(md_path)
         excerpt = excerpt_paper(md_path, style.detect_sections(text))
-        block = f"## Corpus paper: {entry.get('id')} — {entry.get('title', '')}\n\n{excerpt}"
+        block = f"## Corpus paper: {label} — {title}\n\n{excerpt}"
         if total + len(block) > MAX_CORPUS_CHARS:
             break
         blocks.append(block)
@@ -390,9 +441,16 @@ def load_corpus(db_path):
 
 
 def run_compare(backend, args, db_dir):
-    run_style(["--db", args.db, "corpus"])
-    metric_diff = run_style(["--db", args.db, "compare", args.draft])
-    corpus_block, n_papers = load_corpus(args.db)
+    if not args.voice_dir:
+        run_style(["--db", args.db, "corpus"])
+        metric_diff = run_style(["--db", args.db, "compare", args.draft])
+    else:
+        metric_diff = "{}"
+    pre_ai = (True if args.stratum == "pre-ai"
+              else False if args.stratum == "ai-era" else None)
+    corpus_block, n_papers = load_corpus(
+        args.db, voice_dir=args.voice_dir, role=args.role,
+        tags=args.anchor_tags, pre_ai=pre_ai)
     print(f"Corpus: {n_papers} papers; comparing {args.draft}", file=sys.stderr)
 
     system = (
@@ -443,6 +501,16 @@ def main():
                         "anything else uses Ollama)")
     p.add_argument("--endpoint", default=DEFAULT_ENDPOINT,
                    help="Ollama endpoint (ignored for claude-* models)")
+    p.add_argument("--voice-dir", default=None,
+                   help="writing-voice directory (alternative to --db)")
+    p.add_argument("--role", default=None,
+                   choices=["author-voice", "venue-voice"],
+                   help="filter voice corpus by role")
+    p.add_argument("--anchor-tags", default=None,
+                   help="comma-separated register tags for voice corpus")
+    p.add_argument("--stratum", default=None,
+                   choices=["pre-ai", "ai-era"],
+                   help="filter voice corpus by era")
     args = p.parse_args()
 
     if not args.draft and not args.exemplar:
@@ -450,7 +518,8 @@ def main():
     if args.rewrite and not args.draft:
         p.error("--rewrite requires a draft")
 
-    db_dir = os.path.dirname(os.path.abspath(args.db))
+    db_dir = (os.path.abspath(args.voice_dir) if args.voice_dir
+              else os.path.dirname(os.path.abspath(args.db)))
 
     if _is_claude(args.model):
         backend = {"type": "claude", "model": args.model,
@@ -480,8 +549,22 @@ def main():
 
     if args.rewrite:
         blueprint_path = find_blueprint(db_dir, args.blueprint)
-        source_papers = exemplars or [
-            (e.get("id"), path) for e, path in style.select_corpus(args.db)][:3]
+        if exemplars:
+            source_papers = exemplars
+        elif args.voice_dir:
+            pre_ai = (True if args.stratum == "pre-ai"
+                      else False if args.stratum == "ai-era" else None)
+            tag_list = ([t.strip() for t in args.anchor_tags.split(",")]
+                        if args.anchor_tags else None)
+            source_papers = [
+                (e.get("id") or os.path.basename(p), p)
+                for e, p in style.select_voice_corpus(
+                    args.voice_dir, role=args.role, tags=tag_list,
+                    pre_ai=pre_ai)][:3]
+        else:
+            source_papers = [
+                (e.get("id"), path)
+                for e, path in style.select_corpus(args.db)][:3]
         out_path, verification, out_tokens = rewrite_draft(
             backend, args.draft, blueprint_path, source_papers, args.mimic)
         summary["rewritten"] = out_path

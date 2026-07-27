@@ -196,6 +196,11 @@ paper with the original draft as baseline; flagged passages are listed in
 the JSON summary and a warning is printed. Reports land in
 `<db-dir>/voice-reports/`; usage stats print to stdout.
 
+Rewrite guardrails (GH-265): bibliography sections and reference-list lines
+(`[N] ...`) pass through untouched. The model is instructed to return the
+same paragraph count per section; a mismatch keeps the original. Bold
+formatting the model added that the original did not have is stripped.
+
 A `claude-*` model is fine for *analysis* (blueprint extraction, comparison
 reports) — that output never lands in the article. The default matters for
 `--rewrite`, whose output does. Suitable for CI, cron, or a mage target.
@@ -207,13 +212,19 @@ Two sources of exemplars are accepted:
 - **`references.yaml` corpus** (default) — the papers fetched by
   `update-references`, selected with `--db`.
 - **`writing-voice/manifest.yaml`** — a curated exemplar directory carried by
-  the repository (contract: the repository's writing-voice rule; roles
-  `author-voice` / `venue-voice`). Use it when a repository has no fetched
-  corpus, or when the target voice is the author's own prior work rather than
-  a field's literature. Point the profile/compare commands at the exemplar
-  files listed in the manifest (`writing-voice/<file>` per entry, preferring
-  `author-voice`); the metrics and persona extraction are unchanged — only the
-  input set differs.
+  the repository. Pass `--voice-dir <path>` to use it as the corpus source
+  instead of `--db`. Filtering flags: `--role author-voice|venue-voice`,
+  `--anchor-tags <comma-separated>`, `--stratum pre-ai|ai-era`. Use it when a
+  repository has no fetched corpus, or when the target voice is the author's
+  own prior work rather than a field's literature.
+
+  ```bash
+  match_structure.py draft.md --rewrite --voice-dir writing-voice/ \
+    --role author-voice --anchor-tags diction
+  ```
+
+  The same flags work with compare mode; `style.py corpus/compare` are skipped
+  when `--voice-dir` is set since they require `references.yaml`.
 
 filter-tells delegates persona extraction from a `writing-voice/` directory here
 rather than reimplementing it; it uses the directory directly only for its

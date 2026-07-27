@@ -50,6 +50,7 @@ SECTION_PATTERNS = [
     ("methodology", r"method(?:s|ology)?|approach|model|architecture|design|framework"),
     ("results", r"results?|experiments?|evaluation|empirical|findings|analysis"),
     ("conclusion", r"conclusion|discussion|future\s+work|summary"),
+    ("references", r"references?|bibliography|works\s+cited"),
 ]
 
 STOCK_PHRASES = [
@@ -328,6 +329,30 @@ def select_corpus(db_path, include_all=False):
         md_abs = os.path.join(db_dir, md_rel)
         if os.path.exists(md_abs):
             out.append((e, md_abs))
+    return out
+
+
+def select_voice_corpus(voice_dir, role=None, tags=None, pre_ai=None):
+    """Return list of (entry, absolute md path) from a writing-voice manifest.
+
+    Same return shape as select_corpus so callers can dispatch on either source.
+    """
+    import voice_anchors as va
+    exemplars = va.load_manifest(voice_dir)
+    want = {t.strip().lower() for t in (tags or []) if t.strip()}
+    out = []
+    for ex in exemplars:
+        if role and ex.get("role") != role:
+            continue
+        if pre_ai is not None and va.is_pre_ai(ex) != pre_ai:
+            continue
+        if want:
+            have = {str(x).lower() for x in (ex.get("tags") or [])}
+            if not (want & have):
+                continue
+        p = os.path.join(voice_dir, ex.get("file", ""))
+        if os.path.exists(p):
+            out.append((ex, p))
     return out
 
 
