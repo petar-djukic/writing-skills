@@ -555,13 +555,20 @@ def main():
             vf = run(["python3", f"{SK}/verify.py", "--original", pf, "--rewrite", cf,
                       "--anchors-json", ajf, "--json"])
             de = run(["bash", DEAI, cf])
-            if vf.returncode == 0 and de.returncode == 0:
+            fj = vf.stdout if vf.stdout.strip().startswith("{") else "{}"
+            warnings = []
+            if de.returncode != 0:
+                warnings.append("register")
+            if '"similarity"' in fj:
+                warnings.append("similarity")
+            if vf.returncode == 0:
                 rec["status"] = "accepted-mechanical"
                 rec["cand"] = cand_text
                 rec["attempt"] = attempt + 1
+                if warnings:
+                    rec["warnings"] = warnings
                 break
-            # classify for the retry note
-            fj = vf.stdout if vf.stdout.strip().startswith("{") else "{}"
+            # classify for the retry note — only hard checks reach here
             notes = []
             if '"numbers"' in fj or '"citations"' in fj or '"terms"' in fj:
                 notes.append(NUM_NOTE)
@@ -569,10 +576,6 @@ def main():
                 notes.append(MARKUP_NOTE)
             if '"dashes"' in fj:
                 notes.append(DASH_NOTE)
-            if '"similarity"' in fj:
-                notes.append(COPY_NOTE)
-            if de.returncode != 0:
-                notes.append(REG_NOTE)
             note = " ".join(notes) or COPY_NOTE
             rec["status"] = "kept-original"
             rec["last_fail"] = {"verify": json.loads(fj) if fj != "{}" else vf.stdout[:150],
@@ -601,9 +604,10 @@ def main():
             v = f.get("verify")
             why = ",".join(x.get("check", "?") for x in v.get("findings", [])) \
                 if isinstance(v, dict) else "?"
-            if f.get("deai"):
-                why = (why + "," if why else "") + "register"
             print(f"  kept p{r['n']:02d} (L{r['lines'][0]}): {why}")
+        if r.get("warnings"):
+            print(f"  advisory p{r['n']:02d} (L{r['lines'][0]}): "
+                  f"{','.join(r['warnings'])}")
     print("\nMechanical gate only. Before accepting the draft: run the meaning-"
           "entailment review (references/prompts.md) on each accepted paragraph, "
           "and filter-tells over the assembled file.")

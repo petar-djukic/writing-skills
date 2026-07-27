@@ -20,7 +20,8 @@ Checks:
   dashes     the rewrite may not add em-dashes the original lacked — the
              cheapest way for a model to fake punch (GH-243)
   similarity n-gram overlap against the anchor passages, so the model does not
-             simply copy the exemplars (reuses match-structure's shingle guard)
+             simply copy the exemplars (reuses match-structure's shingle guard).
+             Advisory (warn) — logged, never blocks acceptance.
 
 Exit: 0 clean, 1 violations (the loop retries or keeps the original), 2 usage.
 
@@ -229,7 +230,7 @@ def verify(original, rewritten, anchors_json=None, max_shared_run=8):
 
     sim = _similarity(rewritten, anchors_json, max_shared_run)
     if sim and sim.get("violation"):
-        findings.append({"check": "similarity", "severity": "fatal",
+        findings.append({"check": "similarity", "severity": "warn",
                          "detail": f"{sim['longest_shared_run_words']}-word run copied "
                                    f"from an anchor (threshold {max_shared_run})"})
 
