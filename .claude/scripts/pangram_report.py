@@ -126,11 +126,25 @@ def _pct(f):
     return None if f is None else round(float(f) * 100, 1)
 
 
+def _mean_window_score(response):
+    windows = response.get("windows") or []
+    scores = [w["ai_assistance_score"] for w in windows
+              if w.get("ai_assistance_score") is not None]
+    if not scores:
+        return None
+    return round(sum(scores) / len(scores), 4)
+
+
 def fractions(response):
     return {
         "ai": _pct(response.get("fraction_ai")),
         "ai_assisted": _pct(response.get("fraction_ai_assisted")),
         "human": _pct(response.get("fraction_human")),
+        "num_ai": response.get("num_ai_segments", 0),
+        "num_ai_assisted": response.get("num_ai_assisted_segments", 0),
+        "num_human": response.get("num_human_segments", 0),
+        "mean_window_score": _mean_window_score(response),
+        "num_windows": len(response.get("windows") or []),
         "verdict": response.get("prediction_short") or None,
     }
 
@@ -146,6 +160,12 @@ def diff(current, baseline, cur_paras, base_paras):
     c, b = fractions(current), fractions(baseline)
     delta = {k: (None if c[k] is None or b[k] is None else round(c[k] - b[k], 1))
              for k in ("ai", "ai_assisted", "human")}
+    for k in ("num_ai", "num_ai_assisted", "num_human"):
+        delta[k] = c[k] - b[k]
+    if c["mean_window_score"] is not None and b["mean_window_score"] is not None:
+        delta["mean_window_score"] = round(c["mean_window_score"] - b["mean_window_score"], 4)
+    else:
+        delta["mean_window_score"] = None
     out = {"baseline": b, "current": c, "delta": delta, "paragraphs": None,
            "note": None}
 
@@ -216,10 +236,15 @@ def cmd_report(a):
             return 0
         b, c, dl = d["baseline"], d["current"], d["delta"]
         arrow = lambda v: "--" if v is None else f"{v:+.1f}pt"
+        darrow = lambda v: "--" if v is None else f"{v:+.4f}"
+        segs = lambda f: f"{f['num_ai']}ai/{f['num_ai_assisted']}aa/{f['num_human']}h"
+        mws = lambda f: "--" if f["mean_window_score"] is None else f"{f['mean_window_score']:.4f}"
         print(f"verdict:      {b['verdict']} -> {c['verdict']}")
         print(f"AI:           {b['ai']}% -> {c['ai']}%   ({arrow(dl['ai'])})")
         print(f"AI-assisted:  {b['ai_assisted']}% -> {c['ai_assisted']}%   ({arrow(dl['ai_assisted'])})")
         print(f"human:        {b['human']}% -> {c['human']}%   ({arrow(dl['human'])})")
+        print(f"segments:     {segs(b)} -> {segs(c)}")
+        print(f"mean_window:  {mws(b)} -> {mws(c)}   ({darrow(dl['mean_window_score'])})")
         if d["note"]:
             print(f"\n{d['note']}")
         else:

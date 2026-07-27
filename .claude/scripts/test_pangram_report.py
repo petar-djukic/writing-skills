@@ -16,7 +16,8 @@ import pangram_report as pr  # noqa: E402
 SAMPLE = os.path.join(HERE, "testdata_pangram_sample.md")
 
 
-def response(spans, scores, fracs=(0.7, 0.2, 0.1), verdict="Mixed"):
+def response(spans, scores, fracs=(0.7, 0.2, 0.1), verdict="Mixed",
+             segs=(2, 1, 1)):
     """Build a response whose windows sit exactly on the given paragraphs."""
     windows = []
     for i, sc in scores.items():
@@ -30,7 +31,10 @@ def response(spans, scores, fracs=(0.7, 0.2, 0.1), verdict="Mixed"):
     return {
         "stage": "STAGE_SUCCESS", "prediction_short": verdict,
         "fraction_ai": fracs[0], "fraction_ai_assisted": fracs[1],
-        "fraction_human": fracs[2], "windows": windows,
+        "fraction_human": fracs[2],
+        "num_ai_segments": segs[0], "num_ai_assisted_segments": segs[1],
+        "num_human_segments": segs[2],
+        "windows": windows,
     }
 
 
@@ -108,6 +112,29 @@ def main():
     # 10. A response with no windows degrades rather than crashing.
     empty = {"stage": "STAGE_SUCCESS", "fraction_ai": 0.0, "windows": []}
     assert all(p["score"] is None for p in pr.map_windows(empty, spans))
+
+    # 11. fractions() includes segment counts, mean_window_score, num_windows.
+    f = pr.fractions(resp)
+    assert f["num_ai"] == 2 and f["num_ai_assisted"] == 1 and f["num_human"] == 1
+    assert f["num_windows"] == 1
+    assert f["mean_window_score"] == 0.85
+
+    # 12. diff() deltas segment counts and mean_window_score.
+    before12 = response(spans, {1: 0.85}, fracs=(0.70, 0.20, 0.10), segs=(3, 1, 0))
+    after12 = response(spans, {1: 0.20}, fracs=(0.15, 0.10, 0.75),
+                        verdict="Human", segs=(0, 1, 3))
+    d12 = pr.diff(after12, before12, pr.map_windows(after12, spans),
+                  pr.map_windows(before12, spans))
+    assert d12["delta"]["num_ai"] == -3
+    assert d12["delta"]["num_ai_assisted"] == 0
+    assert d12["delta"]["num_human"] == 3
+    assert d12["delta"]["mean_window_score"] == round(0.20 - 0.85, 4)
+
+    # 13. mean_window_score is None when a response has no windows.
+    f_empty = pr.fractions(empty)
+    assert f_empty["mean_window_score"] is None
+    assert f_empty["num_windows"] == 0
+    assert f_empty["num_ai"] == 0
 
     print("test_pangram_report: all assertions passed (no network, no key)")
 
