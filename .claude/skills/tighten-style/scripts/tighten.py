@@ -66,8 +66,8 @@ def _mods():
     for d in (SHARED, MATCH_VOICE, SK):
         if d not in sys.path:
             sys.path.insert(0, d)
-    import md_paragraphs, register_markers, pairs as pairs_mod, check_style
-    return md_paragraphs, register_markers, pairs_mod, check_style
+    import prose_document, register_markers, pairs as pairs_mod, check_style
+    return prose_document, register_markers, pairs_mod, check_style
 
 
 def _sentence_stats(text):
@@ -84,7 +84,10 @@ def _sentence_stats(text):
 
 def _doc_sentence_stats(lines):
     """Sentence stats over a full document (list of lines), prose only."""
-    md_paragraphs, _, _, _ = _mods()
+    for d in (SHARED,):
+        if d not in sys.path:
+            sys.path.insert(0, d)
+    import md_paragraphs
     r = md_paragraphs.parse("\n".join(lines))
     prose = " ".join(txt for _, _, txt in r.paragraphs)
     return _sentence_stats(prose)
@@ -156,10 +159,14 @@ def main():
                          "advisory when candidates push below this floor")
     a = ap.parse_args()
 
-    md_paragraphs, rm, _, cs = _mods()
+    pd, rm, _, cs = _mods()
     art = os.path.abspath(a.article)
-    out = a.out or re.sub(r"\.md$", ".tight.md", art)
-    parsed = md_paragraphs.parse_file(art)
+    ext = os.path.splitext(art)[1].lower()
+    out = a.out or re.sub(r"\.(md|yaml|yml)$", ".tight\\1", art)
+    if out == art:
+        out = art + ".tight"
+    doc = pd.ProseDocument.open(art)
+    parsed = doc.to_parse_result()
 
     # Findings per paragraph line-range, from the checker run once whole-file.
     all_findings = cs.check(art)

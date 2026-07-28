@@ -87,6 +87,15 @@ class ProseDocument:
     def text(self):
         raise NotImplementedError
 
+    def to_parse_result(self):
+        """Backward-compat adapter returning a namedtuple matching
+        md_paragraphs.Result(lines, fm_close, paragraphs, coverage, unaccounted).
+
+        Orchestrators that currently call md_paragraphs.parse_file() can switch
+        to ProseDocument.open(path).to_parse_result() with no other change.
+        """
+        raise NotImplementedError
+
 
 # ---------------------------------------------------------------------------
 # Markdown backend
@@ -102,16 +111,10 @@ class MarkdownDocument(ProseDocument):
 
     def _parse(self):
         import md_paragraphs
-        r = md_paragraphs.parse(self._content_from_lines())
+        self._md_result = md_paragraphs.parse(self._content_from_lines())
         self._paras = []
-        heading = None
-        for ln in range(1, len(self._lines) + 1):
-            cat = r.coverage.get(ln)
-            if cat == "heading":
-                heading = self._lines[ln - 1].lstrip("#").strip()
-        heading = None
-        for start, end, text in r.paragraphs:
-            ctx = self._heading_before(start, r.coverage)
+        for start, end, text in self._md_result.paragraphs:
+            ctx = self._heading_before(start, self._md_result.coverage)
             self._paras.append(Paragraph(
                 index=len(self._paras), text=text,
                 start_line=start, end_line=end,
@@ -149,6 +152,10 @@ class MarkdownDocument(ProseDocument):
 
     def text(self):
         return self._content_from_lines()
+
+    def to_parse_result(self):
+        import md_paragraphs
+        return md_paragraphs.parse(self._content_from_lines())
 
 
 # ---------------------------------------------------------------------------
@@ -318,6 +325,19 @@ class YamlDocument(ProseDocument):
         buf = io.StringIO()
         self._yaml.dump(self._data, buf)
         return buf.getvalue()
+
+    def to_parse_result(self):
+        from collections import namedtuple
+        Result = namedtuple("Result",
+                            "lines fm_close paragraphs coverage unaccounted")
+        lines = self._raw.split("\n")
+        paras = [(p.start_line, p.end_line, p.text) for p in self._paras]
+        coverage = {}
+        for p in self._paras:
+            for ln in range(p.start_line, p.end_line + 1):
+                coverage[ln] = "prose"
+        return Result(lines=lines, fm_close=-1, paragraphs=paras,
+                      coverage=coverage, unaccounted=[])
 
 
 # ---------------------------------------------------------------------------

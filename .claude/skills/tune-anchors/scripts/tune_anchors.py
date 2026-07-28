@@ -86,20 +86,20 @@ def _sweep_dry_run(voice_dir, articles, arms, k, out_path):
     va = _voice_anchors()
     lg = ledger.Ledger.load(out_path) if out_path else ledger.Ledger()
 
-    # shared paragraph extractor
     if SHARED not in sys.path:
         sys.path.insert(0, SHARED)
     try:
-        import md_paragraphs
+        import prose_document as pd
     except ImportError as e:
-        sys.exit(f"could not import md_paragraphs from {SHARED}: {e}")
+        sys.exit(f"could not import prose_document from {SHARED}: {e}")
 
     for art_path in articles:
         art_path = os.path.abspath(art_path)
         if not os.path.exists(art_path):
             print(f"skip {art_path}: not found", file=sys.stderr)
             continue
-        r = md_paragraphs.parse_file(art_path)
+        doc = pd.ProseDocument.open(art_path)
+        r = doc.to_parse_result()
         paras = [p for _s, _e, p in r.paragraphs if len(p.split()) >= 12]
         if not paras:
             print(f"skip {art_path}: no rewritable paragraphs")
