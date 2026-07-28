@@ -136,6 +136,72 @@ def main():
     assert f_empty["num_windows"] == 0
     assert f_empty["num_ai"] == 0
 
+    # --- Bulk / paragraph payload tests ---
+
+    # 14. build_paragraph_payloads extracts paragraphs and packs into bags.
+    items, bags = pr.build_paragraph_payloads(SAMPLE)
+    assert len(items) > 0, "should produce at least one bag"
+    assert len(bags) == len(items)
+    for item in items:
+        assert "id" in item and "text" in item
+        assert item["id"].startswith("bag-")
+    total_paras = sum(len(b["paragraphs"]) for b in bags)
+    assert total_paras == 3, f"expected 3 paragraphs across bags, got {total_paras}"
+
+    # 15. Bag offsets index the bag text correctly.
+    for item, bag in zip(items, bags):
+        for off in bag["offsets"]:
+            chunk = item["text"][off["start"]:off["end"]]
+            assert chunk.startswith(off["preview"][:30]), \
+                f"offset for para {off['para_index']} does not index its text"
+
+    # 16. Bags respect the word limit.
+    items2, bags2 = pr.build_paragraph_payloads(SAMPLE, word_limit=10)
+    assert len(items2) >= 2, \
+        f"with word_limit=10, should split into multiple bags, got {len(items2)}"
+
+    # 17. map_bulk_results maps per-bag results to paragraphs.
+    bulk_results = []
+    for item, bag in zip(items, bags):
+        windows = []
+        for off in bag["offsets"]:
+            windows.append({
+                "text": off["preview"], "label": "AI-Generated",
+                "ai_assistance_score": 0.85, "confidence": "High",
+                "start_index": off["start"], "end_index": off["end"],
+            })
+        bulk_results.append({
+            "index": 0, "id": item["id"], "task_id": "t1",
+            "stage": "STAGE_SUCCESS", "error": None,
+            "result": {
+                "stage": "STAGE_SUCCESS", "fraction_ai": 0.7,
+                "windows": windows,
+            },
+        })
+    paras_bulk = pr.map_bulk_results(bulk_results, bags)
+    assert len(paras_bulk) == 3
+    assert all(p["flagged"] for p in paras_bulk)
+    assert all(p["score"] == 0.85 for p in paras_bulk)
+    assert paras_bulk[0]["bag_id"].startswith("bag-")
+
+    # 18. map_bulk_results handles failed items gracefully.
+    failed_results = [{
+        "index": 0, "id": items[0]["id"], "task_id": None,
+        "stage": "STAGE_FAILED", "error": "too short",
+        "result": None,
+    }]
+    paras_failed = pr.map_bulk_results(failed_results, bags[:1])
+    for p in paras_failed:
+        assert not p["flagged"]
+        assert p["score"] is None
+        assert p["error"] == "too short"
+
+    # 19. map_bulk_results with empty results.
+    empty_results = pr.map_bulk_results([], bags[:1])
+    for p in empty_results:
+        assert not p["flagged"]
+        assert p["score"] is None
+
     print("test_pangram_report: all assertions passed (no network, no key)")
 
 
