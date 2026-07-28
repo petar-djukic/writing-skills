@@ -121,6 +121,13 @@ def main():
         ref_names = [name for name, _ in SECTION_PATTERNS]
         assert "references" in ref_names
 
+        # 11. _FM regex extracts front matter for preservation (GH-298).
+        draft_with_fm = "---\ntitle: Test\ndate: 2026-07-28\n---\n\n# Intro\n\nBody text.\n"
+        fm_match = ms._FM.match(draft_with_fm)
+        assert fm_match is not None, "_FM must match YAML front matter"
+        assert fm_match.group(0).startswith("---\ntitle: Test")
+        assert ms._FM.match("# No front matter\n\nJust text.") is None
+
         print("test_voice_corpus: all assertions passed")
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
