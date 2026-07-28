@@ -57,6 +57,7 @@ THRESHOLDS = {
         "punch_clustering_max": 0.25,      # max fraction of paragraphs closing on a punch
         "salad_rate_max": 8.0,             # max salad sentences per 100
         "hyphen_compound_max": 5.0,        # max coined hyphen compounds per 500 words
+        "opener_dominance_max": 0.25,      # max fraction of sentences any single word may open
     },
     "medium": {
         "sentence_length_std_min": 4.0,
@@ -71,6 +72,7 @@ THRESHOLDS = {
         "punch_clustering_max": 0.30,
         "salad_rate_max": 10.0,
         "hyphen_compound_max": 6.0,
+        "opener_dominance_max": 0.30,
     },
     "relaxed": {
         "sentence_length_std_min": 3.0,
@@ -85,6 +87,7 @@ THRESHOLDS = {
         "punch_clustering_max": 0.40,
         "salad_rate_max": 15.0,
         "hyphen_compound_max": 8.0,
+        "opener_dominance_max": 0.35,
     },
 }
 
@@ -1205,6 +1208,26 @@ def analyze(text: str, threshold_name: str = "medium") -> dict:
                 "detail": f"Only {unique_ratio:.0%} of sentences start with unique words. Most common: {top}",
                 "metric": unique_ratio,
             })
+
+        # Dominant opener: any single word opening more than the threshold
+        # fraction of sentences. Unlike opening_diversity (which averages
+        # across the vocabulary), this catches a single overused word even
+        # when the rest of the openers are varied.
+        if len(first_words) >= 20:
+            counter = Counter(w.lower() for w in first_words if w)
+            n_sents = len(first_words)
+            dom_max = thresholds.get("opener_dominance_max", 0.25)
+            for word, count in counter.most_common(3):
+                frac = count / n_sents
+                if frac > dom_max:
+                    issues.append({
+                        "type": "dominant-opener",
+                        "detail": (f'"{word.capitalize()}" opens {count} of '
+                                   f'{n_sents} sentences ({frac:.0%}). '
+                                   f'Threshold: {dom_max:.0%}.'),
+                        "severity": "medium" if frac < dom_max + 0.10 else "high",
+                        "metric": round(frac, 2),
+                    })
 
     # --- List ratio ---
     list_count, total_lines = count_list_lines(text)
