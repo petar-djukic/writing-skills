@@ -342,11 +342,14 @@ def rewrite_draft(backend, draft_path, blueprint_path, source_papers, mimic):
     new_text = _strip_added_bold(draft_text, new_text.strip())
     verification = verify_document(read_prose(draft_path), new_text)
 
+    fm_match = _FM.match(draft_text)
+    front_matter = fm_match.group(0) if fm_match else ""
+
     out_path = os.path.join(
         os.path.dirname(os.path.abspath(draft_path)),
         os.path.splitext(os.path.basename(draft_path))[0] + "-rewritten.md")
     with open(out_path, "w") as f:
-        f.write(new_text)
+        f.write(front_matter + new_text)
     return out_path, verification, usage.output_tokens
 
 
