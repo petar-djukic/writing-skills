@@ -23,3 +23,4 @@ pypdf = "*"
 [pypi-dependencies]
 pymupdf4llm = "*"
 anthropic = "*"
+ruamel-yaml = ">=0.19.1, <0.20"
