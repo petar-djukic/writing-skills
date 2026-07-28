@@ -136,9 +136,10 @@ are additive, never required.
   distances from it, not only against fixed thresholds) and injects
   topically-nearest exemplar passages into rewrite and overshoot prompts as
   voice anchors.
-- **match-structure** — accepts the manifest as a curated exemplar source, so a
-  repository without a `references.yaml` corpus can still use persona
-  extraction and comparison.
+- **match-outline** — accepts the manifest as a curated exemplar source for
+  section-level persona extraction, blueprint synthesis, and comparison.
+- **match-structure** — provides the quantitative metrics, corpus aggregation,
+  and voice anchor retrieval that match-outline and other skills import.
 - **match-voice** — retrieves the same anchors and sends them with the
   paragraph to a second model family, then gates the candidate on citation and
   number preservation, meaning entailment, anchor similarity, and register. Its
