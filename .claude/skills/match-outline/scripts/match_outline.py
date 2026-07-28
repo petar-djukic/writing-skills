@@ -25,8 +25,8 @@ Usage:
     match_outline.py DRAFT.md --rewrite                # rewrite w/ latest blueprint
     match_outline.py DRAFT.md --exemplar P1 --rewrite  # extract + rewrite
 
-Requires: the `anthropic` package for the default model (claude-sonnet-5).
-Pass --model gemma4:12b to use a local Ollama server instead.
+Requires: an Ollama endpoint for the default model (gpt-oss:120b-cloud).
+Pass --model claude-sonnet-5 to use the Anthropic API instead.
 """
 
 import argparse
@@ -46,7 +46,7 @@ ANALYSIS_MD = os.path.join(SKILL_DIR, "references", "voice-analysis-instructions
 APPLICATION_MD = os.path.join(SKILL_DIR, "references", "style-application-instructions.md")
 REPORT_TEMPLATE = os.path.join(SKILL_DIR, "references", "comparison-report-template.md")
 
-DEFAULT_MODEL = os.environ.get("MATCH_OUTLINE_MODEL", "claude-sonnet-5")
+DEFAULT_MODEL = os.environ.get("MATCH_OUTLINE_MODEL", "gpt-oss:120b-cloud")
 DEFAULT_ENDPOINT = os.environ.get("OLLAMA_ENDPOINT", "http://localhost:11434")
 MAX_EXCERPT_CHARS = 12000          # per paper in comparison and rewrite mode
 MAX_CORPUS_CHARS = 350000          # ~100K tokens

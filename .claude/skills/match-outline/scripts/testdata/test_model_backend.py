@@ -4,10 +4,10 @@
 Run: python3 testdata/test_model_backend.py
 
 Verifies:
-  1. Default model is claude-* (structural rewrite uses a large model)
+  1. Default model is an Ollama cloud model (gpt-oss:120b-cloud)
   2. --help works without the anthropic package
   3. _is_claude routing is correct
-  4. Claude backend is selected for the default model
+  4. Ollama backend is selected for the default model
 """
 import os
 import subprocess
@@ -19,13 +19,13 @@ sys.path.insert(0, SCRIPTS)
 import match_outline as ms  # noqa: E402
 
 
-def test_default_is_claude():
-    """The default model must be a claude-* model."""
-    assert ms.DEFAULT_MODEL.startswith("claude-"), (
-        f"DEFAULT_MODEL is '{ms.DEFAULT_MODEL}' — must be claude-*. "
-        "match-outline does structural rewriting where capability matters; "
-        "match-voice handles AI diction cleanup downstream.")
-    print(f"  default model: {ms.DEFAULT_MODEL} (claude)")
+def test_default_is_ollama():
+    """The default model must be an Ollama model, not claude-*."""
+    assert not ms._is_claude(ms.DEFAULT_MODEL), (
+        f"DEFAULT_MODEL is '{ms.DEFAULT_MODEL}' — must not be claude-*. "
+        "match-outline defaults to an Ollama cloud model; pass --model "
+        "claude-* explicitly for the Anthropic API.")
+    print(f"  default model: {ms.DEFAULT_MODEL} (ollama)")
 
 
 def test_is_claude_routing():
@@ -34,6 +34,7 @@ def test_is_claude_routing():
     assert ms._is_claude("claude-sonnet-5")
     assert not ms._is_claude("gemma4:12b")
     assert not ms._is_claude("gemma4:31b-cloud")
+    assert not ms._is_claude("gpt-oss:120b-cloud")
     assert not ms._is_claude("llama3.1:8b")
     print("  _is_claude routing: correct")
 
@@ -50,15 +51,15 @@ def test_help_no_anthropic():
 
 
 def test_backend_construction():
-    """Default model routes to Claude backend."""
+    """Default model routes to Ollama backend."""
     model = ms.DEFAULT_MODEL
-    assert ms._is_claude(model)
-    assert not ms._is_claude("gemma4:12b")
-    print("  backend routing: claude for default, ollama for non-claude")
+    assert not ms._is_claude(model)
+    assert ms._is_claude("claude-sonnet-5")
+    print("  backend routing: ollama for default, claude for claude-*")
 
 
 def main():
-    test_default_is_claude()
+    test_default_is_ollama()
     test_is_claude_routing()
     test_help_no_anthropic()
     test_backend_construction()

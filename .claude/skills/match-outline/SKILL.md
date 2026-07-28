@@ -3,8 +3,8 @@ name: match-outline
 description: >-
   Whole-document voice analysis: compare a draft against a corpus profile,
   extract voice persona blueprints from exemplar papers, and rewrite the
-  entire draft in one pass to match a voice. Uses a large Claude model for
-  structural rewriting; match-voice cleans AI diction downstream.
+  entire draft in one pass to match a voice. Uses gpt-oss:120b-cloud via
+  Ollama by default; match-voice cleans AI diction downstream.
   Triggers: compare my outline, section analysis, does my intro match the
   field, methodology conventions, results conventions, rewrite in the
   style of, apply the voice, voice persona, exemplar, blueprint
@@ -22,9 +22,10 @@ It complements `match-structure` (which provides the quantitative metrics,
 frequency tables, and similarity math this skill imports) and `filter-tells`
 (which detects generic AI-writing patterns at the paragraph level).
 
-The rewrite uses a large Claude model by default. AI-sounding output is
-expected at this stage — `match-voice` handles paragraph-level diction
-cleanup downstream with a local model.
+The rewrite uses `gpt-oss:120b-cloud` via Ollama by default. Pass
+`--model claude-sonnet-5` to use the Anthropic API instead. AI-sounding
+output is expected at this stage — `match-voice` handles paragraph-level
+diction cleanup downstream.
 
 ## Where things live
 
@@ -114,7 +115,7 @@ $RUN <skill>/scripts/match_outline.py <draft.md> --db <db-path>
 $RUN <skill>/scripts/match_outline.py --db <db-path> \
   --exemplar paper1 --exemplar paper2 --name icml
 
-# Rewrite a draft (uses claude-sonnet-5 by default)
+# Rewrite a draft (uses gpt-oss:120b-cloud by default)
 $RUN <skill>/scripts/match_outline.py <draft.md> --db <db-path> --rewrite
 ```
 
@@ -130,6 +131,6 @@ Two sources of exemplars are accepted:
 ## Dependencies
 
 `match_outline.py` imports `style` from `match-structure/scripts/` for
-corpus selection and the similarity guard. The `anthropic` package is
-required for the default model (claude-sonnet-5). Pass `--model gemma4:12b`
-to use a local Ollama server instead.
+corpus selection and the similarity guard. Default model is
+`gpt-oss:120b-cloud` via Ollama. Pass `--model claude-sonnet-5` to use
+the Anthropic API (requires the `anthropic` package).
