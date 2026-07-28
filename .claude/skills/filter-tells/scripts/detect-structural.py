@@ -1072,6 +1072,168 @@ def detect_frame_parallelism(sentences: list) -> list:
     return issues
 
 
+def detect_paragraph(para_text: str, threshold_name: str = "medium",
+                     para_index: int = 0) -> dict:
+    """Run paragraph-scoped structural checks on a single prose paragraph.
+
+    Returns {issues, metrics} for density-based patterns that make sense
+    within a paragraph: antithesis, tricolon, parenthetical definitions,
+    passive enabling, rather-than, contrast flips, both-and, ordinal
+    walkthrough, and performance intensity.
+
+    Document-level checks (burstiness across paragraphs, opening diversity,
+    frame parallelism, punch clustering, paragraph schema) require the full
+    document and stay in analyze().
+    """
+    thresholds = THRESHOLDS[threshold_name]
+    issues = []
+    metrics = {}
+
+    prose_no_lists = "\n".join(
+        l for l in para_text.split("\n")
+        if not re.match(r"^\s*[-*+•]\s|^\s*\d+[.)]\s", l)
+    )
+    words = prose_no_lists.split()
+    word_count = len(words)
+    if word_count < 10:
+        return {"issues": [], "metrics": {"word_count": word_count}}
+
+    sentences_all = split_sentences_all(prose_no_lists)
+
+    # --- Antithesis ---
+    antithesis_issues = detect_antithesis(sentences_all)
+    metrics["antithesis_pairs"] = len(antithesis_issues)
+    if antithesis_issues:
+        for a in antithesis_issues:
+            a["paragraph"] = para_index + 1
+        issues.extend(antithesis_issues)
+
+    # --- Tricolon density ---
+    tricolon_count = len(re.findall(
+        r"[^,.;:\n]{3,60},\s+[^,.;:\n]{3,60},\s+and\s+[^,.;:\n]{3,60}", prose_no_lists))
+    anaphoric_lists = 0
+    asyndetic_lists = 0
+    for s in sentences_all:
+        segs = [seg.strip() for seg in s.split(",") if seg.strip()]
+        if len(segs) < 3:
+            continue
+        heads = []
+        for seg in segs:
+            w = seg.split()
+            h = w[0].lower() if w else ""
+            if h == "and" and len(w) > 1:
+                h = w[1].lower()
+            heads.append(h)
+        found_anaphora = False
+        for k in range(len(heads) - 2):
+            h = heads[k]
+            if h and len(h) > 1 and h == heads[k + 1] == heads[k + 2]:
+                found_anaphora = True
+                break
+        if not found_anaphora:
+            for k in range(len(heads) - 1):
+                h = heads[k + 1]
+                if (h and len(h) > 1 and k + 2 <= len(heads) - 1
+                        and h == heads[k + 2]
+                        and h in (w_.lower() for w_ in segs[k].split())):
+                    found_anaphora = True
+                    break
+        if found_anaphora:
+            anaphoric_lists += 1
+            continue
+        if (not re.match(r"(?i)and\b", segs[-1])
+                and all(len(seg.split()) <= 8 for seg in segs[1:])
+                and all(seg[0].islower() for seg in segs[1:] if seg)):
+            asyndetic_lists += 1
+    tricolon_count += anaphoric_lists + asyndetic_lists
+    tricolon_density = (tricolon_count / word_count) * 500 if word_count > 0 else 0
+    metrics["tricolon_density_per_500w"] = round(tricolon_density, 1)
+    metrics["anaphoric_list_count"] = anaphoric_lists
+    metrics["asyndetic_list_count"] = asyndetic_lists
+
+    # --- Parenthetical definition density ---
+    paren_def_count = len(re.findall(r"\w+\s+\([^)]{10,}[^)]*\)", prose_no_lists))
+    paren_def_density = (paren_def_count / word_count) * 500 if word_count > 0 else 0
+    metrics["paren_def_density_per_500w"] = round(paren_def_density, 1)
+
+    # --- Passive enabling verb density ---
+    passive_enabling = len(re.findall(
+        r"\bis\s+(achieved|enabled|realized|facilitated|accomplished|attained|ensured|maintained|provided|supported)\b",
+        prose_no_lists, re.IGNORECASE
+    ))
+    passive_density = (passive_enabling / word_count) * 500 if word_count > 0 else 0
+    metrics["passive_enabling_per_500w"] = round(passive_density, 1)
+
+    # --- "rather than" frequency ---
+    rather_than_count = len(re.findall(r"\brather than\b", prose_no_lists, re.IGNORECASE))
+    rather_than_density = (rather_than_count / word_count) * 500 if word_count > 0 else 0
+    metrics["rather_than_per_500w"] = round(rather_than_density, 1)
+
+    # --- Intra-sentence contrast flips ---
+    dash_flip = len(re.findall(
+        r"\b(?:is not|isn't|not)\s[^.?!]{0,40}[—–-]\s*(?:it's|it is|because|that's)",
+        prose_no_lists, re.IGNORECASE))
+    comma_not = len(re.findall(r",\s+not\s+[^,.?!]{3,40}[.?!]", prose_no_lists))
+    contrast_flip_density = ((dash_flip + comma_not) / word_count) * 500 if word_count > 0 else 0
+    metrics["dash_flip_count"] = dash_flip
+    metrics["comma_not_count"] = comma_not
+    metrics["contrast_flip_per_500w"] = round(contrast_flip_density, 1)
+
+    # --- "both X and Y" frequency ---
+    both_and_count = len(re.findall(r"\bboth\s+\w+\s+and\s+\w+", prose_no_lists, re.IGNORECASE))
+    both_and_density = (both_and_count / word_count) * 500 if word_count > 0 else 0
+    metrics["both_and_per_500w"] = round(both_and_density, 1)
+
+    # --- Performance intensity ---
+    perf = analyze_performance(sentences_all)
+    metrics.update(perf)
+
+    # --- Per-paragraph opening diversity and dominant opener ---
+    sentences_para = split_sentences(prose_no_lists)
+    if len(sentences_para) >= 4:
+        openers = get_sentence_openings(sentences_para)
+        first_words = [o.split()[0].lower() if o.split() else "" for o in openers]
+        unique_ratio = len(set(first_words)) / len(first_words)
+        metrics["opening_diversity"] = round(unique_ratio, 2)
+        counter = Counter(w for w in first_words if w)
+        if counter:
+            top_word, top_count = counter.most_common(1)[0]
+            frac = top_count / len(first_words)
+            metrics["dominant_opener"] = top_word
+            metrics["dominant_opener_frac"] = round(frac, 2)
+            dom_max = thresholds.get("opener_dominance_max", 0.25)
+            if frac > dom_max and len(first_words) >= 5:
+                issues.append({
+                    "type": "dominant-opener",
+                    "detail": (f'Paragraph {para_index + 1}: "{top_word.capitalize()}" '
+                               f'opens {top_count} of {len(first_words)} sentences '
+                               f'({frac:.0%}).'),
+                    "severity": "medium",
+                    "paragraph": para_index + 1,
+                    "metric": round(frac, 2),
+                })
+
+    # --- Ordinal walkthrough (within paragraph) ---
+    _ordinal_tpl = re.compile(
+        r"\bthe\s+(first|second|third|fourth|fifth)\s+"
+        r"(thing|one|was|is|step|reason|problem|issue|lesson|part)\b",
+        re.IGNORECASE)
+    ordinals = {m.group(1).lower() for m in _ordinal_tpl.finditer(para_text)}
+    if len(ordinals) >= 2:
+        issues.append({
+            "type": "ordinal-walkthrough",
+            "detail": (f"Paragraph {para_index + 1} walks through "
+                       f"{sorted(ordinals)} with the 'The <ordinal> <noun>' "
+                       "template — enumerated-walkthrough AI cadence."),
+            "severity": "medium",
+            "position": f"paragraph {para_index + 1}",
+        })
+    metrics["ordinal_count"] = len(ordinals)
+
+    metrics["word_count"] = word_count
+    return {"issues": issues, "metrics": metrics}
+
+
 def analyze(text: str, threshold_name: str = "medium") -> dict:
     """Run all structural checks. Return issues dict."""
     thresholds = THRESHOLDS[threshold_name]
