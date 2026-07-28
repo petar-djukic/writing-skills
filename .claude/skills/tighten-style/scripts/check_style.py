@@ -151,14 +151,111 @@ def find(rule, line, detail, text, fix=None):
             "text": text[:120], "fix": fix}
 
 
+def tighten_style_check(text, rules=None, base_line=1):
+    """Paragraph-scoped style check on a raw text string.
+
+    Runs TS-01, TS-02, TS-03, TS-04, TS-05, TS-08, TS-15 on the text.
+    TS-14 (abbreviation before definition) needs cross-section state and
+    stays in check(path). Returns list of finding dicts.
+
+    If rules is a set of rule IDs, only those are checked.
+    base_line offsets reported line numbers (for embedding in a larger file).
+    """
+    _shared()
+    rm = _markers()
+    findings = []
+    lines = text.split("\n")
+    flat_text = re.sub(r"[`*_]", "", " ".join(text.split()).lower())
+
+    want = rules if rules else None
+
+    for idx, raw in enumerate(lines, base_line):
+        nxt = lines[idx - base_line + 1] if (idx - base_line + 1) < len(lines) else ""
+        low = (raw + " " + nxt).lower()
+        own = len(raw)
+
+        if not want or "TS-01" in want:
+            for pat, fix in NEEDLESS.items():
+                for m in re.finditer(pat, low):
+                    if m.start() < own:
+                        findings.append(find("TS-01", idx,
+                                             f"needless words: '{m.group(0)}'",
+                                             raw.strip(), fix))
+        if not want or "TS-03" in want:
+            for pat, fix in NEGATIVE_FORM.items():
+                for m in re.finditer(pat, low):
+                    if m.start() < own:
+                        findings.append(find("TS-03", idx,
+                                             f"negative form: '{m.group(0)}'",
+                                             raw.strip(), fix))
+        if not want or "TS-05" in want:
+            for m in re.finditer(INTENSIFIERS, low):
+                if m.group(0) == "very" and DEMONSTRATIVE_VERY.search(
+                        low[max(0, m.start() - 12):m.end()]):
+                    continue
+                if m.start() < own:
+                    findings.append(find("TS-05", idx,
+                                         f"empty intensifier: '{m.group(0)}'",
+                                         raw.strip(),
+                                         "delete, or strengthen the word it props up"))
+        if not want or "TS-15" in want:
+            for m in re.finditer(IMPORTANCE, low):
+                if m.start() >= own:
+                    continue
+                if any(h in flat_text for h in TERM_OF_ART_HINTS):
+                    continue
+                findings.append(find("TS-15", idx,
+                                     f"asserts importance: '{m.group(0)}'",
+                                     raw.strip(),
+                                     "state what makes it matter, or cut it "
+                                     "(check the term-of-art exception first)"))
+
+    for sent in split_sentences(text):
+        low = sent.lower()
+
+        if not want or "TS-08" in want:
+            n = len(re.findall(HEDGES, low))
+            if n >= HEDGE_STACK:
+                findings.append(find("TS-08", base_line,
+                                     f"{n} hedges in one sentence", sent,
+                                     "keep the one carrying real uncertainty"))
+
+        if not want or "TS-02" in want:
+            agentive = rm.AGENTIVE.findall(sent)
+            passives = max(0, len(rm.PASSIVE.findall(sent))
+                           - len(rm._ADJECTIVAL.findall(sent)))
+            if agentive:
+                findings.append(find("TS-02", base_line,
+                                     f"agentive passive: '{agentive[0].strip()}...'",
+                                     sent, "name the actor as the subject"))
+            elif passives >= 3:
+                findings.append(find("TS-02", base_line,
+                                     f"{passives} passives in one sentence",
+                                     sent, "recast at least one as active"))
+
+        if not want or "TS-04" in want:
+            noms = rm.NOMINALIZATION.findall(sent)
+            of_chain = re.search(
+                r"\w+(?:tion|ment|ance|ence|ity|ness|ism|al)s?\s+of\s+"
+                r"(?:the|a|an|each|every|this|that|its|their)\b", low)
+            if len(set(n_.lower() for n_ in noms)) >= 3 and of_chain:
+                findings.append(find("TS-04", base_line,
+                                     f"{len(noms)} nominalizations in one "
+                                     f"sentence ({', '.join(noms[:3])})",
+                                     sent, "restore the buried verbs"))
+
+    return findings
+
+
+check_paragraph = tighten_style_check
+
+
 def check(path):
     text, parsed = load_prose(path)
     findings = []
     prose_lines = {ln for ln, cat in parsed.coverage.items() if cat == "prose"}
     lines = text.split("\n")
 
-    # Prose wraps, so a term of art can straddle a line break. Map each line to
-    # its whole paragraph, flattened, and test the exception against that.
     para_of = {}
     for start, end, body in parsed.paragraphs:
         flat = re.sub(r"[`*_]", "", " ".join(body.split()).lower())
@@ -168,10 +265,9 @@ def check(path):
     for idx, raw in enumerate(lines, 1):
         if idx not in prose_lines:
             continue
-        # Join the following prose line so wrapped phrases match as written.
         nxt = lines[idx] if idx < len(lines) and (idx + 1) in prose_lines else ""
         low = (raw + " " + nxt).lower()
-        own = len(raw)          # a match must start within this line
+        own = len(raw)
 
         for pat, fix in NEEDLESS.items():
             for m in re.finditer(pat, low):
@@ -186,7 +282,7 @@ def check(path):
         for m in re.finditer(INTENSIFIERS, low):
             if m.group(0) == "very" and DEMONSTRATIVE_VERY.search(
                     low[max(0, m.start() - 12):m.end()]):
-                continue        # "these very detectors" = precisely these
+                continue
             if m.start() < own:
                 findings.append(find("TS-05", idx, f"empty intensifier: '{m.group(0)}'",
                                      raw.strip(), "delete, or strengthen the word it props up"))
@@ -195,34 +291,23 @@ def check(path):
                 continue
             span = para_of.get(idx, re.sub(r"[`*_]", "", low))
             if any(h in span for h in TERM_OF_ART_HINTS):
-                continue          # term of art — the exception is load-bearing
+                continue
             findings.append(find("TS-15", idx, f"asserts importance: '{m.group(0)}'",
                                  raw.strip(),
                                  "state what makes it matter, or cut it "
                                  "(check the term-of-art exception first)"))
 
-    # Per-sentence rules. TS-02 and TS-04 were advertised but never
-    # implemented — a paragraph of textbook passives returned zero findings
-    # (GH-223) — so the per-sentence checks live here beside the hedge stack.
     rm = _markers()
     for para in parsed.paragraphs:
         for sent in split_sentences(para[2]):
             low = sent.lower()
 
-            # TS-08: hedge STACKS — one hedge is calibration.
             n = len(re.findall(HEDGES, low))
             if n >= HEDGE_STACK:
                 findings.append(find("TS-08", para[0],
                                      f"{n} hedges in one sentence", sent,
                                      "keep the one carrying real uncertainty"))
 
-            # TS-02: the agentive passive is the strongest signal — the actor
-            # is right there in the by-phrase, so the active form exists and
-            # was avoided. Bare passives flag only when a sentence stacks two:
-            # TS-02's own exception (unknown/irrelevant actor, object as
-            # topic) makes one unremarkable, and TWO are routinely a
-            # deliberate parallel ("a PRD is read by field, a section is read
-            # as writing"). Three is density.
             agentive = rm.AGENTIVE.findall(sent)
             passives = max(0, len(rm.PASSIVE.findall(sent))
                            - len(rm._ADJECTIVAL.findall(sent)))
@@ -235,12 +320,6 @@ def check(path):
                                      f"{passives} passives in one sentence",
                                      sent, "recast at least one as active"))
 
-            # TS-04: three DISTINCT nominalizations plus at least one
-            # "X of the Y" genitive chain — Williams' actual diagnostic for a
-            # buried verb ("the implementation of the verification"). The
-            # chain requirement is what separates buried actions from a list
-            # that merely NAMES nominal things ("quotations, requirements,
-            # citations" — the skill's own SKILL.md fired on itself here).
             noms = rm.NOMINALIZATION.findall(sent)
             of_chain = re.search(
                 r"\w+(?:tion|ment|ance|ence|ity|ness|ism|al)s?\s+of\s+"

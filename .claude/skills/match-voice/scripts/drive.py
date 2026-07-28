@@ -9,10 +9,10 @@ The driver applies the MECHANICAL gate only. Meaning entailment is a judgment
 call and stays with the reviewing model (references/prompts.md); the emitted
 draft is a set of candidates, not an accepted result.
 
-Paragraph extraction and the coverage audit come from md_paragraphs.py, the
-canonical extractor shared by the prose skills: every body line is classified
-(prose / heading / figure / table / code / reference / blockquote / list / rule
-/ blank), and a nonempty unaccounted list means the parser skipped prose.
+Paragraph extraction uses ProseDocument (prose_document.py), which dispatches
+on file extension: markdown files use md_paragraphs.py internally, YAML files
+use ruamel.yaml. The to_parse_result() adapter preserves the tuple shape the
+driver expects.
 
 With --pangram the driver also measures whether the rewrite worked, scanning
 the article before it starts and the draft when it finishes (GH-212). The
@@ -64,18 +64,16 @@ def run(cmd, **kw):
                           errors="replace", **kw)
 
 
-def _md_paragraphs():
-    """One canonical extractor (GH-167), at the shared scripts root (GH-196):
-    a block this driver treats as prose is the same block the metrics and the
-    anchors see."""
+def _prose_document():
+    """ProseDocument factory — handles both markdown and YAML files."""
     sibling = os.path.normpath(os.path.join(SK, "..", "..", "..", "scripts"))
     if sibling not in sys.path:
         sys.path.insert(0, sibling)
     try:
-        import md_paragraphs
-        return md_paragraphs
+        import prose_document
+        return prose_document
     except ImportError as e:
-        sys.exit(f"could not import md_paragraphs.py from {sibling}: {e}")
+        sys.exit(f"could not import prose_document.py from {sibling}: {e}")
 
 
 def pangram_scan(path, work, tag):
@@ -431,10 +429,12 @@ def restore_full_bold(original, candidate):
 def parse_paragraphs(path, min_words):
     """Return (lines, fm_close, paragraphs, coverage, unaccounted).
 
-    Thin wrapper over the canonical extractor; signature preserved so the
-    driver and its --coverage-only output are unchanged.
+    Uses ProseDocument for both markdown and YAML files, with the
+    to_parse_result() adapter for backward-compat tuple shape.
     """
-    r = _md_paragraphs().parse_file(path)
+    pd = _prose_document()
+    doc = pd.ProseDocument.open(path)
+    r = doc.to_parse_result()
     return r.lines, r.fm_close, r.paragraphs, r.coverage, r.unaccounted
 
 

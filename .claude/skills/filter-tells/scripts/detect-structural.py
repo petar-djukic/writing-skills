@@ -1072,18 +1072,19 @@ def detect_frame_parallelism(sentences: list) -> list:
     return issues
 
 
-def detect_paragraph(para_text: str, threshold_name: str = "medium",
-                     para_index: int = 0) -> dict:
+def filter_tells_paragraph(para_text: str, threshold_name: str = "medium",
+                           para_index: int = 0) -> dict:
     """Run paragraph-scoped structural checks on a single prose paragraph.
 
     Returns {issues, metrics} for density-based patterns that make sense
     within a paragraph: antithesis, tricolon, parenthetical definitions,
     passive enabling, rather-than, contrast flips, both-and, ordinal
-    walkthrough, and performance intensity.
+    walkthrough, performance intensity, and parallelism (consecutive
+    same-opener sentences).
 
-    Document-level checks (burstiness across paragraphs, opening diversity,
-    frame parallelism, punch clustering, paragraph schema) require the full
-    document and stay in analyze().
+    Document-level checks (burstiness across paragraphs, frame parallelism,
+    punch clustering, paragraph schema) require the full document and stay
+    in analyze().
     """
     thresholds = THRESHOLDS[threshold_name]
     issues = []
@@ -1213,6 +1214,17 @@ def detect_paragraph(para_text: str, threshold_name: str = "medium",
                     "metric": round(frac, 2),
                 })
 
+    # --- Parallelism (consecutive same-opener sentences) ---
+    if len(sentences_para) >= 3:
+        if len(sentences_para) < 4:
+            openers = get_sentence_openings(sentences_para)
+        par_issues = detect_parallelism(
+            openers, thresholds["parallelism_max_repeats"])
+        for p in par_issues:
+            p["paragraph"] = para_index + 1
+        issues.extend(par_issues)
+        metrics["parallelism_runs"] = len(par_issues)
+
     # --- Ordinal walkthrough (within paragraph) ---
     _ordinal_tpl = re.compile(
         r"\bthe\s+(first|second|third|fourth|fifth)\s+"
@@ -1232,6 +1244,9 @@ def detect_paragraph(para_text: str, threshold_name: str = "medium",
 
     metrics["word_count"] = word_count
     return {"issues": issues, "metrics": metrics}
+
+
+detect_paragraph = filter_tells_paragraph
 
 
 def analyze(text: str, threshold_name: str = "medium") -> dict:

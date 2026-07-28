@@ -241,6 +241,39 @@ def test_unsupported_format():
     print("  unsupported_format: ok")
 
 
+def test_md_to_parse_result():
+    doc = pd.ProseDocument.open(MD_SAMPLE)
+    r = doc.to_parse_result()
+    assert hasattr(r, "lines")
+    assert hasattr(r, "paragraphs")
+    assert hasattr(r, "coverage")
+    assert hasattr(r, "unaccounted")
+    assert len(r.paragraphs) == 3
+    for s, e, txt in r.paragraphs:
+        assert isinstance(s, int)
+        assert isinstance(e, int)
+        assert isinstance(txt, str)
+        assert len(txt.split()) > 0
+    print("  md_to_parse_result: ok")
+
+
+def test_yaml_to_parse_result():
+    doc = pd.ProseDocument.open(YAML_SAMPLE)
+    r = doc.to_parse_result()
+    assert hasattr(r, "lines")
+    assert hasattr(r, "paragraphs")
+    assert hasattr(r, "coverage")
+    assert r.fm_close == -1
+    assert r.unaccounted == []
+    assert len(r.paragraphs) >= 3
+    for s, e, txt in r.paragraphs:
+        assert isinstance(s, int)
+        assert isinstance(txt, str)
+    prose_lines = {ln for ln, cat in r.coverage.items() if cat == "prose"}
+    assert len(prose_lines) > 0
+    print("  yaml_to_parse_result: ok")
+
+
 def main():
     test_md_extraction()
     test_md_round_trip()
@@ -258,6 +291,8 @@ def main():
     test_yaml_replace_multiple()
     test_save_as()
     test_unsupported_format()
+    test_md_to_parse_result()
+    test_yaml_to_parse_result()
     print("test_prose_document: all assertions passed")
 
 
