@@ -25,12 +25,9 @@ import re
 import subprocess
 import sys
 
-import tempfile
-
 _DIR = os.path.dirname(os.path.abspath(__file__))
 _SKILL = os.path.normpath(os.path.join(_DIR, ".."))
 _PROMPTS_PATH = os.path.join(_SKILL, "references", "perplexity-prompts.md")
-_REWRITE_TMPL_PATH = os.path.join(_SKILL, "references", "rewrite-instructions.md")
 _FM = re.compile(r"\A---\s*\n.*?\n(?:---|\.\.\.)\s*\n", re.DOTALL)
 
 DEFAULT_ENDPOINT = os.environ.get("OLLAMA_ENDPOINT", "http://localhost:11434")
