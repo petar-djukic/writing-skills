@@ -6,6 +6,10 @@ Orchestrates the filter-tells steps as a CLI so subagents and workflows
 can invoke the pipeline without reading SKILL.md and calling each script
 by hand.
 
+Steps 1-2: lexical + structural scans (no model).
+Step 3: semantic analysis via Ollama (12 perplexity prompts).
+Steps 4-5: targeted rewrite of flagged passages, recursive validation.
+
 Usage:
     python3 drive.py --article <path> --scan-only
     python3 drive.py --article <path> --no-rewrite [--model <model>]
@@ -21,9 +25,13 @@ import re
 import subprocess
 import sys
 
+import tempfile
+
 _DIR = os.path.dirname(os.path.abspath(__file__))
 _SKILL = os.path.normpath(os.path.join(_DIR, ".."))
 _PROMPTS_PATH = os.path.join(_SKILL, "references", "perplexity-prompts.md")
+_REWRITE_TMPL_PATH = os.path.join(_SKILL, "references", "rewrite-instructions.md")
+_FM = re.compile(r"\A---\s*\n.*?\n(?:---|\.\.\.)\s*\n", re.DOTALL)
 
 DEFAULT_ENDPOINT = os.environ.get("OLLAMA_ENDPOINT", "http://localhost:11434")
 DEFAULT_MODEL = os.environ.get("FILTER_TELLS_MODEL", "gpt-oss:120b-cloud")
@@ -345,6 +353,197 @@ def _extract_field(text: str, field: str) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Paragraph extraction (shared scripts directory)
+# ---------------------------------------------------------------------------
+
+def _import_md_paragraphs():
+    shared = os.path.normpath(os.path.join(_DIR, "..", "..", "..", "scripts"))
+    if shared not in sys.path:
+        sys.path.insert(0, shared)
+    try:
+        import md_paragraphs
+        return md_paragraphs
+    except ImportError:
+        return None
+
+
+def parse_paragraphs(article: str) -> list[list]:
+    """Extract prose paragraphs as [[start_line, end_line, text], ...].
+
+    Uses md_paragraphs.parse_file from the shared scripts directory.
+    """
+    mp = _import_md_paragraphs()
+    if mp is None:
+        raise RuntimeError(
+            "md_paragraphs.py not found in .claude/scripts/")
+    result = mp.parse_file(article)
+    return result.paragraphs
+
+
+# ---------------------------------------------------------------------------
+# Steps 4-5: targeted rewrite and recursive validation
+# ---------------------------------------------------------------------------
+
+_REWRITE_PROMPT = """\
+You are rewriting a passage to remove AI writing patterns while \
+preserving exact meaning and matching the author's voice.
+
+DETECTED ISSUES IN THIS PASSAGE:
+{issue_report}
+
+AUTHOR'S STYLE:
+- Concise, active voice, Strunk & White style
+- Specific and concrete, no vague qualifiers
+- Takes positions, avoids hedging
+- Varied sentence rhythm
+- Technical precision without jargon inflation
+
+PASSAGE TO REWRITE:
+{passage}
+
+CONSTRAINTS:
+1. Fix ONLY the flagged issues
+2. Preserve all technical meaning
+3. Do NOT introduce any patterns from the banned list
+4. Vary sentence length (target std > 5)
+5. Do NOT use mechanical transitions
+6. Do NOT hedge or both-sides
+7. Sound like a human expert wrote this in one draft
+8. Plain sentences are allowed and required
+9. Do NOT close every paragraph on a flourish
+10. Prefer the boring accurate sentence over the clever compressed one
+
+OUTPUT: The rewritten passage only. No commentary."""
+
+
+def _issues_for_lines(scan: dict, start: int, end: int) -> str:
+    """Collect scan issues that fall within a line range."""
+    hits = []
+    for h in scan.get("lexical", {}).get("issues", []):
+        ln = h.get("line", 0)
+        if start <= ln <= end:
+            hits.append(f"L{ln} [{h.get('category','')}] {h.get('text','')[:100]}")
+    for h in scan.get("structural", {}).get("issues", []):
+        pos = h.get("position", "")
+        hits.append(f"[{h.get('type','')}] {h.get('detail','')[:100]}")
+    return "\n".join(hits) if hits else "(general AI patterns detected)"
+
+
+def rewrite_passage(passage: str, issue_report: str,
+                    endpoint: str, model: str, timeout: int) -> str:
+    """Send a passage through the rewrite prompt via Ollama."""
+    prompt = _REWRITE_PROMPT.format(passage=passage, issue_report=issue_report)
+    return generate(prompt, endpoint=endpoint, model=model, timeout=timeout)
+
+
+def run_rewrite(article_path: str, scan: dict, semantic: dict | None,
+                endpoint: str, model: str, timeout: int,
+                voice_profile: str | None = None,
+                max_passes: int = 3) -> dict:
+    """Steps 4-5: rewrite flagged passages and validate recursively."""
+    with open(article_path) as f:
+        original_text = f.read()
+
+    fm_match = _FM.match(original_text)
+    front_matter = fm_match.group(0) if fm_match else ""
+    lines = original_text.split("\n")
+
+    try:
+        paras = parse_paragraphs(article_path)
+    except RuntimeError as e:
+        return {"error": str(e), "passes": []}
+
+    if not paras:
+        return {"error": "no paragraphs extracted", "passes": []}
+
+    # Identify which paragraphs to rewrite based on scan issues
+    targets = []
+    for start, end, text in paras:
+        issues = _issues_for_lines(scan, start, end)
+        if issues != "(general AI patterns detected)" or \
+                scan.get("verdict") in ("likely-ai", "suspicious",
+                                        "suspicious-overshoot"):
+            targets.append((start, end, text, issues))
+
+    if not targets:
+        return {"rewrites": 0, "passes": [],
+                "message": "no passages targeted for rewrite"}
+
+    out_dir = os.path.dirname(os.path.abspath(article_path))
+    base = os.path.splitext(os.path.basename(article_path))[0]
+    draft_path = os.path.join(out_dir, f"{base}.ft-draft.md")
+    passes = []
+    current_lines = list(lines)
+    prev_issue_count = (scan["lexical"]["issue_count"] +
+                        scan["structural"]["issue_count"])
+
+    for pass_num in range(1, max_passes + 1):
+        rewrites_applied = 0
+        for start, end, text, issues in reversed(targets):
+            try:
+                rewritten = rewrite_passage(text, issues,
+                                            endpoint, model, timeout)
+            except RuntimeError as e:
+                passes.append({"pass": pass_num, "error": str(e)})
+                break
+            if rewritten and rewritten.strip() != text.strip():
+                current_lines[start - 1:end] = [rewritten]
+                rewrites_applied += 1
+
+        # Write draft
+        draft_text = "\n".join(current_lines)
+        if front_matter and not draft_text.startswith("---"):
+            draft_text = front_matter + draft_text
+        with open(draft_path, "w") as f:
+            f.write(draft_text)
+
+        # Validate by re-running Steps 1-2
+        lex = run_lexical(draft_path)
+        struct = run_structural(draft_path, voice_profile)
+        val = combine(lex, struct)
+        new_count = val["lexical"]["issue_count"] + val["structural"]["issue_count"]
+
+        pass_record = {
+            "pass": pass_num,
+            "rewrites_applied": rewrites_applied,
+            "issue_count": new_count,
+            "prev_issue_count": prev_issue_count,
+            "verdict": val["verdict"],
+        }
+        passes.append(pass_record)
+
+        if val["verdict"] == "clean":
+            break
+        if new_count >= prev_issue_count:
+            pass_record["stopped"] = "no improvement"
+            break
+
+        prev_issue_count = new_count
+        # Re-parse for next pass
+        try:
+            paras = parse_paragraphs(draft_path)
+        except RuntimeError:
+            break
+        targets = []
+        for start, end, text in paras:
+            issues = _issues_for_lines(val, start, end)
+            if issues != "(general AI patterns detected)":
+                targets.append((start, end, text, issues))
+        if not targets:
+            break
+
+    return {
+        "draft_path": draft_path,
+        "passes": passes,
+        "before": {"issue_count": (scan["lexical"]["issue_count"] +
+                                   scan["structural"]["issue_count"]),
+                   "verdict": scan["verdict"]},
+        "after": {"issue_count": passes[-1]["issue_count"] if passes else 0,
+                  "verdict": passes[-1]["verdict"] if passes else scan["verdict"]},
+    }
+
+
+# ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
 
@@ -391,18 +590,39 @@ def main():
 
     # Step 3: semantic analysis (skip when clean)
     semantic = None
+    server_ok = False
     if scan["needs_step3"]:
         ok, msg = check_server(args.endpoint, args.model)
         if not ok:
             print(f"Error: {msg}", file=sys.stderr)
             scan["step3_error"] = msg
         else:
+            server_ok = True
             prompts = load_prompts()
             with open(args.article) as f:
                 article_text = f.read()
             semantic = run_semantic(article_text, scan, prompts,
                                    args.endpoint, args.model, args.timeout)
             scan["semantic"] = semantic
+
+    if args.no_rewrite:
+        output = json.dumps(scan, indent=2)
+        if args.out:
+            with open(args.out, "w") as f:
+                f.write(output + "\n")
+        else:
+            print(output)
+        sys.exit(0 if scan["verdict"] == "clean" else
+                 2 if scan["verdict"] == "error" else 1)
+
+    # Steps 4-5: targeted rewrite and recursive validation
+    rewrite_result = None
+    if scan["verdict"] != "clean" and server_ok:
+        rewrite_result = run_rewrite(
+            args.article, scan, semantic,
+            args.endpoint, args.model, args.timeout,
+            voice_profile=args.voice_profile)
+        scan["rewrite"] = rewrite_result
 
     result = scan
     output = json.dumps(result, indent=2)
