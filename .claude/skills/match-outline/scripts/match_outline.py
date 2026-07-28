@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Headless driver for the match-outline skill (section-level analysis).
+"""Headless driver for the match-outline skill (whole-document voice analysis).
 
 Three modes, composable:
 
@@ -10,10 +10,10 @@ Three modes, composable:
                          plus a synthesis call when there are several.
                          Writes voice-blueprint-<slug>.md.
   --rewrite              Apply a blueprint (or the corpus profile) to the
-                         draft, section by section, one API call per
-                         section. Writes <draft-stem>-rewritten.md, then
-                         verifies content preservation (citations, numbers)
-                         and runs the similarity plagiarism guard.
+                         whole draft in one pass. Writes
+                         <draft-stem>-rewritten.md, then verifies content
+                         preservation (citations, numbers) and runs the
+                         similarity plagiarism guard.
 
 All analysis instructions are read at runtime from the skill's own
 references/ files — the same files the interactive skill uses — so there is
@@ -25,10 +25,8 @@ Usage:
     match_outline.py DRAFT.md --rewrite                # rewrite w/ latest blueprint
     match_outline.py DRAFT.md --exemplar P1 --rewrite  # extract + rewrite
 
-Requires: PyYAML and an Ollama server for the default model (gemma4:12b).
-Pass --model claude-opus-4-8 to use the Anthropic API instead (needs
-ANTHROPIC_API_KEY or an active `ant auth login` profile, and the
-`anthropic` package).
+Requires: the `anthropic` package for the default model (claude-sonnet-5).
+Pass --model gemma4:12b to use a local Ollama server instead.
 """
 
 import argparse
@@ -48,17 +46,15 @@ ANALYSIS_MD = os.path.join(SKILL_DIR, "references", "voice-analysis-instructions
 APPLICATION_MD = os.path.join(SKILL_DIR, "references", "style-application-instructions.md")
 REPORT_TEMPLATE = os.path.join(SKILL_DIR, "references", "comparison-report-template.md")
 
-DEFAULT_MODEL = os.environ.get("MATCH_VOICE_MODEL", "gemma4:12b")
+DEFAULT_MODEL = os.environ.get("MATCH_OUTLINE_MODEL", "claude-sonnet-5")
 DEFAULT_ENDPOINT = os.environ.get("OLLAMA_ENDPOINT", "http://localhost:11434")
-MAX_EXCERPT_CHARS = 12000          # per paper in comparison mode
+MAX_EXCERPT_CHARS = 12000          # per paper in comparison and rewrite mode
 MAX_CORPUS_CHARS = 350000          # ~100K tokens
-FEWSHOT_CHARS = 2500               # per exemplar excerpt in rewrite prompts
 
 sys.path.insert(0, MATCH_STRUCTURE)
 import style  # noqa: E402  (section detection, corpus selection, similarity)
 
 NUMBER_RE = re.compile(r"\d+(?:\.\d+)?%?")
-BIBLIO_LINE_RE = re.compile(r"^\[\d+\]\s", re.MULTILINE)
 BOLD_RE = re.compile(r"(\*\*|__)(?=\S)(.+?)(?<=\S)\1", re.DOTALL)
 
 
@@ -271,19 +267,18 @@ def find_blueprint(db_dir, explicit=None):
              "extraction or the corpus profile step first.")
 
 
-def fewshot_excerpts(source_papers, section_name, limit=3):
-    """Excerpts of a given section type from source papers: (id, text) list."""
+def exemplar_excerpts(source_papers, limit=3):
+    """Whole-paper excerpts from source papers: (id, text) list."""
     out = []
     for ex_id, path in source_papers[:limit]:
-        sections = style.detect_sections(read(path))
-        sec = sections.get(section_name)
-        if sec and len(sec.strip()) > 200:
-            out.append((ex_id, sec.strip()[:FEWSHOT_CHARS]))
+        text = read_prose(path)
+        if text.strip():
+            out.append((ex_id, text.strip()[:MAX_EXCERPT_CHARS]))
     return out
 
 
-def verify_section(original, rewritten):
-    """Missing citations and numbers: what the rewrite dropped."""
+def verify_document(original, rewritten):
+    """Missing citations and numbers across the whole document."""
     orig_cites = set(style.CITATION_RE.findall(original))
     new_cites = set(style.CITATION_RE.findall(rewritten))
     orig_nums = set(NUMBER_RE.findall(
@@ -296,11 +291,6 @@ def verify_section(original, rewritten):
     }
 
 
-def _count_paragraphs(text):
-    """Count non-empty paragraph blocks separated by blank lines."""
-    return sum(1 for p in re.split(r"\n\s*\n", text.strip()) if p.strip())
-
-
 def _strip_added_bold(original, rewritten):
     """Remove bold spans the model added that the original did not have."""
     orig_bold = len(BOLD_RE.findall(original))
@@ -310,20 +300,8 @@ def _strip_added_bold(original, rewritten):
     return rewritten
 
 
-def _is_passthrough(chunk):
-    """Sections that should never be sent to the model."""
-    if chunk["section"] in ("front", "references"):
-        return True
-    body = chunk["body"].strip()
-    if len(body) < 200:
-        return True
-    if BIBLIO_LINE_RE.search(body):
-        return True
-    return False
-
-
 def rewrite_draft(backend, draft_path, blueprint_path, source_papers, mimic):
-    """Section-by-section rewrite. Returns (out_path, verification, out_tokens)."""
+    """Whole-document rewrite. Returns (out_path, verification, out_tokens)."""
     draft_text = read(draft_path)
     blueprint = read(blueprint_path)
     application = read(APPLICATION_MD)
@@ -334,67 +312,42 @@ def rewrite_draft(backend, draft_path, blueprint_path, source_papers, mimic):
         "Mimic mode is OFF: apply Consensus patterns only; ignore "
         "Idiosyncrasy patterns."
     )
+
+    excerpts = exemplar_excerpts(source_papers)
+    excerpt_block = "\n\n---\n\n".join(
+        f"### Exemplar: {ex_id} — do NOT reuse its phrasing\n\n{text}"
+        for ex_id, text in excerpts) or "(no exemplar available)"
+
     system = [{
         "type": "text",
         "text": (f"{application}\n\n{mimic_note}\n\n"
                  f"# Voice blueprint\n\n{blueprint}\n\n"
+                 f"# Exemplar papers\n\n{excerpt_block}\n\n"
                  "CRITICAL: Do not add bold (**) formatting that the "
                  "original does not have."),
         "cache_control": {"type": "ephemeral"},
     }]
 
-    chunks = split_document(draft_text)
-    rewritten_parts = []
-    verification = {}
-    total_out = 0
+    content = [{
+        "type": "text",
+        "text": (f"# Draft to rewrite\n\n{read_prose(draft_path)}\n\n"
+                 "Rewrite the entire document now, following the critical "
+                 "rules. Preserve all headings. You may freely restructure "
+                 "paragraphs — merge, split, or reshuffle as the voice "
+                 "demands. Output only the rewritten document."),
+    }]
+    print(f"Rewriting {draft_path} (whole document)...", file=sys.stderr)
+    new_text, usage = call_model(backend, system, content, max_tokens=32000)
 
-    for idx, chunk in enumerate(chunks):
-        body = chunk["body"]
-        if _is_passthrough(chunk):
-            rewritten_parts.append((chunk["heading"] or "") + body)
-            continue
-
-        orig_para_count = _count_paragraphs(body)
-        excerpts = fewshot_excerpts(source_papers, chunk["section"])
-        excerpt_block = "\n\n".join(
-            f"### Style demonstration ({ex_id}, {chunk['section']}) — do NOT reuse its phrasing\n\n{text}"
-            for ex_id, text in excerpts) or "(no exemplar excerpt available for this section type)"
-
-        content = [{
-            "type": "text",
-            "text": (f"# Exemplar excerpts for section type '{chunk['section']}'\n\n"
-                     f"{excerpt_block}\n\n"
-                     f"# Draft section to rewrite (type: {chunk['section']})\n\n"
-                     f"{body}\n\n"
-                     f"Rewrite this section now, following the critical rules. "
-                     f"Return exactly {orig_para_count} paragraphs. "
-                     "Output only the rewritten section body."),
-        }]
-        print(f"Rewriting section {idx}: {chunk['section']}...", file=sys.stderr)
-        new_body, usage = call_model(backend, system, content)
-        total_out += usage.output_tokens
-
-        new_body = _strip_added_bold(body, new_body.strip())
-        new_para_count = _count_paragraphs(new_body)
-        if new_para_count != orig_para_count:
-            print(f"  section {idx}: paragraph count mismatch "
-                  f"({orig_para_count} -> {new_para_count}), keeping original",
-                  file=sys.stderr)
-            rewritten_parts.append((chunk["heading"] or "") + body)
-            continue
-
-        heading = (chunk["heading"] + "\n") if chunk["heading"] else ""
-        rewritten_parts.append(f"{heading}\n{new_body}\n")
-
-        key = f"{idx}:{chunk['section']}"
-        verification[key] = verify_section(body, new_body)
+    new_text = _strip_added_bold(draft_text, new_text.strip())
+    verification = verify_document(read_prose(draft_path), new_text)
 
     out_path = os.path.join(
         os.path.dirname(os.path.abspath(draft_path)),
         os.path.splitext(os.path.basename(draft_path))[0] + "-rewritten.md")
     with open(out_path, "w") as f:
-        f.write("\n".join(rewritten_parts))
-    return out_path, verification, total_out
+        f.write(new_text)
+    return out_path, verification, usage.output_tokens
 
 
 # --------------------------------------------------------------------------- #
@@ -492,7 +445,7 @@ def run_compare(backend, args, db_dir):
 # --------------------------------------------------------------------------- #
 
 def main():
-    p = argparse.ArgumentParser(description="Section-level voice analysis, blueprint extraction, and rewrite")
+    p = argparse.ArgumentParser(description="Whole-document voice analysis, blueprint extraction, and rewrite")
     p.add_argument("draft", nargs="?", help="path to the draft markdown file")
     p.add_argument("--db", default="references.yaml")
     p.add_argument("--out", default=None, help="comparison report output path")
@@ -506,8 +459,8 @@ def main():
     p.add_argument("--mimic", action="store_true",
                    help="also apply single-author idiosyncrasies")
     p.add_argument("--model", default=DEFAULT_MODEL,
-                   help="model for generation (claude-* uses Anthropic API, "
-                        "anything else uses Ollama)")
+                   help="model for generation (default: claude-sonnet-5 via "
+                        "Anthropic API; pass a non-claude name to use Ollama)")
     p.add_argument("--endpoint", default=DEFAULT_ENDPOINT,
                    help="Ollama endpoint (ignored for claude-* models)")
     p.add_argument("--voice-dir", default=None,
@@ -578,10 +531,10 @@ def main():
             backend, args.draft, blueprint_path, source_papers, args.mimic)
         summary["rewritten"] = out_path
         summary["blueprint_used"] = blueprint_path
-        summary["verification"] = {
-            k: v for k, v in verification.items()
-            if v["missing_citations"] or v["missing_numbers"]
-        } or "all citations and numbers preserved"
+        if verification["missing_citations"] or verification["missing_numbers"]:
+            summary["verification"] = verification
+        else:
+            summary["verification"] = "all citations and numbers preserved"
         summary["output_tokens"] = out_tokens
 
         against = [(ex_id, read_prose(path)) for ex_id, path in source_papers]

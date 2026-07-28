@@ -106,33 +106,17 @@ def main():
         assert n == 3, f"expected 3 papers, got {n}"
         assert "author-2010-sample" in corpus_text
 
-        # 8. _is_passthrough: references section.
-        assert ms._is_passthrough({"section": "references", "body": "x", "heading": "# Refs"})
-        assert ms._is_passthrough({"section": "front", "body": "x", "heading": None})
-        assert ms._is_passthrough({"section": "intro", "body": "short", "heading": "# I"})
-        assert not ms._is_passthrough({
-            "section": "intro", "body": "x " * 200, "heading": "# I"})
-
-        # 9. _is_passthrough: bibliography lines.
-        bib_body = "[1] Smith, J. (2020). A paper.\n[2] Jones, K. (2021). Another."
-        assert ms._is_passthrough({"section": "other", "body": bib_body, "heading": "# R"})
-
-        # 10. _count_paragraphs.
-        assert ms._count_paragraphs("p1\n\np2\n\np3") == 3
-        assert ms._count_paragraphs("single") == 1
-        assert ms._count_paragraphs("") == 0
-
-        # 11. _strip_added_bold: removes bold the model added.
+        # 8. _strip_added_bold: removes bold the model added.
         orig = "The algorithm works."
         rewritten = "**The algorithm** works well."
         assert "**" not in ms._strip_added_bold(orig, rewritten)
 
-        # 12. _strip_added_bold: keeps bold that was in the original.
+        # 9. _strip_added_bold: keeps bold that was in the original.
         orig2 = "**The algorithm** works."
         rewritten2 = "**The algorithm** works well."
         assert "**" in ms._strip_added_bold(orig2, rewritten2)
 
-        # 13. "references" section pattern added to style.
+        # 10. "references" section pattern added to style.
         from style import SECTION_PATTERNS
         ref_names = [name for name, _ in SECTION_PATTERNS]
         assert "references" in ref_names

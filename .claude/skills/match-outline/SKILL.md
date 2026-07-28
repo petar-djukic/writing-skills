@@ -1,27 +1,30 @@
 ---
 name: match-outline
 description: >-
-  Section-level voice analysis: compare a draft's outline against a corpus
-  profile, extract voice persona blueprints from exemplar papers, and
-  rewrite a draft section by section to match a voice. Uses match-structure
-  for quantitative metrics and similarity checks. Triggers: compare my
-  outline, section analysis, does my intro match the field, methodology
-  conventions, results conventions, rewrite in the style of, apply the
-  voice, voice persona, exemplar, blueprint extraction, mimic this paper,
-  rewrite my intro, section-by-section rewrite.
+  Whole-document voice analysis: compare a draft against a corpus profile,
+  extract voice persona blueprints from exemplar papers, and rewrite the
+  entire draft in one pass to match a voice. Uses a large Claude model for
+  structural rewriting; match-voice cleans AI diction downstream.
+  Triggers: compare my outline, section analysis, does my intro match the
+  field, methodology conventions, results conventions, rewrite in the
+  style of, apply the voice, voice persona, exemplar, blueprint
+  extraction, mimic this paper, rewrite my draft, whole-document rewrite.
 ---
 
-# Match outline (section-level voice analysis)
+# Match outline (whole-document voice analysis)
 
-This skill answers "does my draft's structure and section-level voice match
-the field?" It detects sections (intro, methodology, results, conclusion),
-compares their metrics and conventions against a corpus profile, extracts
-voice persona blueprints from exemplar papers, and rewrites drafts section
-by section with a plagiarism guard.
+This skill answers "does my draft's structure and voice match the field?"
+It compares a draft's conventions against a corpus profile, extracts voice
+persona blueprints from exemplar papers, and rewrites drafts as a whole
+document with a plagiarism guard.
 
 It complements `match-structure` (which provides the quantitative metrics,
 frequency tables, and similarity math this skill imports) and `filter-tells`
 (which detects generic AI-writing patterns at the paragraph level).
+
+The rewrite uses a large Claude model by default. AI-sounding output is
+expected at this stage — `match-voice` handles paragraph-level diction
+cleanup downstream with a local model.
 
 ## Where things live
 
@@ -91,9 +94,13 @@ blueprint following **Part 3** of `voice-analysis-instructions.md`.
 
 ## Rewrite mode (opt-in)
 
-Section by section, following `references/style-application-instructions.md`.
-After every rewrite: content preservation check (citations, numbers) and
-similarity guard via `match-structure`'s `style.py similarity`.
+Whole-document rewrite following
+`references/style-application-instructions.md`. The model receives the
+entire draft plus blueprint plus exemplar papers in one pass, preserving
+cross-section transitions and structural coherence. Paragraph structure
+may change freely — the model can merge, split, or reshuffle as the voice
+demands. After the rewrite: content preservation check (citations, numbers)
+and similarity guard via `match-structure`'s `style.py similarity`.
 
 ## Headless mode
 
@@ -107,7 +114,7 @@ $RUN <skill>/scripts/match_outline.py <draft.md> --db <db-path>
 $RUN <skill>/scripts/match_outline.py --db <db-path> \
   --exemplar paper1 --exemplar paper2 --name icml
 
-# Rewrite a draft
+# Rewrite a draft (uses claude-sonnet-5 by default)
 $RUN <skill>/scripts/match_outline.py <draft.md> --db <db-path> --rewrite
 ```
 
@@ -122,7 +129,7 @@ Two sources of exemplars are accepted:
 
 ## Dependencies
 
-Both scripts run in the pixi environment. `match_outline.py` imports
-`style` from `match-structure/scripts/` for section detection, corpus
-selection, and the similarity guard. The `anthropic` package is needed only
-for `--model claude-*`.
+`match_outline.py` imports `style` from `match-structure/scripts/` for
+corpus selection and the similarity guard. The `anthropic` package is
+required for the default model (claude-sonnet-5). Pass `--model gemma4:12b`
+to use a local Ollama server instead.
