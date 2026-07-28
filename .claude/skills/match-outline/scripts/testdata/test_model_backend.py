@@ -16,7 +16,7 @@ import sys
 HERE = os.path.dirname(os.path.abspath(__file__))
 SCRIPTS = os.path.dirname(HERE)
 sys.path.insert(0, SCRIPTS)
-import match_structure as ms  # noqa: E402
+import match_outline as ms  # noqa: E402
 
 
 def test_default_not_claude():
@@ -41,7 +41,7 @@ def test_is_claude_routing():
 def test_help_no_anthropic():
     """--help must work even without the anthropic package installed."""
     r = subprocess.run(
-        [sys.executable, os.path.join(SCRIPTS, "match_structure.py"), "--help"],
+        [sys.executable, os.path.join(SCRIPTS, "match_outline.py"), "--help"],
         capture_output=True, text=True)
     assert r.returncode == 0, f"--help failed: {r.stderr}"
     assert "--model" in r.stdout, "--model not in help"
