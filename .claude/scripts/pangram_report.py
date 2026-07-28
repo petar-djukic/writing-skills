@@ -5,7 +5,7 @@ A document-level "70% AI" tells you nothing you can act on. This maps the
 overlapping per-window scores back to paragraphs and source line numbers, so the
 output is a list of passages to rewrite rather than a grade.
 
-Two subcommands:
+Three subcommands:
 
   payload   Build the exact text to submit, from the shared markdown extractor.
             Prose only — code fences, tables, and front matter are neither
@@ -14,11 +14,14 @@ Two subcommands:
             sidecar .spans.json recording each paragraph's character span in the
             submitted string; without it the response cannot be mapped back.
 
+  paragraphs  Build per-paragraph items for the bulk API, packed into bags of
+              ~1,000 words to minimise billable units. Each bag is one bulk item.
+              Writes items JSON and a sidecar mapping bags back to paragraphs.
+
   report    Map a response onto those spans. With --baseline, diff against an
             earlier response and report what moved.
 
-Typical flow (the baseline must be captured BEFORE the rewrite — there is no
-way to reconstruct it afterwards):
+Typical flow — single task (the baseline must be captured BEFORE the rewrite):
 
   pangram_report.py payload --article draft.md --out draft.payload.txt
   pangram.py --text draft.payload.txt --json > before.json
@@ -27,6 +30,13 @@ way to reconstruct it afterwards):
   pangram.py --text draft.payload.txt --json > after.json
   pangram_report.py report --response after.json --spans draft.payload.spans.json \\
                            --baseline before.json
+
+Typical flow — bulk API (paragraph-level):
+
+  pangram_report.py paragraphs --article draft.md --out draft.items.json
+  pangram.py --bulk draft.items.json --json > results.json
+  pangram_report.py report-bulk --results results.json \\
+                                --bags draft.items.bags.json
 
 A full comparison costs two scans. Nothing here enforces a quota: pangram.py
 --check spends nothing, and the API answers 402 for exhausted credits and 429
@@ -89,6 +99,122 @@ def build_payload(path, min_words=0, sep="\n\n"):
         chunks.append(flat)
         pos += len(flat)
     return sep.join(chunks), spans
+
+
+def build_paragraph_payloads(path, min_words=0, word_limit=1000, sep="\n\n"):
+    """Build bulk API items by packing paragraphs into ~word_limit-word bags.
+
+    Returns (items, bags) where:
+      items — list of {"id": "bag-N", "text": "..."} for submit_bulk
+      bags  — list of {"id": "bag-N", "paragraphs": [...], "offsets": [...]}
+              mapping each bag back to its source paragraphs with character
+              offsets so bulk results can be mapped to individual paragraphs
+    """
+    r = _md_paragraphs().parse_file(path)
+    paras = []
+    for ls, le, txt in r.paragraphs:
+        flat = " ".join(txt.split())
+        words = len(flat.split())
+        if words < min_words:
+            continue
+        paras.append({
+            "index": len(paras),
+            "line_start": ls,
+            "line_end": le,
+            "words": words,
+            "text": flat,
+            "preview": flat[:70],
+        })
+
+    items, bags = [], []
+    bag_paras, bag_texts, bag_words, bag_num = [], [], 0, 0
+    for p in paras:
+        if bag_texts and bag_words + p["words"] > word_limit:
+            item, bag = _emit_bag(bag_num, bag_paras, bag_texts, sep)
+            items.append(item)
+            bags.append(bag)
+            bag_num += 1
+            bag_paras, bag_texts, bag_words = [], [], 0
+        bag_paras.append(p)
+        bag_texts.append(p["text"])
+        bag_words += p["words"]
+    if bag_texts:
+        item, bag = _emit_bag(bag_num, bag_paras, bag_texts, sep)
+        items.append(item)
+        bags.append(bag)
+    return items, bags
+
+
+def _emit_bag(bag_num, paras, texts, sep):
+    combined = sep.join(texts)
+    offsets, pos = [], 0
+    for i, t in enumerate(texts):
+        offsets.append({
+            "para_index": paras[i]["index"],
+            "line_start": paras[i]["line_start"],
+            "line_end": paras[i]["line_end"],
+            "start": pos,
+            "end": pos + len(t),
+            "words": paras[i]["words"],
+            "preview": paras[i]["preview"],
+        })
+        pos += len(t) + len(sep)
+    bag_id = f"bag-{bag_num}"
+    item = {"id": bag_id, "text": combined}
+    bag = {"id": bag_id, "paragraphs": [p["index"] for p in paras],
+           "offsets": offsets}
+    return item, bag
+
+
+def map_bulk_results(result_items, bags):
+    """Map bulk API per-bag results back to individual paragraphs.
+
+    result_items: list from analyze_bulk — each has "id", "result" (or None
+                  on failure), "stage", "error"
+    bags: the bags sidecar from build_paragraph_payloads
+
+    Returns a list of paragraph dicts with the same shape as map_windows output.
+    """
+    by_id = {r.get("id"): r for r in result_items}
+    out = []
+    for bag in bags:
+        result = by_id.get(bag["id"])
+        resp = (result or {}).get("result")
+        for off in bag["offsets"]:
+            entry = {
+                "index": off["para_index"],
+                "line_start": off["line_start"],
+                "line_end": off["line_end"],
+                "words": off["words"],
+                "preview": off["preview"],
+                "bag_id": bag["id"],
+            }
+            if not resp:
+                entry.update(windows=0, score=None, label=None,
+                             confidence=None, flagged=False,
+                             error=(result or {}).get("error"))
+            else:
+                hits = []
+                for w in resp.get("windows") or []:
+                    ws = w.get("start_index")
+                    we = w.get("end_index")
+                    if ws is None or we is None:
+                        continue
+                    if ws < off["end"] and we > off["start"]:
+                        hits.append(w)
+                rank = {"High": 3, "Medium": 2, "Low": 1}
+                best = max(hits, key=lambda w: w.get("ai_assistance_score") or 0.0) if hits else None
+                conf = max((h.get("confidence") for h in hits),
+                           key=lambda c: rank.get(c, 0), default=None)
+                entry.update(
+                    windows=len(hits),
+                    score=(best or {}).get("ai_assistance_score"),
+                    label=(best or {}).get("label"),
+                    confidence=conf,
+                    flagged=bool(best and (best.get("ai_assistance_score") or 0) >= FLAG_SCORE),
+                )
+            out.append(entry)
+    return out
 
 
 def map_windows(response, spans):
@@ -274,6 +400,46 @@ def cmd_report(a):
     return 0
 
 
+def cmd_paragraphs(a):
+    items, bags = build_paragraph_payloads(a.article, min_words=a.min_words,
+                                           word_limit=a.word_limit)
+    if not items:
+        sys.exit(f"no prose paragraphs found in {a.article} — nothing to submit")
+    out = a.out or (os.path.splitext(a.article)[0] + ".items.json")
+    with open(out, "w", encoding="utf-8") as f:
+        json.dump(items, f, indent=2)
+    sidecar = os.path.splitext(out)[0] + ".bags.json"
+    with open(sidecar, "w", encoding="utf-8") as f:
+        json.dump({"article": os.path.abspath(a.article), "bags": bags}, f, indent=2)
+    total_paras = sum(len(b["paragraphs"]) for b in bags)
+    total_words = sum(o["words"] for b in bags for o in b["offsets"])
+    print(f"items:   {out}  ({len(items)} bags from {total_paras} paragraphs)")
+    print(f"bags:    {sidecar}")
+    print(f"cost:    ~{len(items)} billable unit{'s' if len(items) != 1 else ''}"
+          f"  ({total_words} words)")
+
+
+def cmd_report_bulk(a):
+    results = _load(a.results)
+    bags = _load(a.bags)["bags"]
+    paras = map_bulk_results(results, bags)
+    if a.json:
+        print(json.dumps(paras, indent=2))
+        return 0
+    flagged = [p for p in paras if p["flagged"]]
+    failed = [p for p in paras if p.get("error")]
+    print(f"paragraphs: {len(paras)}   flagged at >= {FLAG_SCORE}: {len(flagged)}"
+          f"   failed: {len(failed)}")
+    for p in flagged:
+        print(f"  L{p['line_start']:>4}  {p['score']:.2f} {p['confidence'] or '?':6} "
+              f"{p['label'] or ''}  {p['preview'][:50]}")
+    if not flagged:
+        print("  no paragraph over the flag threshold")
+    for p in failed:
+        print(f"  L{p['line_start']:>4}  ERROR: {p['error']}")
+    return 0
+
+
 def main():
     ap = argparse.ArgumentParser(description="map Pangram results onto paragraphs")
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -284,6 +450,15 @@ def main():
     p.add_argument("--min-words", type=int, default=0)
     p.set_defaults(func=cmd_payload)
 
+    pg = sub.add_parser("paragraphs",
+                        help="build bulk API items packed into ~1000-word bags")
+    pg.add_argument("--article", required=True)
+    pg.add_argument("--out", help="items path (default: <article>.items.json)")
+    pg.add_argument("--min-words", type=int, default=0)
+    pg.add_argument("--word-limit", type=int, default=1000,
+                    help="target words per bag (default: 1000)")
+    pg.set_defaults(func=cmd_paragraphs)
+
     r = sub.add_parser("report", help="map a response; --baseline to diff")
     r.add_argument("--response", required=True, help="pangram.py --json output")
     r.add_argument("--spans", required=True, help="the .spans.json sidecar")
@@ -291,6 +466,14 @@ def main():
     r.add_argument("--baseline-spans", help="spans for the baseline (default: --spans)")
     r.add_argument("--json", action="store_true")
     r.set_defaults(func=cmd_report)
+
+    rb = sub.add_parser("report-bulk",
+                        help="map bulk results back to paragraphs")
+    rb.add_argument("--results", required=True,
+                    help="pangram.py --bulk output (JSON list of result items)")
+    rb.add_argument("--bags", required=True, help="the .bags.json sidecar")
+    rb.add_argument("--json", action="store_true")
+    rb.set_defaults(func=cmd_report_bulk)
 
     a = ap.parse_args()
     sys.exit(a.func(a) or 0)

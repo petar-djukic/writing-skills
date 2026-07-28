@@ -17,14 +17,23 @@ in the environment says the user has an account, not that this document may
 leave the machine.
 
 API shape (https://docs.pangram.com/api-reference/ai-detection), async:
-  POST /task           {"text": ..., "public_dashboard_link": false} -> task_id
-  GET  /task/{id}      poll until stage is STAGE_SUCCESS or STAGE_FAILED
 
-There is no single top-level AI score. The document-level result is three
-fractions (ai / ai_assisted / human) plus overlapping per-window scores.
+  Single task:
+    POST /task           {"text": ..., "public_dashboard_link": false} -> task_id
+    GET  /task/{id}      poll until stage is STAGE_SUCCESS or STAGE_FAILED
+
+  Bulk (https://docs.pangram.com/api-reference/bulk-api):
+    POST /bulk           {"items": [{"id": ..., "text": ...}, ...]} -> bulk_id
+    GET  /bulk/{id}      poll until status is succeeded/failed/partial
+    GET  /bulk/{id}/results?offset=0&limit=100   paginated per-item results
+
+Billing is per started 1,000-word block per item, minimum 1 unit per item.
+WordBudgetBatcher packs text blobs into ~1,000-word bags so each bag costs
+one unit instead of one per blob.
 
 Usage:
   pangram.py --text <file>|-  [--api-key KEY] [--json] [--timeout 300]
+  pangram.py --bulk <file>    items JSON; each {"id": ..., "text": ...}
   pangram.py --check          key present and endpoint reachable; spends nothing
 
 Key: --api-key, else PANGRAM_API_KEY. Stdlib only.
@@ -32,6 +41,7 @@ Key: --api-key, else PANGRAM_API_KEY. Stdlib only.
 
 import argparse
 import json
+import math
 import os
 import sys
 import time
@@ -171,6 +181,138 @@ def analyze(text, key, timeout=DEFAULT_TIMEOUT, sleep=time.sleep):
     return poll(submit(text, key), key, timeout=timeout, sleep=sleep)
 
 
+# ---------------------------------------------------------------------------
+# Bulk API
+# ---------------------------------------------------------------------------
+
+BULK_TERMINAL = frozenset({"succeeded", "failed", "partial"})
+
+
+def billable_units(text):
+    """How many billable units a text blob costs: ceil(words / 1000), min 1."""
+    return max(1, math.ceil(len(text.split()) / 1000))
+
+
+def submit_bulk(items, key, timeout=30):
+    """POST /bulk with an items list. Returns the parsed 202 response.
+
+    Each item must have "text"; "id" is optional but recommended.
+    """
+    if not items:
+        raise PangramError("refusing to submit an empty bulk request")
+    body = _request("/bulk", key, {"items": items}, timeout=timeout)
+    if not body.get("bulk_id"):
+        raise PangramError(f"no bulk_id in response: {sorted(body)}")
+    return body
+
+
+def poll_bulk(bulk_id, key, timeout=DEFAULT_TIMEOUT, sleep=time.sleep):
+    """Poll GET /bulk/{id} until the job reaches a terminal status.
+
+    Returns the status body. Terminal statuses: succeeded, failed, partial.
+    """
+    deadline = time.monotonic() + timeout
+    wait = POLL_START
+    while True:
+        body = _request(f"/bulk/{bulk_id}", key)
+        status = body.get("status", "")
+        if status in BULK_TERMINAL:
+            return body
+        if time.monotonic() >= deadline:
+            raise PangramError(
+                f"bulk timed out after {timeout}s (last status: {status or 'unknown'}). "
+                f"bulk_id {bulk_id}")
+        sleep(wait)
+        wait = min(wait * 1.5, POLL_MAX)
+
+
+def fetch_results(bulk_id, key, offset=0, limit=100, timeout=30):
+    """GET /bulk/{id}/results with pagination. Returns the parsed response."""
+    return _request(f"/bulk/{bulk_id}/results?offset={offset}&limit={limit}",
+                    key, timeout=timeout)
+
+
+def analyze_bulk(items, key, timeout=DEFAULT_TIMEOUT, sleep=time.sleep):
+    """Submit, poll, and fetch all results. Returns a list of result items.
+
+    Each result item has the same shape as a single-task success body, nested
+    under "result", plus "index", "id", "stage", and "error".
+    """
+    resp = submit_bulk(items, key)
+    bulk_id = resp["bulk_id"]
+    poll_bulk(bulk_id, key, timeout=timeout, sleep=sleep)
+    all_items, offset = [], 0
+    while True:
+        page = fetch_results(bulk_id, key, offset=offset)
+        all_items.extend(page.get("items") or [])
+        all_items.extend(page.get("failed_items") or [])
+        total = page.get("total_items", 0)
+        if offset + (page.get("limit") or 100) >= total:
+            break
+        offset += page.get("limit") or 100
+    return all_items
+
+
+class WordBudgetBatcher:
+    """Accumulate text blobs into bags of ~word_limit words each.
+
+    Each bag becomes one bulk item, costing one billable unit. Without
+    batching, each blob would cost one unit regardless of length.
+
+    Usage:
+        batcher = WordBudgetBatcher(word_limit=1000)
+        for para_id, text in paragraphs:
+            batcher.add(para_id, text)
+        for batch in batcher.batches():
+            # batch is {"id": "bag-0", "text": "...", "sources": [...],
+            #           "offsets": [...]}
+            submit_bulk([{"id": batch["id"], "text": batch["text"]}], key)
+    """
+
+    def __init__(self, word_limit=1000, sep="\n\n"):
+        self._word_limit = word_limit
+        self._sep = sep
+        self._items = []
+
+    def add(self, source_id, text):
+        self._items.append((source_id, text))
+
+    def batches(self):
+        """Yield bags. Each bag holds paragraphs whose total words <= word_limit.
+
+        A paragraph longer than word_limit gets its own bag (unavoidable —
+        it costs ceil(words/1000) units either way).
+        """
+        bag_sources, bag_texts, bag_words = [], [], 0
+        bag_num = 0
+        for src_id, text in self._items:
+            words = len(text.split())
+            if bag_texts and bag_words + words > self._word_limit:
+                yield self._emit(bag_num, bag_sources, bag_texts)
+                bag_num += 1
+                bag_sources, bag_texts, bag_words = [], [], 0
+            bag_sources.append(src_id)
+            bag_texts.append(text)
+            bag_words += words
+        if bag_texts:
+            yield self._emit(bag_num, bag_sources, bag_texts)
+
+    def _emit(self, bag_num, sources, texts):
+        combined = self._sep.join(texts)
+        offsets = []
+        pos = 0
+        for i, t in enumerate(texts):
+            offsets.append({"source": sources[i], "start": pos, "end": pos + len(t)})
+            pos += len(t) + len(self._sep)
+        return {
+            "id": f"bag-{bag_num}",
+            "text": combined,
+            "sources": list(sources),
+            "offsets": offsets,
+            "units": billable_units(combined),
+        }
+
+
 def summarize(body):
     """Human-readable one-block summary of a success body."""
     pct = lambda f: f"{float(f or 0.0) * 100:.1f}%"
@@ -193,13 +335,15 @@ def summarize(body):
 def main():
     ap = argparse.ArgumentParser(
         description="Pangram AI detection (uploads the text — see SKILL.md)")
-    ap.add_argument("--text", help="file to analyze, or - for stdin")
+    g = ap.add_mutually_exclusive_group()
+    g.add_argument("--text", help="file to analyze, or - for stdin")
+    g.add_argument("--bulk", help="JSON file of items [{id, text}, ...]")
+    g.add_argument("--check", action="store_true",
+                   help="verify key and endpoint without submitting a document")
     ap.add_argument("--api-key", help="Pangram key (or set PANGRAM_API_KEY)")
     ap.add_argument("--timeout", type=int, default=DEFAULT_TIMEOUT)
     ap.add_argument("--json", action="store_true",
                     help="emit the raw response (feeds pangram_report.py)")
-    ap.add_argument("--check", action="store_true",
-                    help="verify key and endpoint without submitting a document")
     a = ap.parse_args()
 
     try:
@@ -208,9 +352,6 @@ def main():
         sys.exit(str(e))
 
     if a.check:
-        # Probe an id that cannot exist. A key problem answers 401/403 and a
-        # good key answers 404 — so reachability and auth are both proven
-        # without submitting a document or spending a credit.
         try:
             _request("/task/00000000-0000-0000-0000-000000000000", key)
             print("key accepted; endpoint reachable")
@@ -222,8 +363,17 @@ def main():
                 sys.exit(f"preflight failed: {msg}")
         return
 
+    if a.bulk:
+        items = json.load(open(a.bulk, encoding="utf-8"))
+        try:
+            results = analyze_bulk(items, key, timeout=a.timeout)
+        except PangramError as e:
+            sys.exit(str(e))
+        print(json.dumps(results, indent=2, ensure_ascii=False))
+        return
+
     if not a.text:
-        sys.exit("--text <file>|- is required (or use --check)")
+        sys.exit("--text <file>|- or --bulk <file> is required (or use --check)")
     text = sys.stdin.read() if a.text == "-" else open(a.text, encoding="utf-8").read()
 
     try:

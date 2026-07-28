@@ -137,6 +137,132 @@ def main():
 
         # 10. A missing-field body degrades rather than crashing.
         assert "0.0%" in pg.summarize({"stage": "STAGE_SUCCESS"})
+
+        # --- Bulk API tests ---
+
+        # 11. submit_bulk sends POST /bulk with items and returns the response.
+        bulk_resp = {"bulk_id": "blk_1", "status": "queued", "total_items": 2,
+                     "accepted_items": [
+                         {"index": 0, "id": "a", "task_id": "t1"},
+                         {"index": 1, "id": "b", "task_id": "t2"}],
+                     "failed_items": []}
+        pg._request = Stub(bulk_resp)
+        r = pg.submit_bulk([{"id": "a", "text": "hello"}, {"id": "b", "text": "world"}], "KEY")
+        assert r["bulk_id"] == "blk_1"
+        assert pg._request.calls[0]["path"] == "/bulk"
+        assert len(pg._request.calls[0]["payload"]["items"]) == 2
+
+        # 12. submit_bulk refuses empty items.
+        expect_error(lambda: pg.submit_bulk([], "KEY"), "empty", "bulk empty")
+
+        # 13. poll_bulk polls until terminal status.
+        pg._request = Stub(
+            {"bulk_id": "blk_1", "status": "queued"},
+            {"bulk_id": "blk_1", "status": "running"},
+            {"bulk_id": "blk_1", "status": "succeeded", "total_items": 2})
+        r = pg.poll_bulk("blk_1", "KEY", sleep=lambda s: None)
+        assert r["status"] == "succeeded"
+        assert len(pg._request.calls) == 3
+
+        # 14. poll_bulk recognises "partial" as terminal.
+        pg._request = Stub(
+            {"bulk_id": "blk_1", "status": "partial", "total_items": 2})
+        r = pg.poll_bulk("blk_1", "KEY", sleep=lambda s: None)
+        assert r["status"] == "partial"
+
+        # 15. poll_bulk recognises "failed" as terminal.
+        pg._request = Stub(
+            {"bulk_id": "blk_1", "status": "failed"})
+        r = pg.poll_bulk("blk_1", "KEY", sleep=lambda s: None)
+        assert r["status"] == "failed"
+
+        # 16. poll_bulk times out with a clear message.
+        pg._request = Stub({"bulk_id": "blk_1", "status": "running"})
+        m = expect_error(
+            lambda: pg.poll_bulk("blk_1", "KEY", timeout=0, sleep=lambda s: None),
+            "timed out", "bulk timeout")
+        assert "blk_1" in m
+
+        # 17. fetch_results returns the parsed page.
+        result_page = {
+            "bulk_id": "blk_1", "offset": 0, "limit": 100, "total_items": 1,
+            "items": [{"index": 0, "id": "a", "task_id": "t1",
+                       "stage": "STAGE_SUCCESS", "error": None,
+                       "result": SUCCESS}],
+            "failed_items": []}
+        pg._request = Stub(result_page)
+        r = pg.fetch_results("blk_1", "KEY")
+        assert r["items"][0]["result"] == SUCCESS
+        assert "offset=0" in pg._request.calls[0]["path"]
+        assert "limit=100" in pg._request.calls[0]["path"]
+
+        # 18. analyze_bulk chains submit, poll, and fetch_results.
+        pg._request = Stub(
+            bulk_resp,
+            {"bulk_id": "blk_1", "status": "succeeded"},
+            result_page)
+        results = pg.analyze_bulk(
+            [{"id": "a", "text": "x"}], "KEY", sleep=lambda s: None)
+        assert len(results) == 1
+        assert results[0]["result"] == SUCCESS
+
+        # 19. analyze_bulk paginates when total_items > limit.
+        page1 = {"bulk_id": "blk_1", "offset": 0, "limit": 1, "total_items": 2,
+                 "items": [{"index": 0, "id": "a", "result": SUCCESS}],
+                 "failed_items": []}
+        page2 = {"bulk_id": "blk_1", "offset": 1, "limit": 1, "total_items": 2,
+                 "items": [{"index": 1, "id": "b", "result": SUCCESS}],
+                 "failed_items": []}
+        pg._request = Stub(bulk_resp,
+                           {"bulk_id": "blk_1", "status": "succeeded"},
+                           page1, page2)
+        results = pg.analyze_bulk(
+            [{"id": "a", "text": "x"}, {"id": "b", "text": "y"}],
+            "KEY", sleep=lambda s: None)
+        assert len(results) == 2
+
+        # --- WordBudgetBatcher tests ---
+
+        # 20. Batcher packs paragraphs into bags of ~1000 words.
+        batcher = pg.WordBudgetBatcher(word_limit=10)
+        batcher.add("p0", "one two three")
+        batcher.add("p1", "four five six")
+        batcher.add("p2", "seven eight nine ten eleven")
+        batches = list(batcher.batches())
+        assert len(batches) == 2, f"expected 2 batches, got {len(batches)}"
+        assert batches[0]["sources"] == ["p0", "p1"]
+        assert batches[1]["sources"] == ["p2"]
+        assert "one two three" in batches[0]["text"]
+        assert "four five six" in batches[0]["text"]
+
+        # 21. A single item larger than word_limit gets its own bag.
+        batcher = pg.WordBudgetBatcher(word_limit=3)
+        batcher.add("big", "a b c d e f g h i j")
+        batches = list(batcher.batches())
+        assert len(batches) == 1
+        assert batches[0]["sources"] == ["big"]
+        assert batches[0]["units"] == 1
+
+        # 22. Empty batcher yields nothing.
+        assert list(pg.WordBudgetBatcher().batches()) == []
+
+        # 23. Offsets track character positions correctly.
+        batcher = pg.WordBudgetBatcher(word_limit=100, sep="||")
+        batcher.add("a", "hello")
+        batcher.add("b", "world")
+        batches = list(batcher.batches())
+        assert len(batches) == 1
+        b = batches[0]
+        assert b["text"] == "hello||world"
+        assert b["offsets"][0] == {"source": "a", "start": 0, "end": 5}
+        assert b["offsets"][1] == {"source": "b", "start": 7, "end": 12}
+
+        # 24. billable_units: ceil(words / 1000), min 1.
+        assert pg.billable_units("one two three") == 1
+        assert pg.billable_units(" ".join(["w"] * 1000)) == 1
+        assert pg.billable_units(" ".join(["w"] * 1001)) == 2
+        assert pg.billable_units("") == 1
+
     finally:
         pg._request = orig
 
