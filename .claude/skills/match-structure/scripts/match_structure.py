@@ -16,8 +16,7 @@ if _OUTLINE not in sys.path:
 
 from match_outline import *  # noqa: F401,F403
 from match_outline import (main, DEFAULT_MODEL, DEFAULT_ENDPOINT,
-                           _is_claude, _is_passthrough, _count_paragraphs,
-                           _strip_added_bold, _FM)
+                           _is_claude, _strip_added_bold, _FM)
 
 if __name__ == "__main__":
     main()

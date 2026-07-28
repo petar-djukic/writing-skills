@@ -65,9 +65,9 @@ $RUN <skill>/scripts/voice_anchors.py anchors --text <file>|- [--for file] [-k N
 
 ## Consumers
 
-- **match-outline** — imports `style` for section detection, corpus
-  selection, the similarity guard, and the `CITATION_RE`/`HEADING_RE`
-  patterns.
+- **match-outline** — imports `style` for corpus selection, the similarity
+  guard, and the `CITATION_RE` pattern. Uses a large Claude model for
+  whole-document structural rewriting.
 - **match-voice** — imports `style.similarity_report` for the rewrite
   verification gate; imports `voice_anchors` for anchor retrieval.
 - **filter-tells** — consumes `voice-profile.json` as a detector input

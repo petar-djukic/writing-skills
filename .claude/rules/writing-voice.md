@@ -137,7 +137,7 @@ are additive, never required.
   topically-nearest exemplar passages into rewrite and overshoot prompts as
   voice anchors.
 - **match-outline** — accepts the manifest as a curated exemplar source for
-  section-level persona extraction, blueprint synthesis, and comparison.
+  whole-document structural rewriting, blueprint synthesis, and comparison.
 - **match-structure** — provides the quantitative metrics, corpus aggregation,
   and voice anchor retrieval that match-outline and other skills import.
 - **match-voice** — retrieves the same anchors and sends them with the
