@@ -21,6 +21,15 @@ Three subcommands:
   report    Map a response onto those spans. With --baseline, diff against an
             earlier response and report what moved.
 
+  scan      One-shot: payload + submit + report for a single file. The only
+            subcommand that calls the API (it shells out to pangram.py, so it
+            needs a key and spends billable units). --keep <dir> saves the
+            payload, spans, and response; the default workdir is discarded.
+
+One-shot measurement:
+
+  pangram_report.py scan --article draft.md
+
 Typical flow — single task (the baseline must be captured BEFORE the rewrite):
 
   pangram_report.py payload --article draft.md --out draft.payload.txt
@@ -43,14 +52,18 @@ A full comparison costs two scans. Nothing here enforces a quota: pangram.py
 for too many requests. Those answers are the source of truth, not a remembered
 daily figure.
 
-Stdlib only. Consumes pangram.py --json output; never calls the API itself, so
-this half is testable with no key and no credits.
+Stdlib only. Every subcommand except scan consumes pangram.py --json output
+without calling the API, so that half is testable with no key and no credits;
+scan is the one subcommand that submits.
 """
 
 import argparse
 import json
 import os
+import shutil
+import subprocess
 import sys
+import tempfile
 
 SK = os.path.dirname(os.path.abspath(__file__))
 
@@ -388,8 +401,17 @@ def cmd_report(a):
     if a.json:
         print(json.dumps({"fractions": fractions(resp), "paragraphs": paras}, indent=2))
         return 0
+    _print_single(resp, paras)
+    return 0
+
+
+def _print_single(resp, paras):
+    """The no-baseline report: verdict, fractions, mean window, flagged list."""
     f = fractions(resp)
     print(f"verdict: {f['verdict']}   AI {f['ai']}%  assisted {f['ai_assisted']}%  human {f['human']}%")
+    mws = _mean_window_score(resp)
+    if mws is not None:
+        print(f"mean_window: {mws:.4f}")
     flagged = [p for p in paras if p["flagged"]]
     print(f"paragraphs: {len(paras)}   flagged at >= {FLAG_SCORE}: {len(flagged)}")
     for p in flagged:
@@ -397,7 +419,46 @@ def cmd_report(a):
               f"{p['label'] or ''}  {p['preview'][:50]}")
     if not flagged:
         print("  no paragraph over the flag threshold")
-    return 0
+
+
+def cmd_scan(a):
+    text, spans = build_payload(a.article, min_words=a.min_words)
+    if not spans:
+        sys.exit(f"no prose paragraphs found in {a.article} — nothing to submit")
+    work = a.keep or tempfile.mkdtemp(prefix="pangram-scan-")
+    if a.keep:
+        os.makedirs(work, exist_ok=True)
+    stem = os.path.splitext(os.path.basename(a.article))[0]
+    payload = os.path.join(work, stem + ".payload.txt")
+    with open(payload, "w", encoding="utf-8") as f:
+        f.write(text)
+    with open(os.path.join(work, stem + ".payload.spans.json"), "w",
+              encoding="utf-8") as f:
+        json.dump({"article": os.path.abspath(a.article), "spans": spans},
+                  f, indent=2)
+    try:
+        r = subprocess.run([sys.executable, os.path.join(SK, "pangram.py"),
+                            "--text", payload, "--json"],
+                           capture_output=True, text=True)
+        if r.returncode != 0 or not r.stdout.strip():
+            # pangram.py's stderr already distinguishes missing key, exhausted
+            # credits (402), and network failure; relay it rather than guess.
+            sys.exit("scan failed: "
+                     + (r.stderr or "no response from pangram.py").strip()[:300])
+        with open(os.path.join(work, stem + ".response.json"), "w",
+                  encoding="utf-8") as f:
+            f.write(r.stdout)
+        resp = json.loads(r.stdout)
+        if a.json:
+            print(r.stdout.rstrip())
+            return 0
+        _print_single(resp, map_windows(resp, spans))
+        if a.keep:
+            print(f"kept: {work}")
+        return 0
+    finally:
+        if not a.keep:
+            shutil.rmtree(work, ignore_errors=True)
 
 
 def cmd_paragraphs(a):
@@ -449,6 +510,16 @@ def main():
     p.add_argument("--out", help="payload path (default: <article>.payload.txt)")
     p.add_argument("--min-words", type=int, default=0)
     p.set_defaults(func=cmd_payload)
+
+    sc = sub.add_parser("scan",
+                        help="one-shot: payload + pangram.py submit + report")
+    sc.add_argument("--article", required=True)
+    sc.add_argument("--min-words", type=int, default=0)
+    sc.add_argument("--keep", help="directory to save payload, spans, and "
+                                   "response (default: tempdir, discarded)")
+    sc.add_argument("--json", action="store_true",
+                    help="emit the raw detector response instead of the report")
+    sc.set_defaults(func=cmd_scan)
 
     pg = sub.add_parser("paragraphs",
                         help="build bulk API items packed into ~1000-word bags")

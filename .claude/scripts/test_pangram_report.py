@@ -202,6 +202,53 @@ def main():
         assert not p["flagged"]
         assert p["score"] is None
 
+    # 20. scan happy path — pangram.py stubbed, no network. The stub returns a
+    #     response synthesised on the sample's real spans, so scan's payload,
+    #     submit, and report stages all run against genuine offsets.
+    import contextlib
+    import io
+    import tempfile
+    from types import SimpleNamespace
+    from unittest import mock
+
+    scan_resp = response(spans, {1: 0.85})
+    stub_ok = SimpleNamespace(returncode=0, stdout=json.dumps(scan_resp),
+                              stderr="")
+    with tempfile.TemporaryDirectory() as keep:
+        args = SimpleNamespace(article=SAMPLE, min_words=0, keep=keep,
+                               json=False)
+        out = io.StringIO()
+        with mock.patch.object(pr.subprocess, "run", return_value=stub_ok):
+            with contextlib.redirect_stdout(out):
+                rc = pr.cmd_scan(args)
+        assert rc == 0
+        text_out = out.getvalue()
+        assert "verdict:" in text_out and "mean_window:" in text_out
+        stem = os.path.splitext(os.path.basename(SAMPLE))[0]
+        for suffix in (".payload.txt", ".payload.spans.json", ".response.json"):
+            assert os.path.exists(os.path.join(keep, stem + suffix)), \
+                f"--keep did not save {suffix}"
+
+    # 21. scan --json emits the raw response.
+    args = SimpleNamespace(article=SAMPLE, min_words=0, keep=None, json=True)
+    out = io.StringIO()
+    with mock.patch.object(pr.subprocess, "run", return_value=stub_ok):
+        with contextlib.redirect_stdout(out):
+            rc = pr.cmd_scan(args)
+    assert rc == 0
+    assert json.loads(out.getvalue())["stage"] == "STAGE_SUCCESS"
+
+    # 22. scan failure is loud: nonzero exit relaying pangram.py's stderr.
+    stub_bad = SimpleNamespace(returncode=2, stdout="",
+                               stderr="No API key found")
+    args = SimpleNamespace(article=SAMPLE, min_words=0, keep=None, json=False)
+    with mock.patch.object(pr.subprocess, "run", return_value=stub_bad):
+        try:
+            pr.cmd_scan(args)
+            assert False, "scan with a failing detector must exit nonzero"
+        except SystemExit as e:
+            assert "scan failed" in str(e.code) and "No API key" in str(e.code)
+
     print("test_pangram_report: all assertions passed (no network, no key)")
 
 
