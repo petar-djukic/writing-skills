@@ -564,7 +564,19 @@ def main():
                     help="Run Steps 1-3, report only, skip rewrite passes")
     ap.add_argument("--voice-dir",
                     help="Path to writing-voice/ directory (future)")
+    ap.add_argument("--lexicon",
+                    choices=["newsletter", "book", "industry", "academic",
+                             "none"],
+                    help="Venue lexicon for the lexical scan (GH-337); "
+                         "usually a venue profile's tell_lexicon value. "
+                         "Default: newsletter.")
     args = ap.parse_args()
+
+    # Exported rather than threaded: detect-lexical.sh reads
+    # FILTER_TELLS_LEXICON as its default, so the re-scan inside the rewrite
+    # loop uses the same lexicon without every caller passing it down.
+    if args.lexicon:
+        os.environ["FILTER_TELLS_LEXICON"] = args.lexicon
 
     if not os.path.isfile(args.article):
         print(f"Error: file not found: {args.article}", file=sys.stderr)

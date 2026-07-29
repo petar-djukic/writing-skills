@@ -3,6 +3,15 @@
 Extends the writing-style-guide.md with additional AI-detectable patterns.
 These patterns are checked by `detect-lexical.sh`.
 
+**Venue scope (GH-337).** The tiers below are the core, venue-independent
+catalog plus the newsletter word lists. `detect-lexical.sh --lexicon=NAME`
+adjusts the venue-keyed categories: `academic` drops the newsletter
+banned-word list and the statistical false-emphasis adverbs
+("significantly", "particularly") and adds paper-template tells; `book` and
+`industry` share the newsletter lists at this layer. The venue definitions
+live in the script's "Venue lexicons" block; a new venue-specific tell goes
+there, a new universal tell goes in the core arrays and this file.
+
 ## Tier 0: Chat-Turn Residue (Catastrophic — Fails the Scan Outright)
 
 Text from the model's conversational wrapper committed into the document
