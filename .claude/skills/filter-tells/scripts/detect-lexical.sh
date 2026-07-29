@@ -702,6 +702,17 @@ run_on_file() {
     python3 "$SCRIPT_DIR/detex.py" --aligned "$DISPLAY" > "$TEX_TMP" 2>/dev/null || true
     FILE="$TEX_TMP"
   fi
+  # Markdown input: figure scaffolding is out of scope (GH-321). Image embeds
+  # and figure-caption lines are non-prose to the rest of the pipeline
+  # (prose_document.py classifies them separately), so the lexical scan must
+  # not report them. Lines are blanked, not deleted, so every reported line
+  # number still refers to the real file.
+  local MD_TMP=""
+  if [[ "$DISPLAY" == *.md ]]; then
+    MD_TMP="$(mktemp)"
+    sed -E -e 's/^!\[.*$//' -e 's/^\*\*Figure .*$//' "$FILE" > "$MD_TMP"
+    FILE="$MD_TMP"
+  fi
   ISSUES_FOUND=0
   CANDIDATES_FOUND=0
   RESULTS=()
@@ -957,6 +968,7 @@ run_on_file() {
   fi
 
   if [[ -n "$TEX_TMP" ]]; then rm -f "$TEX_TMP"; fi
+  if [[ -n "$MD_TMP" ]]; then rm -f "$MD_TMP"; fi
   return 0
 }
 
