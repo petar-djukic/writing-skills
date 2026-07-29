@@ -272,9 +272,9 @@ def anchor_provenance(a, article, paras, full=False):
         return None
     d = a.voice_dir or va.discover(article)
     if not d:
-        print("anchors: no writing-voice/ found — the rewrite has no target "
-              "register; run plain filter-tells instead", file=sys.stderr)
-        return None
+        sys.exit("anchors: no writing-voice/ found — the rewrite has no target "
+                 "register. Use --no-anchors to run without voice steering, or "
+                 "run plain filter-tells instead")
 
     pre, tags = _selection(a)
     paths = va.sample_paths(d, role=a.role, pre_ai=pre, tags=tags)
@@ -292,9 +292,9 @@ def anchor_provenance(a, article, paras, full=False):
               f"steering anything on this corpus", file=sys.stderr)
 
     if not paths:
-        print("         NOTHING MATCHES THE FILTER — every rewrite will run "
-              "without anchors", file=sys.stderr)
-        return d
+        sys.exit(f"anchors: NOTHING MATCHES THE FILTER"
+                 f"{'  [' + filt + ']' if filt else ''} — 0 exemplars in pool. "
+                 f"Use --no-anchors to run without voice steering")
     if not paras:
         return d
 
@@ -379,6 +379,7 @@ def write_manifest(path, a, voice_dir, results, pangram=None):
            "match_voice:",
            f"  model: {_yaml_scalar(a.model)}",
            f"  voice_dir: {_yaml_scalar(voice_dir)}",
+           f"  no_anchors: {str(a.no_anchors).lower()}",
            f"  anchor_role: {_yaml_scalar(a.role)}",
            f"  anchor_tags: [{', '.join(_yaml_scalar(t) for t in tags)}]",
            f"  stratum: {_yaml_scalar(a.stratum)}",
@@ -461,6 +462,8 @@ def main():
                          "across roles. Inert on a corpus whose diction-eligible "
                          "samples are all pre-AI — the run says so when it is. "
                          "To steer register, reach for --role/--anchor-tags")
+    ap.add_argument("--no-anchors", action="store_true",
+                    help="run without voice anchors; skip retrieval entirely")
     ap.add_argument("--coverage-only", action="store_true",
                     help="parse + coverage audit only; no model calls")
     ap.add_argument("--dry-run", action="store_true",
@@ -475,13 +478,20 @@ def main():
                          "and it is asked for per document. Costs two scans.")
     a = ap.parse_args()
 
+    if a.no_anchors and any([a.role, a.anchor_tags, a.stratum]):
+        ap.error("--no-anchors contradicts --role/--anchor-tags/--stratum")
+
     art = os.path.abspath(a.article)
     out = a.out or re.sub(r"\.md$", ".vr-draft.md", art)
     lines, fm_close, paras, coverage, unaccounted = parse_paragraphs(art, a.min_words)
     # Long enough to be rewritten is the same bar the loop uses, so the reported
     # selection is the selection the run would actually make.
     rewritable = [p for p in paras if len(p[2].split()) >= a.min_words]
-    voice_dir = anchor_provenance(a, art, rewritable, full=a.dry_run)
+    if a.no_anchors:
+        print("anchors: --no-anchors set, skipping retrieval entirely")
+        voice_dir = None
+    else:
+        voice_dir = anchor_provenance(a, art, rewritable, full=a.dry_run)
 
     from collections import Counter
     cats = Counter(coverage.values())
@@ -519,22 +529,25 @@ def main():
         if rec["words"] < a.min_words:
             rec["status"] = "skipped-short"; results.append(rec); continue
         pf = f"{work}/p{n:02d}.orig.txt"; open(pf, "w").write(txt)
-        rflags = anchor_flags(a)
-        aj = run(["python3", f"{SK}/retrieve.py", "--text", pf, "--for", art,
-                  *rflags, "--json"])
-        at = run(["python3", f"{SK}/retrieve.py", "--text", pf, "--for", art, *rflags])
-        ajf = f"{work}/p{n:02d}.anchors.json"; open(ajf, "w").write(aj.stdout or "[]")
-        # Which exemplars anchored THIS paragraph, with scores, so a bad mix is
-        # diagnosable from results.json instead of by re-running retrieval.
-        try:
-            payload = json.loads(aj.stdout or "[]")
-            recs = payload.get("anchors", payload) if isinstance(payload, dict) else payload
-            rec["anchors"] = [{"file": x.get("file"), "role": x.get("role"),
-                               "score": x.get("score"), "weighted": x.get("weighted")}
-                              for x in recs]
-        except (json.JSONDecodeError, AttributeError, TypeError):
+        if a.no_anchors:
+            ajf = f"{work}/p{n:02d}.anchors.json"; open(ajf, "w").write("[]")
             rec["anchors"] = []
-        atf = f"{work}/p{n:02d}.anchors.txt"; open(atf, "w").write(at.stdout or "")
+            atf = f"{work}/p{n:02d}.anchors.txt"; open(atf, "w").write("")
+        else:
+            rflags = anchor_flags(a)
+            aj = run(["python3", f"{SK}/retrieve.py", "--text", pf, "--for", art,
+                      *rflags, "--json"])
+            at = run(["python3", f"{SK}/retrieve.py", "--text", pf, "--for", art, *rflags])
+            ajf = f"{work}/p{n:02d}.anchors.json"; open(ajf, "w").write(aj.stdout or "[]")
+            try:
+                payload = json.loads(aj.stdout or "[]")
+                recs = payload.get("anchors", payload) if isinstance(payload, dict) else payload
+                rec["anchors"] = [{"file": x.get("file"), "role": x.get("role"),
+                                   "score": x.get("score"), "weighted": x.get("weighted")}
+                                  for x in recs]
+            except (json.JSONDecodeError, AttributeError, TypeError):
+                rec["anchors"] = []
+            atf = f"{work}/p{n:02d}.anchors.txt"; open(atf, "w").write(at.stdout or "")
         note = None
         for attempt in range(1 + a.retries):
             cmd = ["python3", f"{SK}/rewrite.py", "--text", pf, "--anchors", atf,

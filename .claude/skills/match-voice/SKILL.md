@@ -171,6 +171,7 @@ register it was meant to avoid (GH-234, idea-factory#355).
 | **register that topic will not find** | `--anchor-tags economics` |
 | shape references, deliberately | `--anchor-tags structure-only` |
 | a specific corpus | `--voice-dir <path>` |
+| no voice steering at all | `--no-anchors` — skips retrieval entirely; contradicts `--role`/`--anchor-tags`/`--stratum` |
 
 The last combination is what a repository README means by "anchor on the Yegge
 and Beck samples". `--stratum pre-ai` alone is often not enough: it removes the
