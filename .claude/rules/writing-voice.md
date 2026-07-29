@@ -12,6 +12,8 @@ The contract is generic — the same layout works in any repository.
 writing-voice/
   manifest.yaml                 the contract below
   <Author>-<Year>-<slug>.md     one markdown file per exemplar
+  blueprints/<name>.md          structural blueprints for match-outline (optional)
+  venues/<name>.yaml            venue profiles, schema below (optional)
   .voice-profile.json           generated cache (gitignorable)
 ```
 
@@ -157,6 +159,78 @@ anchors and fall back to `venue-voice`. A repository may carry only one role.
 A tool given a file walks up from that file's directory to the repository root
 looking for `writing-voice/`. Absent, behavior is unchanged — voice features
 are additive, never required.
+
+## `venues/` — venue profiles
+
+A profile is one YAML file under `writing-voice/venues/` bundling every choice
+the humanize pipeline otherwise asks for interactively. One profile per
+publishing venue the repository writes for. Discovery follows the same walk-up
+rule as `writing-voice/` itself, so a paper repository carrying its own
+`writing-voice/venues/academic.yaml` resolves without cross-repo
+configuration.
+
+Profiles are **named bundles, not a linear dial**. Register axes do not move
+together across venues — the book profile removes all hedging while the
+academic profile carries the most — so consumers read fields, never infer
+them from `level`.
+
+```yaml
+name: newsletter          # must match the filename stem
+level: 1                  # 1 newsletter | 2 technical-essay | 3 book
+                          # 4 industry-report | 5 academic — ordering label only
+description: >
+  Substack posts: first person, coaching voice, punch anchors.
+anchor_query:             # manifest query for voice anchors
+  role: venue-voice       # optional: author-voice | venue-voice
+  tags: [first-person, clipped]
+  stratum: pre-ai         # optional: pre-ai | ai-era
+  author: Yegge           # optional hard pin
+blueprint: evans-howto.md # under blueprints/, or omit
+structural_step: tighten-style   # match-outline | tighten-style | skip
+pov: first-person         # first-person | third-person | mixed-sidebars
+citations: numbered       # numbered | pandoc | none
+tell_lexicon: newsletter  # newsletter | academic | industry | book | none
+hedge_policy: minimal     # zero (book) | minimal (essay) | calibrated (academic)
+targets:                  # measured register targets; keys are match-structure
+  sentence_length_mean: 17.4        # METRIC_KEYS — bootstrap them with
+  passive_per_100_sentences: 4.1    # `style.py corpus` over the venue slice,
+  hedges_per_1000_words: 1.2        # never hand-write them
+targets_provenance:
+  measured: '2026-07-29'
+  corpus: {role: venue-voice, tags: [first-person, clipped]}
+  papers: 24
+gates:                    # ordered acceptance checks with optional thresholds
+  - name: pangram
+    max_ai_fraction: 0.5
+  - name: pace
+  - name: register-composite
+  - name: citation-number-preservation
+  - name: audit-references
+provenance:               # written back by tune-anchors after a sweep
+  anchor_query_source: tune-anchors   # or: hand
+  swept: '2026-07-29'
+  composite: 0.81
+```
+
+Required: `name`, `level`, `structural_step`, `citations`, `tell_lexicon`,
+`hedge_policy`, `gates`. Loader and validator:
+`match-structure/scripts/venue_profile.py` (`discover` / `list` / `show` /
+`validate`); consumer skills import `resolve()` or shell out to `show`.
+A profile with schema errors is refused, not partially applied.
+
+Field semantics for consumers:
+
+- `anchor_query` / `blueprint` / `structural_step` — resolve humanize Phase-0
+  choices (humanize `--venue`).
+- `tell_lexicon` — selects which venue lexicon filter-tells applies on top of
+  its core tells; core tells are venue-independent.
+- `targets` + `hedge_policy` — tighten-style tightens toward these numbers
+  instead of the global author floor; hedge handling is venue-keyed.
+- `gates` — which acceptance checks run and in what order; a venue without
+  `pangram` in its gate list is never uploaded to an external detector
+  (the consent rule below still governs every upload for venues that do).
+- `citations` — pandoc `[@citekey]` and numbered `[1]` markers must survive
+  every rewrite step verbatim.
 
 ## Consumers
 
