@@ -2,7 +2,9 @@
 # detect-lexical.sh — Scan markdown files for AI writing giveaway words/phrases
 # Usage: ./detect-lexical.sh <file-or-dir> [file-or-dir ...] [--json] [--lexicon=NAME]
 #
-# Accepts: single file, multiple files, directories (scans *.md recursively).
+# Accepts: single file, multiple files, directories (scans *.md, *.tex, and
+# *.yaml recursively). YAML files are scanned through the line-aligned prose
+# view (prose_document.py), so keys and comments never false-positive.
 # Outputs line-numbered matches grouped by category.
 # Exit code: 0 = clean, 1 = issues found, 2 = usage error
 #
@@ -48,13 +50,13 @@ if [[ ${#PATHS[@]} -eq 0 ]]; then
   exit 2
 fi
 
-# Resolve all paths into a list of .md files
+# Resolve all paths into a list of .md/.tex/.yaml files
 declare -a FILES=()
 for p in "${PATHS[@]}"; do
   if [[ -d "$p" ]]; then
     while IFS= read -r -d '' f; do
       FILES+=("$f")
-    done < <(find "$p" \( -name '*.md' -o -name '*.tex' \) -type f -print0 | sort -z)
+    done < <(find "$p" \( -name '*.md' -o -name '*.tex' -o -name '*.yaml' -o -name '*.yml' \) -type f -print0 | sort -z)
   elif [[ -f "$p" ]]; then
     FILES+=("$p")
   else
@@ -64,7 +66,7 @@ for p in "${PATHS[@]}"; do
 done
 
 if [[ ${#FILES[@]} -eq 0 ]]; then
-  echo "Error: No .md or .tex files found in the given paths." >&2
+  echo "Error: No .md, .tex, or .yaml files found in the given paths." >&2
   exit 2
 fi
 
@@ -778,6 +780,28 @@ run_on_file() {
     python3 "$SCRIPT_DIR/detex.py" --aligned "$DISPLAY" > "$TEX_TMP" 2>/dev/null || true
     FILE="$TEX_TMP"
   fi
+  # YAML input: grep the line-aligned prose view so keys, comments, and
+  # structure don't false-positive. prose_document.py needs ruamel.yaml, so
+  # prefer the agent pixi env when present; a failed extraction is an error,
+  # never a silent fall-through to grepping raw YAML.
+  local YAML_TMP=""
+  if [[ "$DISPLAY" == *.yaml || "$DISPLAY" == *.yml ]]; then
+    YAML_TMP="$(mktemp)"
+    local -a PROSE_PY=(python3)
+    local MANIFEST="$SCRIPT_DIR/../../../pixi.toml"
+    if command -v pixi >/dev/null 2>&1 && [[ -f "$MANIFEST" ]]; then
+      PROSE_PY=(pixi run --manifest-path "$MANIFEST" python)
+    fi
+    if ! "${PROSE_PY[@]}" "$SCRIPT_DIR/../../../scripts/prose_document.py" \
+        --aligned "$DISPLAY" > "$YAML_TMP" 2>"$YAML_TMP.err"; then
+      echo "Error: could not extract prose from $DISPLAY:" >&2
+      cat "$YAML_TMP.err" >&2
+      rm -f "$YAML_TMP" "$YAML_TMP.err"
+      exit 2
+    fi
+    rm -f "$YAML_TMP.err"
+    FILE="$YAML_TMP"
+  fi
   # Markdown input: figure scaffolding is out of scope (GH-321). Image embeds
   # and figure-caption lines are non-prose to the rest of the pipeline
   # (prose_document.py classifies them separately), so the lexical scan must
@@ -1053,6 +1077,7 @@ run_on_file() {
 
   if [[ -n "$TEX_TMP" ]]; then rm -f "$TEX_TMP"; fi
   if [[ -n "$MD_TMP" ]]; then rm -f "$MD_TMP"; fi
+  if [[ -n "$YAML_TMP" ]]; then rm -f "$YAML_TMP"; fi
   return 0
 }
 

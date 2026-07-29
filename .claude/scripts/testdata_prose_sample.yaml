@@ -1,5 +1,6 @@
 id: sample-doc
 title: "Sample Architecture"
+description: A pipeline that turns specifications into verified binaries.
 
 # This comment must survive round-trip
 overview:
@@ -22,3 +23,8 @@ components:
       off to the orchestrator.
   - name: Repository
     responsibility: short value not prose
+
+notes: >
+  The generation system runs each utility through the same flow. Folded
+  scalars wrap prose across source lines and the aligned view must map
+  the content back to those lines.

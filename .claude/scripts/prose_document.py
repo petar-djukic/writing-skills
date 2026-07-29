@@ -18,6 +18,7 @@ of comments, key order, and scalar style.
 CLI:
   prose_document.py <file> [--json]        list paragraphs
   prose_document.py <file> --replace N     read new text from stdin, replace paragraph N
+  prose_document.py <file> --aligned       print the line-aligned prose view
 """
 
 import argparse
@@ -96,6 +97,23 @@ class ProseDocument:
         """
         raise NotImplementedError
 
+    def aligned_lines(self):
+        """Line-aligned prose view: one entry per source line, prose kept on
+        its source line, scaffolding blanked. Line-numbered findings against
+        this view refer to the real file (same contract as detex --aligned).
+        """
+        raise NotImplementedError
+
+
+def prose_view_aligned(path):
+    """Aligned prose view of any supported file, as a list of lines.
+
+    Markdown is its own prose view (consumers already know its scaffolding),
+    so it returns the file's lines unchanged; YAML returns prose scalar
+    content on its source lines with keys, comments, and structure blanked.
+    """
+    return ProseDocument.open(path).aligned_lines()
+
 
 # ---------------------------------------------------------------------------
 # Markdown backend
@@ -156,6 +174,9 @@ class MarkdownDocument(ProseDocument):
     def to_parse_result(self):
         import md_paragraphs
         return md_paragraphs.parse(self._content_from_lines())
+
+    def aligned_lines(self):
+        return list(self._lines)
 
 
 # ---------------------------------------------------------------------------
@@ -339,6 +360,80 @@ class YamlDocument(ProseDocument):
         return Result(lines=lines, fm_close=-1, paragraphs=paras,
                       coverage=coverage, unaccounted=[])
 
+    # Block-scalar header: optional "- " item marker, optional "key:", then
+    # a literal/folded indicator. The prose lives on the following lines.
+    _BLOCK_HEADER = re.compile(
+        r"^(\s*)(?:-\s+)?(?:[^:#\s][^:]*:)?\s*[>|][+-]?[0-9]*\s*(?:#.*)?$")
+    # Inline scalar prefix: "- " item marker and/or "key: " before the value.
+    _INLINE_PREFIX = re.compile(r"^\s*(?:-\s+)?(?:[^:#\s][^:]*:\s+)?")
+
+    def _indent(self, line):
+        return len(line) - len(line.lstrip())
+
+    def aligned_lines(self):
+        raw = self._raw.split("\n")
+        out = [""] * len(raw)
+        for p in self._paras:
+            start = p.start_line
+            if not (1 <= start <= len(raw)):
+                continue
+            header = raw[start - 1]
+            m = self._BLOCK_HEADER.match(header)
+            if m:
+                # Literal/folded scalar: consume the indented block under the
+                # header. Blank lines belong to the block only while a deeper-
+                # indented line still follows.
+                indent = self._indent(header)
+                ln = start + 1
+                while ln <= len(raw):
+                    line = raw[ln - 1]
+                    if not line.strip():
+                        rest = (raw[j] for j in range(ln, len(raw)))
+                        nxt = next((l for l in rest if l.strip()), None)
+                        if nxt is not None and self._indent(nxt) > indent:
+                            ln += 1
+                            continue
+                        break
+                    if self._indent(line) <= indent:
+                        break
+                    out[ln - 1] = line.strip()
+                    ln += 1
+            else:
+                # Inline scalar: value starts on the key line; plain-scalar
+                # continuations are the deeper-indented lines that follow.
+                # A single-line value is taken from the parsed paragraph text,
+                # which ruamel has already unquoted and unescaped.
+                if "\n" not in p.text and not (
+                        start < len(raw)
+                        and raw[start].strip()
+                        and self._indent(raw[start]) > self._indent(header)):
+                    out[start - 1] = p.text
+                    continue
+                value = self._INLINE_PREFIX.sub("", header).strip()
+                qc = value[0] if value[:1] in ("'", '"') else ""
+                if qc:
+                    value = value[1:]
+                    if value.endswith(qc):
+                        value = value[:-1]
+                    if qc == "'":
+                        value = value.replace("''", "'")
+                out[start - 1] = value
+                indent = self._indent(header)
+                ln = start + 1
+                while ln <= len(raw):
+                    line = raw[ln - 1]
+                    if not line.strip() or self._indent(line) <= indent:
+                        break
+                    cont = line.strip()
+                    if qc:
+                        if cont.endswith(qc):
+                            cont = cont[:-1]
+                        if qc == "'":
+                            cont = cont.replace("''", "'")
+                    out[ln - 1] = cont
+                    ln += 1
+        return out
+
 
 # ---------------------------------------------------------------------------
 # CLI
@@ -352,9 +447,16 @@ def main():
                     help="emit paragraphs as JSON")
     ap.add_argument("--replace", type=int, metavar="N",
                     help="replace paragraph N with text from stdin")
+    ap.add_argument("--aligned", action="store_true",
+                    help="print the line-aligned prose view (one line per "
+                         "source line, scaffolding blanked)")
     a = ap.parse_args()
 
     doc = ProseDocument.open(a.file)
+
+    if a.aligned:
+        print("\n".join(doc.aligned_lines()))
+        return
 
     if a.replace is not None:
         new_text = sys.stdin.read().rstrip("\n")
