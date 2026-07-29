@@ -221,6 +221,19 @@ def test_classify_gate_crash():
     print("  classify_gate_crash: ok")
 
 
+def test_compose_note():
+    # GH-323: the standing style note rides on every attempt; a retry's
+    # failure note is appended after it. Empty when both are absent, so the
+    # caller's truthiness check keeps first attempts note-free by default.
+    import drive
+    assert drive.compose_note("", None) == ""
+    assert drive.compose_note("active voice", None) == "active voice"
+    assert drive.compose_note("", "keep the numbers") == "keep the numbers"
+    assert drive.compose_note("active voice", "keep the numbers") \
+        == "active voice keep the numbers"
+    print("  compose_note: ok")
+
+
 def main():
     test_returns_shape()
     test_accepted_when_clean()
@@ -230,6 +243,7 @@ def main():
     test_verify_list_anchors_nonempty()
     test_verify_dict_anchors()
     test_classify_gate_crash()
+    test_compose_note()
     print("test_match_voice: all assertions passed")
 
 
