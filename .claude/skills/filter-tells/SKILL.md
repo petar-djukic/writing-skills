@@ -66,6 +66,21 @@ Line-numbered matches by category — banned words, clichés, false emphasis,
 narrative-pivot frames, mechanical transitions. Instant and free. Accepts files
 or directories (`*.md` recursively).
 
+**Venue lexicons (GH-337).** The catalog splits into core tells (always on:
+chat residue, AI clichés, mechanical transitions, narrative pivots, ornate
+register, filler measurement) and venue-keyed lists selected with
+`--lexicon=NAME` — `newsletter` (default; the full banned-word list), `book`
+and `industry` (share the newsletter word lists; their deltas are
+prose/structural rules living in tighten-style's hedge policy and the
+semantic pass, not word lists), `academic` (drops the newsletter banned
+words — "critical" and "fundamental" are ordinary methods-section
+vocabulary — keeps only the non-statistical false-emphasis adverbs, and adds
+paper-template tells like "novel framework" and "pave the way"), and `none`
+(core only). When the document has a venue profile
+(`writing-voice/venues/`, see the writing-voice rule), pass its
+`tell_lexicon` value; `drive.py --lexicon` threads it through the rewrite
+loop's re-scans via `FILTER_TELLS_LEXICON`.
+
 Two categories are scored by **density** rather than per hit, because their
 words are legitimate individually and only the rate says anything.
 **Ornate register** flags above 4.0 per 500 words. **Conversational filler** —

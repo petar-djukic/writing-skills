@@ -1,10 +1,16 @@
 #!/usr/bin/env bash
 # detect-lexical.sh — Scan markdown files for AI writing giveaway words/phrases
-# Usage: ./detect-lexical.sh <file-or-dir> [file-or-dir ...] [--json]
+# Usage: ./detect-lexical.sh <file-or-dir> [file-or-dir ...] [--json] [--lexicon=NAME]
 #
 # Accepts: single file, multiple files, directories (scans *.md recursively).
 # Outputs line-numbered matches grouped by category.
 # Exit code: 0 = clean, 1 = issues found, 2 = usage error
+#
+# --lexicon selects the venue lexicon (GH-337): newsletter (default) | book |
+# industry | academic | none. Core categories fire for every venue; the
+# venue-keyed categories are adjusted in the "Venue lexicons" block below.
+# Consumers usually take the value from a venue profile's tell_lexicon field
+# (see the writing-voice rule, "venues/").
 
 set -euo pipefail
 
@@ -17,14 +23,25 @@ fi
 
 # Separate flags from paths
 JSON_MODE=""
+LEXICON="${FILTER_TELLS_LEXICON:-newsletter}"
 declare -a PATHS=()
 for arg in "$@"; do
   if [[ "$arg" == "--json" ]]; then
     JSON_MODE="--json"
+  elif [[ "$arg" == --lexicon=* ]]; then
+    LEXICON="${arg#--lexicon=}"
   else
     PATHS+=("$arg")
   fi
 done
+
+case "$LEXICON" in
+  newsletter|book|industry|academic|none) ;;
+  *)
+    echo "Unknown --lexicon: $LEXICON (newsletter|book|industry|academic|none)" >&2
+    exit 2
+    ;;
+esac
 
 if [[ ${#PATHS[@]} -eq 0 ]]; then
   echo "Usage: $0 <file-or-dir> [file-or-dir ...] [--json]" >&2
@@ -641,12 +658,70 @@ META_NARRATION=(
   'the remainder of this (article|paper|section)'
 )
 
+# --- Venue lexicons (GH-337) ---
+# The arrays above are the DEFAULT (newsletter) lexicon — the lists this
+# script has always carried. Core categories are venue-independent and never
+# change: chat residue, AI clichés, mechanical transitions, narrative pivots,
+# marketing jargon, ornate register, conversational filler, CoT candidates,
+# editorializing, reader-directive, meta-narration.
+#
+# Venue-keyed categories:
+#   BANNED_WORDS    the newsletter register list ("critical", "fundamental",
+#                   "key"...). It must not fire on a methods section — these
+#                   words are ordinary academic vocabulary.
+#   FALSE_EMPHASIS  academic keeps its statistical vocabulary: "significantly"
+#                   and "particularly" carry technical meaning in a results
+#                   section and are dropped from the academic lexicon.
+#   ACADEMIC_TELLS  template phrases specific to machine-written papers;
+#                   scanned only under --lexicon=academic.
+#
+# book and industry currently share the newsletter lists at the lexical layer:
+# the book delta (first-person rules, zero-tolerance hedging) and the industry
+# delta (BLUF structure) are prose/structural rules, not word lists — they
+# live in tighten-style's hedge policy and the semantic pass, not here.
+ACADEMIC_TELLS=()
+case "$LEXICON" in
+  newsletter|book|industry) ;;
+  academic)
+    BANNED_WORDS=()
+    FALSE_EMPHASIS=(
+      "crucially"
+      "notably"
+      "importantly"
+      "remarkably"
+      "interestingly"
+      "at its core"
+      "ultimately"
+      "inherently"
+    )
+    # Paper-template tells only. Phrases the core lists already carry
+    # ("delve", "pivotal", "this underscores", "it is important to note")
+    # are NOT repeated here — one hit per tell, not two.
+    ACADEMIC_TELLS=(
+      "showcase" "showcases" "showcasing"
+      "garnered significant"
+      "in recent years, there has been"
+      "a comprehensive overview"
+      "novel framework" "novel approach" "novel method"
+      "holds great promise"
+      "pave the way" "paves the way" "paving the way"
+    )
+    ;;
+  none)
+    BANNED_WORDS=()
+    FALSE_EMPHASIS=()
+    ;;
+esac
+
 scan_patterns() {
   local category="$1"
   shift
   local patterns=("$@")
 
-  for pattern in "${patterns[@]}"; do
+  # ${patterns[@]+...}: a venue lexicon may empty a category (e.g. academic
+  # empties BANNED_WORDS), and bash 3.2 under set -u crashes on expanding an
+  # empty array — same guard as the RESULTS expansion below (GH-190).
+  for pattern in ${patterns[@]+"${patterns[@]}"}; do
     # Case-insensitive grep with line numbers
     local matches
     matches=$(grep -in "$pattern" "$FILE" 2>/dev/null || true)
@@ -672,7 +747,8 @@ scan_candidates() {
   shift
   local patterns=("$@")
 
-  for pattern in "${patterns[@]}"; do
+  # Same empty-array guard as scan_patterns.
+  for pattern in ${patterns[@]+"${patterns[@]}"}; do
     # -E (ERE) so candidate patterns may use alternation groups
     local matches
     matches=$(grep -inE "$pattern" "$FILE" 2>/dev/null || true)
@@ -718,7 +794,7 @@ run_on_file() {
   RESULTS=()
 
   if [[ "$JSON_MODE" != "--json" ]]; then
-    echo "=== Lexical AI Detection: $DISPLAY ==="
+    echo "=== Lexical AI Detection: $DISPLAY (lexicon: $LEXICON) ==="
     echo ""
     echo "--- Chat-Turn Residue (assistant voice — any hit fails the scan) ---"
   fi
@@ -743,7 +819,15 @@ run_on_file() {
     echo ""
     echo "--- Banned Words ---"
   fi
-  scan_patterns "banned-word" "${BANNED_WORDS[@]}"
+  scan_patterns "banned-word" ${BANNED_WORDS[@]+"${BANNED_WORDS[@]}"}
+
+  if [[ ${#ACADEMIC_TELLS[@]} -gt 0 ]]; then
+    if [[ "$JSON_MODE" != "--json" ]]; then
+      echo ""
+      echo "--- Academic Template Tells ---"
+    fi
+    scan_patterns "academic-tell" "${ACADEMIC_TELLS[@]}"
+  fi
 
   if [[ "$JSON_MODE" != "--json" ]]; then
     echo ""
@@ -755,7 +839,7 @@ run_on_file() {
     echo ""
     echo "--- False Emphasis ---"
   fi
-  scan_patterns "false-emphasis" "${FALSE_EMPHASIS[@]}"
+  scan_patterns "false-emphasis" ${FALSE_EMPHASIS[@]+"${FALSE_EMPHASIS[@]}"}
 
   if [[ "$JSON_MODE" != "--json" ]]; then
     echo ""
