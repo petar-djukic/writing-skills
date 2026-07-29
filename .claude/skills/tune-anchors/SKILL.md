@@ -132,7 +132,24 @@ pixi run python3 tune_anchors.py rank --ledger calibration.yaml
 
 # 4. Verify top 2 with Pangram (optional, costs 2-4 scans)
 pixi run python3 tune_anchors.py verify --ledger calibration.yaml --top 2 --budget 6
+
+# 5. Record the winner into the venue profile (GH-339)
+pixi run python3 ../match-structure/scripts/venue_profile.py set-anchors \
+  --venue newsletter --voice-dir ../autogenic-systems/writing-voice \
+  --arm "tags~clipped" --composite 0.81 \
+  --note "swept 1 article, gemma4:12b, verified top-2"
 ```
+
+### Recording the winner (writeback)
+
+A sweep whose result lives only in a ledger gets re-guessed next quarter.
+When the repository carries venue profiles (`writing-voice/venues/`, see the
+writing-voice rule), record the winning arm into the profile it was swept
+for: `set-anchors` writes the arm as the profile's `anchor_query` and stamps
+`provenance` (source, date, composite, note), so the profile always carries
+the last calibrated arm rather than a hand-guessed one. Pass the winning
+arm expression exactly as `rank` printed it — `set-anchors` parses it with
+this skill's own parser.
 
 ## The three findings this harness encodes
 

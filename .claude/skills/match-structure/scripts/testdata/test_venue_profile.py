@@ -124,6 +124,45 @@ def main():
         assert any("level" in e for e in errors)
         assert any("gates" in e for e in errors)
 
+        # bootstrap (GH-339): measured targets from an explicit file list
+        prose = os.path.join(tmp, "prose.md")
+        with open(prose, "w") as f:
+            f.write("# T\n\n" + ("The pipeline reads the manifest. It selects "
+                    "the exemplars by tag. The profile records what it "
+                    "measured, and the numbers travel with the venue.\n\n") * 6)
+        block = vp.bootstrap_targets(files=[prose])
+        assert "sentence_length_mean" in block["targets"], block["targets"]
+        assert block["targets_provenance"]["papers"] == 1
+        assert block["targets_provenance"]["corpus"] == {"files": 1}
+
+        # bootstrap via manifest query
+        with open(os.path.join(voice, "A-2010-a.md"), "w") as f:
+            f.write("# A\n\n" + ("The scheduler assigns slots in order of "
+                    "arrival. Nodes that miss a slot wait for the next "
+                    "frame, and the delay bound follows from the frame "
+                    "length. We measured the bound on a testbed of twelve "
+                    "nodes over three weeks.\n\n") * 5)
+        block2 = vp.bootstrap_targets(voice_dir=voice, tags=["punchy"])
+        assert block2["targets_provenance"]["corpus"] == {"tags": ["punchy"]}
+        try:
+            vp.bootstrap_targets(voice_dir=voice, tags=["absent"])
+            raise AssertionError("expected empty-selection ValueError")
+        except ValueError:
+            pass
+
+        # merge_into_profile preserves unrelated keys, drops private ones
+        merged = vp.merge_into_profile(found, dict(block, _voice_dir=voice))
+        assert merged["name"] == "newsletter"
+        assert "_voice_dir" not in merged
+        assert merged["targets"]["sentence_length_mean"] == \
+            block["targets"]["sentence_length_mean"]
+
+        # arm expressions -> anchor_query (reuses tune-anchors' parser)
+        q = vp.arm_to_anchor_query(["tags~clipped,punchy", "role=venue-voice",
+                                    "pre_ai=true"])
+        assert q == {"tags": ["clipped", "punchy"], "role": "venue-voice",
+                     "stratum": "pre-ai"}, q
+
         print("ok: all venue_profile assertions passed")
     finally:
         shutil.rmtree(tmp)

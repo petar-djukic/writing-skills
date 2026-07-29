@@ -74,11 +74,24 @@ $RUN <skill>/scripts/venue_profile.py discover <file>            # find venues/ 
 $RUN <skill>/scripts/venue_profile.py list --for <file>          # available venue names
 $RUN <skill>/scripts/venue_profile.py show --venue N --for <file> # validated profile JSON
 $RUN <skill>/scripts/venue_profile.py validate <profile.yaml>
+$RUN <skill>/scripts/venue_profile.py bootstrap --voice-dir D --tags a,b [--role R] [--stratum pre-ai]
+$RUN <skill>/scripts/venue_profile.py bootstrap --voice-dir D --tags a,b --venue N --write
+$RUN <skill>/scripts/venue_profile.py set-anchors --venue N --voice-dir D --arm "tags~clipped" [--composite X]
 ```
 
 Python consumers import `venue_profile.resolve(start_path=..., venue=...)`,
 which raises on schema errors — a broken profile is refused, never partially
 applied.
+
+`bootstrap` (GH-339) measures a corpus slice — a manifest query
+(role/tags/stratum) or an explicit `--files` list — with the same metric
+engine as `style.py corpus`, and emits the profile's
+`targets`/`targets_std`/`targets_provenance` block; `--write` merges it into
+an existing `venues/<name>.yaml` (author the profile first). Profiles are
+measured, never hand-written. `set-anchors` records an anchor query into a
+profile with provenance — from tune-anchors arm expressions (repeatable
+`--arm`, parsed by tune-anchors' own parser so the syntax cannot drift) or
+from explicit `--role/--tags/--stratum/--author` flags.
 
 ## Consumers
 
