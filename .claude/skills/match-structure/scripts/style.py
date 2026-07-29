@@ -90,6 +90,21 @@ equation paper work method model results data set one two three first second
 new non pre well within without across along among et al ie eg
 """.split())
 
+FUNCTION_WORDS = set("""
+a an the this that these those my your his her its our their
+i me we us you he him she they them it
+who whom whose which what
+am is are was were be been being
+have has had do does did will would shall should
+can could may might must
+and but or nor for yet so
+in on at to by from with of into through during before after
+above below between among against about across along around
+if then than when where how because although though while unless
+not no neither either both each every all any few more most
+some such
+""".split())
+
 PASSIVE_RE = re.compile(
     r"\b(?:is|are|was|were|be|been|being)\s+(?:\w+ly\s+)?\w+(?:ed|en)\b",
     re.IGNORECASE,
@@ -175,6 +190,35 @@ def detect_sections(text):
 # Metrics
 # --------------------------------------------------------------------------- #
 
+_VOWELS = re.compile(r"[aeiouy]+", re.IGNORECASE)
+_SILENT_E = re.compile(r"[^aeiouy]e$", re.IGNORECASE)
+
+
+def _syllable_count(word):
+    """Estimate syllables via vowel-cluster heuristic."""
+    w = word.lower().strip()
+    if len(w) <= 2:
+        return 1
+    count = len(_VOWELS.findall(w))
+    if _SILENT_E.search(w) and count > 1:
+        count -= 1
+    if w.endswith("le") and len(w) > 2 and w[-3] not in "aeiouy":
+        count += 1
+    return max(count, 1)
+
+
+def _clause_lengths(sentences):
+    """Approximate clause lengths by splitting on commas/semicolons."""
+    lengths = []
+    for s in sentences:
+        clauses = re.split(r"[;,]", s)
+        for c in clauses:
+            wds = words_of(c)
+            if wds:
+                lengths.append(len(wds))
+    return lengths
+
+
 def text_metrics(text):
     """Compute style metrics for a block of text."""
     clean = strip_markdown(text)
@@ -203,17 +247,103 @@ def text_metrics(text):
     citations = len(CITATION_RE.findall(text))
     hedges = sum(1 for w in tokens if w in HEDGE_WORDS)
 
+    # Readability
+    syllables = [_syllable_count(w) for w in WORD_RE.findall(clean)]
+    total_syllables = sum(syllables)
+    avg_syl = total_syllables / n_words
+    complex_words = sum(1 for s in syllables if s >= 3)
+    polysyllables = complex_words
+
+    flesch_re = 206.835 - 1.015 * mean_sl - 84.6 * avg_syl
+    fk_grade = 0.39 * mean_sl + 11.8 * avg_syl - 15.59
+    gunning_fog = 0.4 * (mean_sl + 100 * complex_words / n_words)
+    smog = 3 + math.sqrt(polysyllables * 30 / n_sent) if n_sent > 0 else 0
+
+    # Lexical diversity
+    unique_words = len(set(tokens))
+    ttr = unique_words / n_words
+    corrected_ttr = unique_words / math.sqrt(n_words)
+    freq_dist = Counter(tokens)
+    hapax = sum(1 for w, c in freq_dist.items() if c == 1)
+    hapax_ratio = hapax / n_words
+
+    freq_of_freq = Counter(freq_dist.values())
+    m2 = sum(i * i * fi for i, fi in freq_of_freq.items())
+    yules_k = 10000 * (m2 - n_words) / (n_words * n_words) if n_words > 1 else 0
+
+    # Syntactic
+    stdev_sl = math.sqrt(var_sl)
+    sent_cv = stdev_sl / mean_sl if mean_sl > 0 else 0
+    clause_lens = _clause_lengths(sentences)
+    mean_clause = (sum(clause_lens) / len(clause_lens)) if clause_lens else 0
+
+    # Stylometrics
+    func_count = sum(1 for w in tokens if w in FUNCTION_WORDS)
+    func_ratio = func_count / n_words
+
+    punct_counts = {
+        "commas": clean.count(","),
+        "semicolons": clean.count(";"),
+        "em_dashes": clean.count("—") + clean.count("---") + clean.count(" -- "),
+        "colons": clean.count(":"),
+    }
+    punct_per_1000 = {k: round(1000 * v / n_words, 2) for k, v in punct_counts.items()}
+
+    # Paragraph cohesion (tf-idf cosine between consecutive paragraphs)
+    cohesion = None
+    if len(paragraphs) >= 2:
+        para_tokens = [Counter(words_of(p)) for p in paragraphs]
+        df = Counter()
+        for pt in para_tokens:
+            df.update(pt.keys())
+        n_para = len(paragraphs)
+        para_vecs = []
+        for pt in para_tokens:
+            total = sum(pt.values()) or 1
+            para_vecs.append({w: (c / total) * math.log((1 + n_para) / (1 + df[w]) + 1)
+                              for w, c in pt.items()})
+        sims = []
+        for i in range(len(para_vecs) - 1):
+            a, b = para_vecs[i], para_vecs[i + 1]
+            common = set(a) & set(b)
+            if not common:
+                sims.append(0.0)
+                continue
+            num = sum(a[w] * b[w] for w in common)
+            da = math.sqrt(sum(v * v for v in a.values()))
+            db = math.sqrt(sum(v * v for v in b.values()))
+            sims.append(num / (da * db) if da and db else 0.0)
+        cohesion = round(sum(sims) / len(sims), 4)
+
     return {
         "sentences": n_sent,
         "words": n_words,
         "sentence_length_mean": round(mean_sl, 2),
-        "sentence_length_stdev": round(math.sqrt(var_sl), 2),
+        "sentence_length_stdev": round(stdev_sl, 2),
         "paragraph_length_mean_sentences": round(mean_pl, 2),
         "paragraphs": len(paragraphs),
         "passive_per_100_sentences": round(100 * passive / n_sent, 2),
         "hedges_per_1000_words": round(1000 * hedges / n_words, 2),
         "citations_per_paragraph": round(citations / len(paragraphs), 2) if paragraphs else 0,
         "top_sentence_openers": dict(openers.most_common(10)),
+        # Readability
+        "flesch_reading_ease": round(flesch_re, 2),
+        "flesch_kincaid_grade": round(fk_grade, 2),
+        "gunning_fog": round(gunning_fog, 2),
+        "smog_index": round(smog, 2),
+        # Lexical diversity
+        "type_token_ratio": round(ttr, 4),
+        "corrected_ttr": round(corrected_ttr, 4),
+        "hapax_ratio": round(hapax_ratio, 4),
+        "yules_k": round(yules_k, 2),
+        # Syntactic
+        "sentence_length_cv": round(sent_cv, 4),
+        "mean_clause_length": round(mean_clause, 2),
+        # Stylometrics
+        "function_word_ratio": round(func_ratio, 4),
+        "punctuation_per_1000w": punct_per_1000,
+        # Computational
+        "paragraph_cohesion": cohesion,
     }
 
 
@@ -371,14 +501,21 @@ def std_of(dicts, key):
     return round((sum((v - m) ** 2 for v in vals) / len(vals)) ** 0.5, 3)
 
 
+METRIC_KEYS = [
+    "sentence_length_mean", "sentence_length_stdev",
+    "paragraph_length_mean_sentences", "passive_per_100_sentences",
+    "hedges_per_1000_words", "citations_per_paragraph",
+    "flesch_reading_ease", "flesch_kincaid_grade", "gunning_fog", "smog_index",
+    "type_token_ratio", "corrected_ttr", "hapax_ratio", "yules_k",
+    "sentence_length_cv", "mean_clause_length",
+    "function_word_ratio", "paragraph_cohesion",
+]
+
+
 def aggregate(profiles):
     """Aggregate per-paper profiles into a corpus profile."""
     overall = [p["overall"] for p in profiles if p["overall"]]
-    metric_keys = [
-        "sentence_length_mean", "sentence_length_stdev",
-        "paragraph_length_mean_sentences", "passive_per_100_sentences",
-        "hedges_per_1000_words", "citations_per_paragraph",
-    ]
+    metric_keys = METRIC_KEYS
     agg = {k: mean_of(overall, k) for k in metric_keys}
     agg_std = {k: std_of(overall, k) for k in metric_keys}
 
@@ -430,11 +567,7 @@ def aggregate(profiles):
 # --------------------------------------------------------------------------- #
 
 def compare_profiles(draft_profile, corpus_profile):
-    metric_keys = [
-        "sentence_length_mean", "sentence_length_stdev",
-        "paragraph_length_mean_sentences", "passive_per_100_sentences",
-        "hedges_per_1000_words", "citations_per_paragraph",
-    ]
+    metric_keys = METRIC_KEYS
     draft_overall = draft_profile["overall"] or {}
     corpus_metrics = corpus_profile["metrics"]
 
