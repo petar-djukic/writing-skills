@@ -95,6 +95,33 @@ def test_clean_text():
     print("  clean_text: ok")
 
 
+def test_yaml_findings_on_source_lines():
+    """YAML files check through the aligned prose view (GH-348): findings
+    fire on prose scalar content and carry real source line numbers."""
+    import tempfile
+    sample = """\
+id: spec-1
+overview:
+  summary: |
+    In order to understand the system we must read the documentation.
+    The pipeline validates each request against the declared schema.
+meta:
+  note: not prose
+"""
+    with tempfile.TemporaryDirectory() as tmp:
+        path = os.path.join(tmp, "sample.yaml")
+        with open(path, "w") as f:
+            f.write(sample)
+        findings = cs.check(path)
+    rules = {f["rule"] for f in findings}
+    assert "TS-01" in rules, f"expected TS-01 on yaml prose, got {rules}"
+    ts01 = next(f for f in findings if f["rule"] == "TS-01")
+    assert ts01["line"] == 4, f"finding should carry source line 4, got {ts01['line']}"
+    assert "summary" not in " ".join(f["text"] for f in findings), \
+        "yaml key leaked into finding text"
+    print("  yaml_findings_on_source_lines: ok")
+
+
 def main():
     test_returns_list()
     test_ts01_needless_words()
@@ -107,6 +134,7 @@ def main():
     test_check_paragraph_alias()
     test_base_line_offset()
     test_clean_text()
+    test_yaml_findings_on_source_lines()
     print("test_check_style: all assertions passed")
 
 
