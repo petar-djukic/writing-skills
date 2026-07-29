@@ -164,7 +164,12 @@ def report_register(article, draft):
 
 
 def pangram_delta(before, after):
-    """Print fraction_ai before -> after and the still-flagged worklist."""
+    """Print fraction_ai before -> after and the still-flagged worklist.
+
+    The worklist ends with a ready-to-paste --paragraphs selection (GH-322):
+    span order and drive.py paragraph order are the same md_paragraphs
+    segmentation, so the k-th prose paragraph in the diff is paragraph k here.
+    """
     r = run(["python3", PANGRAM_REPORT, "report", "--response", after[0],
              "--spans", after[1], "--baseline", before[0],
              "--baseline-spans", before[1]])
@@ -174,6 +179,56 @@ def pangram_delta(before, after):
         return
     print("\nexternal check (Pangram, article -> draft):")
     print(r.stdout.rstrip())
+    j = run(["python3", PANGRAM_REPORT, "report", "--response", after[0],
+             "--spans", after[1], "--baseline", before[0],
+             "--baseline-spans", before[1], "--json"])
+    if j.returncode != 0 or not j.stdout.strip():
+        return
+    try:
+        diff = json.loads(j.stdout)
+    except json.JSONDecodeError:
+        return
+    flagged = [i + 1 for i, p in enumerate(diff.get("paragraphs") or [])
+               if p.get("flagged")]
+    if flagged:
+        print(f'next pass: --paragraphs "{compress_ranges(flagged)}"')
+
+
+def compress_ranges(indices):
+    """'1,3-5,9' from sorted 1-based indices — the --paragraphs input syntax."""
+    out, i = [], 0
+    idx = sorted(indices)
+    while i < len(idx):
+        j = i
+        while j + 1 < len(idx) and idx[j + 1] == idx[j] + 1:
+            j += 1
+        out.append(str(idx[i]) if i == j else f"{idx[i]}-{idx[j]}")
+        i = j + 1
+    return ",".join(out)
+
+
+def parse_paragraph_selection(spec, total):
+    """Set of 1-based paragraph indices from 'N,M-K' syntax.
+
+    Raises ValueError on malformed pieces, descending ranges, or indices
+    outside 1..total, so the caller can refuse the run before any model call.
+    """
+    chosen = set()
+    for piece in (p.strip() for p in spec.split(",")):
+        if not piece:
+            continue
+        m = re.fullmatch(r"(\d+)(?:-(\d+))?", piece)
+        if not m:
+            raise ValueError(f"malformed paragraph selection: '{piece}'")
+        lo, hi = int(m.group(1)), int(m.group(2) or m.group(1))
+        if lo > hi:
+            raise ValueError(f"descending range: '{piece}'")
+        if lo < 1 or hi > total:
+            raise ValueError(f"'{piece}' outside 1..{total}")
+        chosen.update(range(lo, hi + 1))
+    if not chosen:
+        raise ValueError("empty paragraph selection")
+    return chosen
 
 
 def anchor_flags(a):
@@ -393,15 +448,17 @@ def write_manifest(path, a, voice_dir, results, pangram=None):
            f"  anchor_tags: [{', '.join(_yaml_scalar(t) for t in tags)}]",
            f"  stratum: {_yaml_scalar(a.stratum)}",
            f"  style_note: {_yaml_scalar(getattr(a, 'style_note', '') or None)}",
+           f"  paragraphs: {_yaml_scalar(getattr(a, 'paragraphs', '') or None)}",
            "  anchor_files:"]
     out += [f"    - {_yaml_scalar(f)}" for f in anchor_files] or ["    []"]
     out.append("  result: {accepted: %d, kept_original: %d, skipped_short: %d, "
-               "rewrite_error: %d, gate_error: %d}"
+               "rewrite_error: %d, gate_error: %d, unselected: %d}"
                % (counts.get("accepted-mechanical", 0),
                   counts.get("kept-original", 0),
                   counts.get("skipped-short", 0),
                   counts.get("rewrite-error", 0),
-                  counts.get("gate-error", 0)))
+                  counts.get("gate-error", 0),
+                  counts.get("unselected", 0)))
     if pangram:
         before, after = pangram
         out.append("  pangram:")
@@ -485,6 +542,11 @@ def main():
                     help="standing style directive sent to the rewrite model "
                          "on EVERY attempt, e.g. 'active voice, plain "
                          "diction'; retries append their failure note to it")
+    ap.add_argument("--paragraphs", default="",
+                    help="rewrite only these 1-based paragraph indices "
+                         "('3,7,12-15'); the rest pass through untouched. The "
+                         "run report prints the next-pass selection to paste "
+                         "here")
     ap.add_argument("--voice-dir",
                     help="exemplar corpus (default: discover writing-voice/ "
                          "upward from the article)")
@@ -524,6 +586,15 @@ def main():
     art = os.path.abspath(a.article)
     out = a.out or re.sub(r"\.md$", ".vr-draft.md", art)
     lines, fm_close, paras, coverage, unaccounted = parse_paragraphs(art, a.min_words)
+    # Validated before any scan or model call: an invalid selection must cost
+    # nothing.
+    selection = None
+    if a.paragraphs:
+        try:
+            selection = parse_paragraph_selection(a.paragraphs, len(paras))
+        except ValueError as e:
+            print(f"--paragraphs: {e}", file=sys.stderr)
+            sys.exit(2)
     # Long enough to be rewritten is the same bar the loop uses, so the reported
     # selection is the selection the run would actually make.
     rewritable = [p for p in paras if len(p[2].split()) >= a.min_words]
@@ -579,6 +650,8 @@ def main():
         rec = {"n": n, "lines": [s, e], "words": len(txt.split()), "orig": txt}
         if rec["words"] < a.min_words:
             rec["status"] = "skipped-short"; results.append(rec); continue
+        if selection is not None and n not in selection:
+            rec["status"] = "unselected"; results.append(rec); continue
         pf = f"{work}/p{n:02d}.orig.txt"; open(pf, "w").write(txt)
         if a.no_anchors:
             ajf = f"{work}/p{n:02d}.anchors.json"; open(ajf, "w").write("[]")
@@ -730,7 +803,8 @@ def main():
     # After the manifest, so the forensics survive: when the gate crashed on
     # every rewritable paragraph, nothing was ever verified and the "draft" is
     # a copy of the input. Success would present that copy as a rewrite.
-    gated = [r for r in results if r["status"] != "skipped-short"]
+    gated = [r for r in results
+             if r["status"] not in ("skipped-short", "unselected")]
     if gated and all(r["status"] == "gate-error" for r in gated):
         sys.exit("gate-error on every paragraph: the verification gate never "
                  "ran. The draft is an untouched copy — do not use it.")
