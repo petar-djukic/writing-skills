@@ -392,6 +392,7 @@ def write_manifest(path, a, voice_dir, results, pangram=None):
            f"  anchor_role: {_yaml_scalar(a.role)}",
            f"  anchor_tags: [{', '.join(_yaml_scalar(t) for t in tags)}]",
            f"  stratum: {_yaml_scalar(a.stratum)}",
+           f"  style_note: {_yaml_scalar(getattr(a, 'style_note', '') or None)}",
            "  anchor_files:"]
     out += [f"    - {_yaml_scalar(f)}" for f in anchor_files] or ["    []"]
     out.append("  result: {accepted: %d, kept_original: %d, skipped_short: %d, "
@@ -421,6 +422,13 @@ def write_manifest(path, a, voice_dir, results, pangram=None):
                 out.append(f"      num_windows: {p['num_windows']}")
     open(path, "w").write("\n".join(out) + "\n")
     return anchor_files
+
+
+def compose_note(style_note, failure_note):
+    """The note for one rewrite attempt: standing style directive first,
+    failure-classified retry note after it, either alone when the other is
+    absent, empty string when both are."""
+    return " ".join(p for p in (style_note, failure_note) if p)
 
 
 def classify_gate_crash(returncode, stdout, stderr):
@@ -473,6 +481,10 @@ def main():
     ap.add_argument("--retries", type=int, default=2)
     ap.add_argument("--min-words", type=int, default=12)
     ap.add_argument("--temperature", default="0.7")
+    ap.add_argument("--style-note", default="",
+                    help="standing style directive sent to the rewrite model "
+                         "on EVERY attempt, e.g. 'active voice, plain "
+                         "diction'; retries append their failure note to it")
     ap.add_argument("--voice-dir",
                     help="exemplar corpus (default: discover writing-voice/ "
                          "upward from the article)")
@@ -592,8 +604,12 @@ def main():
             cmd = ["python3", f"{SK}/rewrite.py", "--text", pf, "--anchors", atf,
                    "--model", a.model, "--endpoint", a.endpoint,
                    "--temperature", a.temperature]
-            if note:
-                cmd += ["--retry-note", note]
+            # The standing style note rides on every attempt; a retry's
+            # failure-classified note is appended after it, so neither
+            # displaces the other.
+            sent_note = compose_note(a.style_note, note)
+            if sent_note:
+                cmd += ["--retry-note", sent_note]
             rw = run(cmd)
             if rw.returncode != 0 or not rw.stdout.strip():
                 rec["status"] = "rewrite-error"; rec["err"] = (rw.stderr or "")[:200]

@@ -302,7 +302,15 @@ default; applying them directly is opt-in.
 | Timeout (s) | `--timeout` / `MATCH_VOICE_TIMEOUT` | 300 (cold loads are slow) |
 | Anchors per paragraph | `-k` | 3 |
 | Max copied run (words) | `--max-shared-run` | 8 |
+| Standing style directive | `--style-note` | off |
 | External check | `--pangram` | off (the flag is the consent) |
+
+`--style-note "active voice, plain diction"` sends a standing directive to
+the rewrite model on every attempt, first included; retries append their
+failure-classified note after it. Use it when a run's register drifts in a
+known direction — the measured case is gpt-oss `--no-anchors` doubling the
+passive rate — and you want to push back without anchors. Recorded in the
+provenance YAML as `style_note`.
 
 ## Did it work? (the --pangram measurement)
 
