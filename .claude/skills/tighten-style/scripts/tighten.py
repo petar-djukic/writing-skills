@@ -94,6 +94,13 @@ def write_draft(doc, ext, out_lines, tightened, out):
     later positions cannot shift earlier ones.
     """
     if ext in (".yaml", ".yml"):
+        if not tightened:
+            # Nothing accepted: emit the untouched source rather than a
+            # ruamel re-emission, which normalizes wrapping and sequence
+            # offsets and turns a no-op run into a noisy diff (GH-360).
+            with open(out, "w", encoding="utf-8") as f:
+                f.write(doc.raw)
+            return [p.text for p in doc.paragraphs]
         for rec in sorted(tightened, key=lambda r: -r["n"]):
             doc.replace(rec["n"] - 1, rec["cand"])
         doc.save_as(out)

@@ -97,6 +97,12 @@ class ProseDocument:
         """
         raise NotImplementedError
 
+    @property
+    def raw(self):
+        """The source text exactly as read — for writers that want to emit
+        an untouched copy without a round-trip re-emission (GH-360)."""
+        raise NotImplementedError
+
     def aligned_lines(self):
         """Line-aligned prose view: one entry per source line, prose kept on
         its source line, scaffolding blanked. Line-numbered findings against
@@ -175,6 +181,10 @@ class MarkdownDocument(ProseDocument):
         import md_paragraphs
         return md_paragraphs.parse(self._content_from_lines())
 
+    @property
+    def raw(self):
+        return self._original
+
     def aligned_lines(self):
         return list(self._lines)
 
@@ -219,6 +229,10 @@ class YamlDocument(ProseDocument):
         from ruamel.yaml import YAML
         self._yaml = YAML()
         self._yaml.preserve_quotes = True
+        # Never introduce line wraps the source did not have (GH-360): the
+        # default emitter width (80) re-flows every long scalar on save, so
+        # replacing one paragraph rewrapped untouched prose across the file.
+        self._yaml.width = 2 ** 16
         self._detect_indent()
         self._data = self._yaml.load(self._raw)
         self._paras = []
@@ -237,6 +251,7 @@ class YamlDocument(ProseDocument):
                 for off in (0, 2):
                     y = YAML()
                     y.preserve_quotes = True
+                    y.width = 2 ** 16  # same emitter as _yaml (GH-360)
                     y.indent(mapping=mi, sequence=si, offset=off)
                     data = y.load(self._raw)
                     buf = io.StringIO()
@@ -359,6 +374,10 @@ class YamlDocument(ProseDocument):
                 coverage[ln] = "prose"
         return Result(lines=lines, fm_close=-1, paragraphs=paras,
                       coverage=coverage, unaccounted=[])
+
+    @property
+    def raw(self):
+        return self._raw
 
     # Block-scalar header: optional "- " item marker, optional "key:", then
     # a literal/folded indicator. The prose lives on the following lines.
