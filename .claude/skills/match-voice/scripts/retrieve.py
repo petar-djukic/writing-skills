@@ -44,7 +44,7 @@ def render(anchors):
     return "\n\n".join(out)
 
 
-def warn_inert(va, voice_dir, role, stratum, tags):
+def warn_inert(va, voice_dir, role, stratum, tags, author=None):
     """Say so when a selection flag excludes nothing on this corpus.
 
     A filter that removes no sample is not steering anything, and a caller
@@ -53,14 +53,17 @@ def warn_inert(va, voice_dir, role, stratum, tags):
     that one dimension dropped.
     """
     pre = (True if stratum == "pre-ai" else False if stratum == "ai-era" else None)
-    n = len(va.sample_paths(voice_dir, role=role, pre_ai=pre, tags=tags))
+    n = len(va.sample_paths(voice_dir, role=role, pre_ai=pre, tags=tags,
+                            author=author))
     for name, kw in (
             (f"--stratum {stratum}" if stratum else None,
-             dict(role=role, pre_ai=None, tags=tags)),
+             dict(role=role, pre_ai=None, tags=tags, author=author)),
             (f"--role {role}" if role else None,
-             dict(role=None, pre_ai=pre, tags=tags)),
+             dict(role=None, pre_ai=pre, tags=tags, author=author)),
             (f"--tags {','.join(tags)}" if tags else None,
-             dict(role=role, pre_ai=pre, tags=None))):
+             dict(role=role, pre_ai=pre, tags=None, author=author)),
+            (f"--author {author}" if author else None,
+             dict(role=role, pre_ai=pre, tags=tags, author=None))):
         if name and len(va.sample_paths(voice_dir, **kw)) == n:
             print(f"note: {name} selects the whole pool ({n} exemplars) — it is "
                   f"not filtering anything here", file=sys.stderr)
@@ -77,6 +80,7 @@ def main():
     p.add_argument("--stratum", choices=["pre-ai", "ai-era"],
                    help="pre-ai restricts to diction-safe samples across roles")
     p.add_argument("--tags", help="comma-separated register tags")
+    p.add_argument("--author", help="hard pin to a named author (case-insensitive)")
     p.add_argument("--json", action="store_true", help="emit the raw anchor records")
     args = p.parse_args()
 
@@ -91,9 +95,9 @@ def main():
 
     passage = sys.stdin.read() if args.text == "-" else open(args.text).read()
     tags = args.tags.split(",") if args.tags else None
-    warn_inert(va, voice_dir, args.role, args.stratum, tags)
+    warn_inert(va, voice_dir, args.role, args.stratum, tags, author=args.author)
     got = va.anchors(voice_dir, passage, k=args.k, role=args.role,
-                     tags=tags,
+                     tags=tags, author=args.author,
                      pre_ai=(True if args.stratum == "pre-ai"
                              else False if args.stratum == "ai-era" else None))
     if args.json:

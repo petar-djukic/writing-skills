@@ -98,10 +98,10 @@ def is_pre_ai(ex: dict) -> bool:
 
 
 def sample_paths(voice_dir: str, role: str = None, pre_ai: bool = None,
-                 tags=None, for_diction: bool = True):
+                 tags=None, author: str = None, for_diction: bool = True):
     """[(path, role)] for manifest exemplars whose file exists.
 
-    Three independent axes, none expressible by another:
+    Four independent axes, none expressible by another:
 
       role        whose voice it is
       pre_ai      whether its diction is safe to copy (GH-217)
@@ -110,6 +110,8 @@ def sample_paths(voice_dir: str, role: str = None, pre_ai: bool = None,
                   an article is often the one least topically similar. Measured
                   on the reference corpus: for an economics paragraph, the 11
                   Krugman samples rank no better than 25th of 2,420 (GH-226).
+      author      which specific PERSON wrote it (GH-301) — hard pin, not a
+                  weight. Venue-voice mixes many authors; this selects one.
 
     `structure-only` is a tag in the reference corpus, and it means what it
     says: anchor SHAPE on this sample, never diction. for_diction=True (the
@@ -120,9 +122,12 @@ def sample_paths(voice_dir: str, role: str = None, pre_ai: bool = None,
     genuinely want shape references.
     """
     want = {t.strip().lower() for t in (tags or []) if t.strip()}
+    author_lower = author.strip().lower() if author else None
     out = []
     for ex in load_manifest(voice_dir):
         if role and ex.get("role") != role:
+            continue
+        if author_lower and ex.get("author", "").strip().lower() != author_lower:
             continue
         if pre_ai is not None and is_pre_ai(ex) != pre_ai:
             continue
@@ -265,7 +270,8 @@ AUTHOR_VOICE_DICTION_WEIGHT = 2.5
 
 
 def anchors(voice_dir: str, passage: str, k: int = 3, role: str = None,
-            pre_ai: bool = None, tags=None, for_diction: bool = True):
+            pre_ai: bool = None, tags=None, author: str = None,
+            for_diction: bool = True):
     """Top-k exemplar passages most topically similar to `passage`.
 
     author-voice is weighted, not privileged absolutely: at comparable
@@ -283,7 +289,8 @@ def anchors(voice_dir: str, passage: str, k: int = 3, role: str = None,
     w = AUTHOR_VOICE_DICTION_WEIGHT if for_diction else AUTHOR_VOICE_WEIGHT
     cands = []
     for path, r in sample_paths(voice_dir, role=role, pre_ai=pre_ai,
-                                tags=tags, for_diction=for_diction):
+                                tags=tags, author=author,
+                                for_diction=for_diction):
         for p in _passages(path):
             cands.append({"file": os.path.basename(path), "role": r, "text": p})
     if not cands:
@@ -336,6 +343,7 @@ def cmd_anchors(args):
     text = sys.stdin.read() if args.text == "-" else open(args.text).read()
     got = anchors(d, text, k=args.k, role=args.role,
                   tags=(args.tags.split(",") if args.tags else None),
+                  author=args.author,
                   pre_ai=(True if args.stratum == "pre-ai"
                           else False if args.stratum == "ai-era" else None))
     print(json.dumps({"writing_voice": d, "k": args.k, "anchors": got},
@@ -366,6 +374,8 @@ def main():
                     help="pre-ai restricts to diction-safe samples across roles")
     an.add_argument("--tags", help="comma-separated register tags; similarity "
                                    "still ranks WITHIN the selected pool")
+    an.add_argument("--author", help="hard pin to a named author (case-insensitive "
+                                     "match against the exemplar author field)")
     an.set_defaults(func=cmd_anchors)
 
     args = p.parse_args()
