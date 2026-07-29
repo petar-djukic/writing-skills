@@ -2,10 +2,11 @@
 name: humanize
 description: >-
   Three-step pipeline to move AI-drafted prose to human-passing on Pangram:
-  match-outline (structural rewrite), filter-tells (semantic cleanup), then
-  match-voice --no-anchors (paragraph diction). Parameterized blueprint and
-  anchor-tag selection, inter-step Pangram measurement, consolidated
-  five-category writing-quality report.
+  a configurable structural step (match-outline for section-level rewriting,
+  tighten-style for paragraph-level tightening, or skip), filter-tells
+  (semantic cleanup), then match-voice --no-anchors (paragraph diction).
+  Parameterized blueprint and anchor-tag selection, inter-step Pangram
+  measurement, consolidated five-category writing-quality report.
   Triggers: humanize, humanize article, make it human, full rewrite pipeline,
   rewrite for pangram, three-step rewrite.
 ---
@@ -22,13 +23,13 @@ its absence.
 
 | step | what it does | what happens without it |
 |---|---|---|
-| match-outline | section-level rewrite — changes enough sentence structure that the downstream paragraph rewriter can clear the mechanical gate | match-voice rewrites land at distance 0.0 from the original; the gate rejects every paragraph and nothing changes (unverified — measured against the broken gate, see calibration note) |
+| structural step (match-outline or tighten-style) | changes enough sentence structure that the downstream paragraph rewriter can clear the mechanical gate — match-outline rewrites at section level against a blueprint, tighten-style tightens paragraph by paragraph toward the author's density floor | match-voice rewrites land at distance 0.0 from the original; the gate rejects every paragraph and nothing changes (unverified — measured against the broken gate, see calibration note) |
 | filter-tells semantic cleanup | collapse antithesis pairs, remove CoT leakage, cut recap ballast, fix banned words | Pangram score stays at 100% AI even after match-voice, because the rhetorical patterns survive diction changes |
 | match-voice --no-anchors | paragraph-level diction rewrite via gpt-oss with no voice anchors | prose retains the original model's lexical fingerprint; Pangram detects it |
 
 The compound effect: semantic cleanup alone does not move Pangram (rhetorical
-patterns are not what it measures). Both steps together, with match-outline
-providing the structural divergence, moved the verified run from 100% AI to
+patterns are not what it measures). Both steps together, with the structural
+step providing the divergence, moved the verified run from 100% AI to
 Mixed (76.2% AI-assisted, mean window 0.576). The ablation rows that showed
 match-voice alone gate-rejected at distance 0.0 were measured against the
 broken gate (GH-318) and are unverified — see the calibration note at the
@@ -57,13 +58,20 @@ Pangram catches. See calibration data at the end.
 1. Discover `writing-voice/` by walking up from the article path.
    Error if not found.
 
-2. List available blueprints:
+2. Ask the user which structural step to run:
+
+   | choice | when to use | what it does |
+   |---|---|---|
+   | match-outline | article structure needs section-level rewriting (new blueprint, different register) | section-level rewrite via Kimi with chosen blueprint and anchor-tags |
+   | tighten-style | article structure is sound, paragraphs need tightening toward author density | paragraph-level rule-keyed rewriting via Ollama with anchor-gated verification |
+   | skip | article already structurally rewritten (e.g. resuming after step 1) | proceed directly to filter-tells |
+
+3. **If match-outline was chosen**, list available blueprints and tags, then
+   ask which to use:
 
    ```bash
    ls <repo>/writing-voice/blueprints/*.md
    ```
-
-3. List available tags from the manifest:
 
    ```bash
    RUN="pixi run --manifest-path <agent-dir>/pixi.toml python"
@@ -72,19 +80,18 @@ Pangram catches. See calibration data at the end.
    ```
 
    If the `tags` subcommand is not available, parse distinct tag values from
-   `writing-voice/manifest.yaml` directly.
+   `writing-voice/manifest.yaml` directly. If only one blueprint exists,
+   propose it as the default. Show the available tags and let the user choose
+   (or skip tags for untagged retrieval).
 
-4. Ask the user which blueprint and anchor-tags to use for match-outline.
-   If only one blueprint exists, propose it as the default. Show the available
-   tags and let the user choose (or skip tags for untagged retrieval).
+   **If tighten-style was chosen**, no blueprint or tag question is needed —
+   it uses the writing-voice corpus floor and its rule catalog.
 
-5. Capture baseline measurements:
+4. Capture baseline measurements:
 
    ```bash
-   # Pangram baseline
-   $RUN <match-voice>/scripts/drive.py \
-     --article <article.md> --dry-run --pangram \
-     --no-anchors --model gpt-oss:120b-cloud
+   # Pangram baseline (one-shot scan; uploads the prose, costs a scan)
+   $RUN <agent-dir>/scripts/pangram_report.py scan --article <article.md>
 
    # Style baseline
    $RUN <match-structure>/scripts/style.py profile <article.md>
@@ -92,12 +99,15 @@ Pangram catches. See calibration data at the end.
 
    Record the baseline Pangram scores (human %, mean window score, verdict)
    and the full `text_metrics()` output. These are the "before" column in the
-   final report.
+   final report. With the `skip` choice, capture the baseline and proceed to
+   Phase 2.
 
-### Phase 1: match-outline (structural rewrite)
+### Phase 1: Structural step
 
-Rewrite the whole article via `match_outline.py --rewrite` with the user's
-chosen blueprint and anchor-tags.
+Run the step chosen in Phase 0. With `skip`, proceed directly to Phase 2.
+
+**match-outline** — rewrite the whole article via `match_outline.py
+--rewrite` with the user's chosen blueprint and anchor-tags:
 
 ```bash
 $RUN <match-outline>/scripts/match_outline.py <article.md> \
@@ -108,33 +118,46 @@ $RUN <match-outline>/scripts/match_outline.py <article.md> \
   --rewrite
 ```
 
-The output is `<article-stem>-rewritten.md` next to the original. It is
-expected to remain AI-flagged — match-outline provides structural divergence,
-not diction cleanup.
+The output is `<article-stem>-rewritten.md` next to the original.
 
-Verify the rewrite preserved content: check that citations, numbers, code
-blocks, and figures survived. match_outline.py runs its own similarity guard,
-but spot-check the sections that carry data.
-
-Measure after match-outline:
+**tighten-style** — survey the findings, then tighten paragraph by
+paragraph with the anchor-gated verifier:
 
 ```bash
-$RUN <match-voice>/scripts/drive.py \
-  --article <rewritten.md> --dry-run --pangram \
-  --no-anchors --model gpt-oss:120b-cloud
-
-$RUN <match-structure>/scripts/style.py profile <rewritten.md>
+$RUN <tighten-style>/scripts/check_style.py <article.md>
+$RUN <tighten-style>/scripts/tighten.py --article <article.md> \
+  --out <article-stem>-tightened.md
 ```
 
-Record as the "after-outline" column.
+(Pass `--out` explicitly: tighten.py's default output name is
+`<stem>.tightmd`, which the rest of this pipeline does not expect.)
+
+Either way, the output is expected to remain AI-flagged — the structural
+step provides divergence, not diction cleanup.
+
+Verify the rewrite preserved content: check that citations, numbers, code
+blocks, and figures survived. Both tools run their own guards
+(match_outline.py a similarity guard, tighten.py the match-voice gate), but
+spot-check the sections that carry data.
+
+Measure after the structural step:
+
+```bash
+$RUN <agent-dir>/scripts/pangram_report.py scan --article <step1-output.md>
+
+$RUN <match-structure>/scripts/style.py profile <step1-output.md>
+```
+
+Record as the "after step 1" column.
 
 ### Phase 2: filter-tells semantic cleanup
 
-Run the lexical and structural scans on the rewritten file.
+Run the lexical and structural scans on the step-1 output (or the original
+article when the structural step was skipped).
 
 ```bash
-bash <filter-tells>/scripts/detect-lexical.sh <rewritten.md>
-$RUN <filter-tells>/scripts/detect-structural.py <rewritten.md>
+bash <filter-tells>/scripts/detect-lexical.sh <step1-output.md>
+$RUN <filter-tells>/scripts/detect-structural.py <step1-output.md>
 ```
 
 Apply the semantic edits following the filter-tells Step 3 procedure. The
@@ -158,11 +181,9 @@ After editing, re-run both scans to confirm:
 Measure after filter-tells:
 
 ```bash
-$RUN <match-voice>/scripts/drive.py \
-  --article <rewritten.md> --dry-run --pangram \
-  --no-anchors --model gpt-oss:120b-cloud
+$RUN <agent-dir>/scripts/pangram_report.py scan --article <step1-output.md>
 
-$RUN <match-structure>/scripts/style.py profile <rewritten.md>
+$RUN <match-structure>/scripts/style.py profile <step1-output.md>
 ```
 
 Record as the "after-tells" column.
@@ -196,7 +217,7 @@ Record as the "after-voice" column.
 ### Phase 4: Consolidated report
 
 Print a single report with five categories. Each metric shows four columns:
-baseline, after-outline, after-tells, after-voice, and the total delta
+baseline, after step 1, after-tells, after-voice, and the total delta
 (after-voice minus baseline).
 
 **1. AI/Human detection (Pangram)**
@@ -204,13 +225,13 @@ baseline, after-outline, after-tells, after-voice, and the total delta
 | stage | human % | mean score | verdict |
 |---|---|---|---|
 | baseline | — | — | — |
-| after match-outline | — | — | — |
+| after step 1 (match-outline or tighten-style) | — | — | — |
 | after filter-tells | — | — | — |
 | after match-voice | — | — | — |
 
 **2. Readability**
 
-| metric | baseline | after-outline | after-tells | after-voice | delta |
+| metric | baseline | after step 1 | after-tells | after-voice | delta |
 |---|---|---|---|---|---|
 | Flesch Reading Ease | — | — | — | — | — |
 | Flesch-Kincaid Grade | — | — | — | — | — |
@@ -219,7 +240,7 @@ baseline, after-outline, after-tells, after-voice, and the total delta
 
 **3. Lexical diversity**
 
-| metric | baseline | after-outline | after-tells | after-voice | delta |
+| metric | baseline | after step 1 | after-tells | after-voice | delta |
 |---|---|---|---|---|---|
 | Type-Token Ratio | — | — | — | — | — |
 | Corrected TTR | — | — | — | — | — |
@@ -228,7 +249,7 @@ baseline, after-outline, after-tells, after-voice, and the total delta
 
 **4. Syntactic and structural**
 
-| metric | baseline | after-outline | after-tells | after-voice | delta |
+| metric | baseline | after step 1 | after-tells | after-voice | delta |
 |---|---|---|---|---|---|
 | Sentence length mean | — | — | — | — | — |
 | Sentence length stdev | — | — | — | — | — |
@@ -239,7 +260,7 @@ baseline, after-outline, after-tells, after-voice, and the total delta
 
 **5. Stylometrics**
 
-| metric | baseline | after-outline | after-tells | after-voice | delta |
+| metric | baseline | after step 1 | after-tells | after-voice | delta |
 |---|---|---|---|---|---|
 | Function word ratio | — | — | — | — | — |
 | Hedges / 1000 words | — | — | — | — | — |
@@ -271,10 +292,11 @@ baseline, after-outline, after-tells, after-voice, and the total delta
 | file | step |
 |---|---|
 | `<stem>.md` | original article |
-| `<stem>-rewritten.md` | after match-outline |
-| `<stem>-rewritten.md` | same file, after semantic edits applied in place |
-| `<stem>-rewritten.vr-gptoss-noanchor.md` | final output after match-voice |
-| `<stem>-rewritten.vr-gptoss-noanchor.generation.yaml` | provenance record |
+| `<stem>-rewritten.md` | after match-outline (when chosen) |
+| `<stem>-tightened.md` | after tighten-style (when chosen; pass `--out`, the tool's own default is `<stem>.tightmd`) |
+| `<step1-output>.md` | same file, after semantic edits applied in place |
+| `<step1-output>.vr-gptoss-noanchor.md` | final output after match-voice |
+| `<step1-output>.vr-gptoss-noanchor.generation.yaml` | provenance record |
 
 ## When it breaks
 
@@ -285,9 +307,14 @@ baseline, after-outline, after-tells, after-voice, and the total delta
   reporting success (Pangram before == after is the tell). Check the
   provenance YAML: `accepted: 0` with unchanged scores means the gate never
   ran, not that the rewrites failed.
-- **match-voice gate rejects everything (distance 0.0):** the match-outline
-  step did not change the prose enough. Try a different model or blueprint
-  for match-outline, or apply more aggressive semantic edits in Phase 2.
+- **match-voice gate rejects everything (distance 0.0):** the structural
+  step (when match-outline was chosen) did not change the prose enough. Try
+  a different model or blueprint for match-outline, or apply more aggressive
+  semantic edits in Phase 2.
+- **tighten-style gate rejects everything:** the prose is already at or
+  below the author's density floor — there is nothing to tighten. When the
+  structure itself needs to change, match-outline is the right step 1, not
+  tighten-style.
 - **Pangram score does not improve:** the semantic cleanup missed rhetorical
   patterns. Re-run filter-tells Step 3 (the full semantic analysis) and look
   for surviving antithesis pairs, tricolon patterns, or CoT leakage.
@@ -326,3 +353,6 @@ post-fix run with all 35 paragraphs accepted (distance 0.533).
 
 The ablation claim (each step necessary) rests on the two unverified rows and
 needs re-measurement with the working gate before it can be stated as fact.
+
+All calibration above was measured with match-outline as the structural
+step. tighten-style calibration is pending.
