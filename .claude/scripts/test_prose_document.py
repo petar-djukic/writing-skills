@@ -274,6 +274,25 @@ def test_yaml_to_parse_result():
     print("  yaml_to_parse_result: ok")
 
 
+def test_yaml_no_rewrap_on_replace():
+    """Long inline scalars survive a replace-and-save unwrapped (GH-360):
+    the default emitter width re-flowed every long line in the file."""
+    with tempfile.TemporaryDirectory() as tmp:
+        copy = os.path.join(tmp, "copy.yaml")
+        shutil.copy2(YAML_SAMPLE, copy)
+        doc = pd.ProseDocument.open(copy)
+        idx = next(i for i, p in enumerate(doc.paragraphs)
+                   if "summary" in p.context)
+        doc.replace(idx, "Replaced summary paragraph with enough words.\n")
+        doc.save()
+        with open(copy, encoding="utf-8") as f:
+            lines = f.read().split("\n")
+        desc = next(l for l in lines if l.startswith("description:"))
+        assert desc.endswith("in between."), \
+            f"long scalar was re-wrapped on save: {desc!r}"
+    print("  yaml_no_rewrap_on_replace: ok")
+
+
 def test_yaml_aligned_lines():
     doc = pd.ProseDocument.open(YAML_SAMPLE)
     with open(YAML_SAMPLE, encoding="utf-8") as f:
@@ -328,6 +347,7 @@ def main():
     test_unsupported_format()
     test_md_to_parse_result()
     test_yaml_to_parse_result()
+    test_yaml_no_rewrap_on_replace()
     test_yaml_aligned_lines()
     test_md_aligned_lines()
     print("test_prose_document: all assertions passed")

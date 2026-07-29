@@ -1,6 +1,6 @@
 id: sample-doc
 title: "Sample Architecture"
-description: A pipeline that turns specifications into verified binaries.
+description: A pipeline that turns specifications into verified binaries without any manual coding step in between.
 
 # This comment must survive round-trip
 overview:

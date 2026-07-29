@@ -612,6 +612,12 @@ def assemble_draft(art, lines, accept, rng, out):
     """
     if art.lower().endswith((".yaml", ".yml")):
         doc = _prose_document().ProseDocument.open(art)
+        if not accept:
+            # Nothing accepted: emit the untouched source rather than a
+            # ruamel re-emission, which normalizes wrapping and sequence
+            # offsets and turns a no-op run into a noisy diff (GH-360).
+            open(out, "w").write(doc.raw)
+            return
         for n in sorted(accept, reverse=True):
             doc.replace(n - 1, accept[n])
         doc.save_as(out)
