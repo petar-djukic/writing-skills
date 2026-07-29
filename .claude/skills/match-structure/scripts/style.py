@@ -389,20 +389,31 @@ def _strip_front_matter(text):
     return text
 
 
+def _shared_scripts():
+    _shared = os.path.normpath(os.path.join(
+        os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", "scripts"))
+    if _shared not in sys.path:
+        sys.path.insert(0, _shared)
+
+
 def read_prose(path, raw=False):
     """Read a file, returning its prose view.
 
     Strips YAML front matter by default so metrics are comparable with the rest
     of the prose stack (md_paragraphs, pangram_report, tighten). Pass raw=True
-    to include front matter (whole-file stats).
+    to include front matter (whole-file stats). YAML documents (GH-347) yield
+    their prose scalar paragraphs joined by blank lines — keys, comments, and
+    structure never enter the metrics; raw=True has no effect for them.
     """
+    if path.endswith((".yaml", ".yml")):
+        _shared_scripts()
+        from prose_document import ProseDocument
+        return "\n\n".join(
+            p.text for p in ProseDocument.open(path).paragraphs)
     with open(path) as f:
         text = f.read()
     if path.endswith(".tex"):
-        _shared = os.path.normpath(os.path.join(
-            os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", "scripts"))
-        if _shared not in sys.path:
-            sys.path.insert(0, _shared)
+        _shared_scripts()
         import detex
         text = detex.detex(text)[0]
     elif not raw:
