@@ -6,9 +6,11 @@ description: >-
   tighten-style for paragraph-level tightening, or skip), filter-tells
   (semantic cleanup), then match-voice --no-anchors (paragraph diction).
   Parameterized blueprint and anchor-tag selection, inter-step Pangram
-  measurement, consolidated five-category writing-quality report.
-  Triggers: humanize, humanize article, make it human, full rewrite pipeline,
-  rewrite for pangram, three-step rewrite.
+  measurement, consolidated five-category writing-quality report. Venue mode
+  (--venue <name>) resolves every choice from a writing-voice/venues/
+  profile instead of asking. Triggers: humanize, humanize article, make it
+  human, full rewrite pipeline, rewrite for pangram, three-step rewrite,
+  humanize for venue.
 ---
 
 # Humanize (three-step pipeline)
@@ -58,6 +60,31 @@ Pangram catches. See calibration data at the end.
 1. Discover `writing-voice/` by walking up from the article path.
    Error if not found.
 
+1b. **Venue mode (GH-336).** If the user named a venue (`--venue <name>`, or
+   "humanize this for the book/newsletter/..."), resolve the profile and skip
+   the interactive questions below:
+
+   ```bash
+   $RUN <match-structure>/scripts/venue_profile.py show \
+     --venue <name> --for <article.md>
+   ```
+
+   A profile that fails validation is refused — report the errors and stop;
+   never fall back to guessing. From the resolved profile:
+
+   | profile field | replaces |
+   |---|---|
+   | `structural_step` | the step question (step 2) |
+   | `blueprint`, `anchor_query` | the blueprint/tags questions (step 3) |
+   | `targets`, `hedge_policy` | tighten-style's floor: pass `--venue <name>` to tighten.py in Phase 1 |
+   | `tell_lexicon` | the lexical catalog: pass `--lexicon=<value>` in Phase 2 |
+   | `gates` | which measurements run: no `pangram` gate → skip every Pangram scan in every phase (the consent rule still governs uploads when the gate IS present) |
+   | `citations` | which citation markers to spot-check after each step (`[1]` numbered vs pandoc `[@citekey]` — both must survive every rewrite verbatim) |
+
+   List venues with `venue_profile.py list --for <article.md>` when the user
+   asks what is available. No venue named, or no `venues/` directory → the
+   interactive flow below, unchanged.
+
 2. Ask the user which structural step to run:
 
    | choice | when to use | what it does |
@@ -100,7 +127,8 @@ Pangram catches. See calibration data at the end.
    Record the baseline Pangram scores (human %, mean window score, verdict)
    and the full `text_metrics()` output. These are the "before" column in the
    final report. With the `skip` choice, capture the baseline and proceed to
-   Phase 2.
+   Phase 2. In venue mode, capture the Pangram baseline only when the
+   profile's gates include `pangram`.
 
 ### Phase 1: Structural step
 
@@ -130,7 +158,9 @@ $RUN <tighten-style>/scripts/tighten.py --article <article.md> \
 ```
 
 (Pass `--out` explicitly: tighten.py's default output name is
-`<stem>.tightmd`, which the rest of this pipeline does not expect.)
+`<stem>.tightmd`, which the rest of this pipeline does not expect.
+In venue mode add `--venue <name>` — the profile's targets become the
+sentence floor and its hedge policy sets the TS-08 threshold.)
 
 Either way, the output is expected to remain AI-flagged — the structural
 step provides divergence, not diction cleanup.
@@ -159,6 +189,11 @@ article when the structural step was skipped).
 bash <filter-tells>/scripts/detect-lexical.sh <step1-output.md>
 $RUN <filter-tells>/scripts/detect-structural.py <step1-output.md>
 ```
+
+In venue mode pass `--lexicon=<tell_lexicon>` to detect-lexical.sh — the
+newsletter banned-word list must not drive edits on an academic methods
+section, and the academic lexicon adds paper-template tells the default
+list does not carry.
 
 Apply the semantic edits following the filter-tells Step 3 procedure. The
 edits that matter most for this pipeline:
@@ -201,10 +236,14 @@ $RUN <match-voice>/scripts/drive.py \
   --out <output.md>
 ```
 
+In venue mode, include `--pangram` only when the profile's gates carry
+`pangram`; a venue without that gate (academic) is never uploaded to the
+external detector.
+
 Check the output for:
 - `accepted-mechanical` count (should be most paragraphs, not `kept-original`)
 - Distance > 0 (confirms the gate accepted rewrites)
-- Pangram verdict and mean window score
+- Pangram verdict and mean window score (when the gate ran)
 
 Measure final style:
 
@@ -219,6 +258,13 @@ Record as the "after-voice" column.
 Print a single report with five categories. Each metric shows four columns:
 baseline, after step 1, after-tells, after-voice, and the total delta
 (after-voice minus baseline).
+
+In venue mode, head the report with the venue name and add a `target`
+column to categories 2–5 wherever the profile's `targets` block carries the
+metric — the question the report answers becomes "did the pipeline land on
+the venue's measured register", not only "did the numbers move". Run each
+gate from the profile's `gates` list in order and state pass/fail per gate;
+omit the Pangram category entirely when that gate is absent.
 
 **1. AI/Human detection (Pangram)**
 
