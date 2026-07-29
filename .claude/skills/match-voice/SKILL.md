@@ -166,6 +166,7 @@ register it was meant to avoid (GH-234, idea-factory#355).
 | default — nearest passages, author-voice weighted | none |
 | diction-safe only (exclude AI-era samples) | `--stratum pre-ai` — inert, and reported as such, when the corpus holds no AI-era diction samples |
 | **punch: the pre-AI peer essays** | `--role venue-voice --anchor-tags clipped` |
+| **one specific author's voice** | `--author Yegge` — hard pin, not a weight; empty pool if no exemplars carry that author |
 | see the real selection before spending tokens | `--dry-run` |
 | **register that topic will not find** | `--anchor-tags economics` |
 | shape references, deliberately | `--anchor-tags structure-only` |

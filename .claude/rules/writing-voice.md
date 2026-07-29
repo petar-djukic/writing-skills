@@ -35,6 +35,7 @@ exemplars:
   - id: djukic-2007-icc-distributed-scheduling   # stable key
     file: Djukic-2007-distributed-link-scheduling-...md   # relative to writing-voice/
     role: author-voice                            # author-voice | venue-voice
+    author: Djukic                                # optional; used by --author
     venue: IEEE ICC
     year: 2007
     source: papers/Djukic-2007-...md              # where the sample came from
@@ -42,9 +43,11 @@ exemplars:
       problem statement, simulation-backed claims.
 ```
 
-Required per exemplar: `id`, `file`, `role`. `venue`, `year`, `source`, and
-`notes` are recommended — `notes` is read by humans choosing exemplars and by
-the anchor-retrieval step when ranking ties.
+Required per exemplar: `id`, `file`, `role`. `venue`, `year`, `source`,
+`author`, and `notes` are recommended — `author` is the person who wrote the
+piece (used by `--author` to hard-pin retrieval to one writer's voice), and
+`notes` is read by humans choosing exemplars and by the anchor-retrieval step
+when ranking ties.
 
 ## Two independent axes
 
@@ -117,6 +120,31 @@ moved the score not at all and nearly doubled passive. The tag arm rewrote
 
 Articles usually carry the query already — front matter `tags:`, and in some
 repositories `Altitude:` / `Move:` from `pattern-language.yaml`.
+
+## The fourth axis: author identity
+
+`role` says whose voice *category* a sample belongs to; it does not say which
+*person* wrote it. A `venue-voice` pool mixes many authors, and `--role
+venue-voice` returns them all. `author` says **which specific person** wrote
+the piece, and `--author Yegge` hard-pins retrieval to that person's
+exemplars regardless of role.
+
+```yaml
+- id: yegge-2011-google-platforms-rant
+  file: Yegge-2011-stevey-s-google-platforms-rant.md
+  role: venue-voice
+  author: Yegge
+  year: 2011
+```
+
+The `pre_ai` gate still applies: `--author Yegge` selects Yegge's samples,
+and `--stratum pre-ai` further restricts to the ones safe for diction
+anchoring. The axes are independent — author picks WHO, stratum governs
+WHETHER their words are safe to copy.
+
+`--author` that matches nothing yields an empty pool, not a fallback to the
+full corpus. An author value that excludes nothing (every exemplar carries
+that author) is reported as inert.
 
 ## Roles and precedence
 
