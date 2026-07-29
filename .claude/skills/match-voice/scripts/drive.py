@@ -599,6 +599,32 @@ def restore_full_bold(original, candidate):
     return candidate
 
 
+def assemble_draft(art, lines, accept, rng, out):
+    """Write accepted candidates into the draft at `out`.
+
+    YAML goes back through the document model (GH-358): ruamel round-trip
+    keeps comments, key order, and structure — raw line splicing would drop
+    bare prose over keys and block markers. Markdown keeps bottom-up line
+    splicing. Descending order both ways, so a replacement that changes
+    later paragraph indices cannot shift earlier ones. `accept` maps the
+    1-based paragraph number to its candidate text; `rng` maps it to the
+    (start, end) line span the markdown splice uses.
+    """
+    if art.lower().endswith((".yaml", ".yml")):
+        doc = _prose_document().ProseDocument.open(art)
+        for n in sorted(accept, reverse=True):
+            doc.replace(n - 1, accept[n])
+        doc.save_as(out)
+        return
+    out_lines = list(lines)
+    for n in sorted(accept, reverse=True):
+        s, e = rng[n]
+        # The wholly-bold repair happens before the gate now, so an accepted
+        # candidate already carries the markup it is going to carry.
+        out_lines[s - 1:e] = [accept[n]]
+    open(out, "w").write("\n".join(out_lines))
+
+
 def parse_paragraphs(path, min_words):
     """Return (lines, fm_close, paragraphs, coverage, unaccounted).
 
@@ -816,13 +842,7 @@ def main():
     # assemble
     accept = {r["n"]: r["cand"] for r in results if r.get("cand")}
     rng = {r["n"]: tuple(r["lines"]) for r in results}
-    out_lines = list(lines)
-    for n in sorted(accept, reverse=True):
-        s, e = rng[n]
-        # The wholly-bold repair happens before the gate now, so an accepted
-        # candidate already carries the markup it is going to carry.
-        out_lines[s - 1:e] = [accept[n]]
-    open(out, "w").write("\n".join(out_lines))
+    assemble_draft(art, lines, accept, rng, out)
     json.dump(results, open(f"{work}/results.json", "w"), indent=2)
 
     from collections import Counter as C

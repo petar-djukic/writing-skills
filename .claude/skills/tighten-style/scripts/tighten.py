@@ -83,6 +83,29 @@ def _sentence_stats(text):
     return mean, var ** 0.5
 
 
+def write_draft(doc, ext, out_lines, tightened, out):
+    """Write accepted candidates into the draft at `out`; return the lines
+    the sentence-floor advisory should measure.
+
+    YAML goes back through the document model (GH-358): ruamel round-trip
+    keeps comments, key order, and structure — raw line splicing would drop
+    bare prose over keys and block markers. Markdown keeps bottom-up line
+    splicing. Descending order both ways, so a replacement that changes
+    later positions cannot shift earlier ones.
+    """
+    if ext in (".yaml", ".yml"):
+        for rec in sorted(tightened, key=lambda r: -r["n"]):
+            doc.replace(rec["n"] - 1, rec["cand"])
+        doc.save_as(out)
+        return [p.text for p in doc.paragraphs]
+    for rec in sorted(tightened, key=lambda r: -r["lines"][0]):
+        s, e = rec["lines"]
+        out_lines[s - 1:e] = [rec["cand"]]
+    with open(out, "w", encoding="utf-8") as f:
+        f.write("\n".join(out_lines))
+    return out_lines
+
+
 def _doc_sentence_stats(lines):
     """Sentence stats over a full document (list of lines), prose only."""
     for d in (SHARED,):
@@ -277,17 +300,14 @@ def main():
         if aborted:
             break
 
-    # Splice accepted candidates, bottom-up so line numbers hold.
     tightened = [r for r in results if r.get("cand")]
-    for rec in sorted(tightened, key=lambda r: -r["lines"][0]):
-        s, e = rec["lines"]
-        out_lines[s - 1:e] = [rec["cand"]]
+    stats_lines = write_draft(doc, ext, out_lines, tightened, out)
 
     # Post-hoc floor: advisory — log candidates that push sentence stats below
     # the human band, but do not revert them (GH-268).
     if a.sent_floor and tightened:
         floor_mean, floor_sd = a.sent_floor
-        cur_mean, cur_sd = _doc_sentence_stats(out_lines)
+        cur_mean, cur_sd = _doc_sentence_stats(stats_lines)
         if cur_mean < floor_mean or cur_sd < floor_sd:
             below = []
             by_shortening = sorted(
@@ -301,8 +321,6 @@ def main():
                   f"actual: mean={cur_mean:.1f}, sd={cur_sd:.1f}). "
                   f"Largest shorteners: {', '.join(below[:5])}")
 
-    with open(out, "w", encoding="utf-8") as f:
-        f.write("\n".join(out_lines))
     with open(os.path.join(work, "results.json"), "w") as f:
         json.dump(results, f, indent=2)
 
