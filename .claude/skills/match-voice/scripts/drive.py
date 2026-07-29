@@ -519,6 +519,17 @@ def main():
             print(f"  p{n:02d} L{s:>4} {w:>4}w {tag:10} | {txt[:60]}")
         sys.exit(1 if unaccounted else 0)
     if a.dry_run:
+        if a.pangram:
+            work = tempfile.mkdtemp(prefix="match-voice-")
+            print(f"\nexternal check: scanning {os.path.basename(art)}")
+            bl = pangram_scan(art, work, "before")
+            if bl:
+                r = run(["python3", PANGRAM_REPORT, "report",
+                         "--response", bl[0], "--spans", bl[1]])
+                if r.returncode == 0:
+                    print(r.stdout.rstrip())
+            else:
+                print("external check: pangram scan failed", file=sys.stderr)
         print("\ndry run: anchors above are the real selection for every "
               "rewritable paragraph. No model was called and no draft written.")
         sys.exit(1 if unaccounted else 0)
