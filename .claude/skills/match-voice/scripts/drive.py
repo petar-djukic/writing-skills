@@ -21,7 +21,7 @@ paragraphs are replaced — which is why this belongs in the driver and not in a
 procedure someone is expected to remember afterwards.
 
 Usage:
-  python3 drive.py --article <path.md> [--model gemma4:12b] [--out <path>]
+  python3 drive.py --article <path.md|path.yaml> [--model gemma4:12b] [--out <path>]
                    [--retries 2] [--min-words 12] [--temperature 0.7]
                    [--coverage-only] [--pangram]
 """
@@ -62,6 +62,28 @@ def run(cmd, **kw):
     # both arms of an A/B before either produced a line.
     return subprocess.run(cmd, capture_output=True, text=True,
                           errors="replace", **kw)
+
+
+def default_out(art):
+    """Draft path beside the article, extension-aware (GH-349).
+
+    The old .md-only substitution returned the input path unchanged for any
+    other extension, so a YAML article's draft overwrote the article.
+    """
+    stem, ext = os.path.splitext(art)
+    return f"{stem}.vr-draft{ext}"
+
+
+def manifest_path(out):
+    """Provenance path beside the draft, appended to the draft's stem.
+
+    Never substituted for the extension (GH-349): substitution left
+    manifest == out for non-.md drafts, overwriting the finished draft.
+    """
+    manifest = os.path.splitext(out)[0] + ".generation.yaml"
+    if manifest == out:
+        manifest = out + ".generation.yaml"
+    return manifest
 
 
 def _prose_document():
@@ -594,7 +616,8 @@ def main():
     ap.add_argument("--article", required=True)
     ap.add_argument("--model", default=os.environ.get("MATCH_VOICE_MODEL", "gemma4:12b"))
     ap.add_argument("--endpoint", default=os.environ.get("OLLAMA_ENDPOINT", "http://localhost:11434"))
-    ap.add_argument("--out", help="draft path (default: <article>.vr-draft.md)")
+    ap.add_argument("--out", help="draft path (default: <stem>.vr-draft<ext> "
+                                  "beside the article)")
     ap.add_argument("--retries", type=int, default=2)
     ap.add_argument("--min-words", type=int, default=12)
     ap.add_argument("--temperature", default="0.7")
@@ -644,7 +667,10 @@ def main():
         ap.error("--no-anchors contradicts --role/--anchor-tags/--stratum/--author")
 
     art = os.path.abspath(a.article)
-    out = a.out or re.sub(r"\.md$", ".vr-draft.md", art)
+    out = os.path.abspath(a.out) if a.out else default_out(art)
+    if out == art:
+        sys.exit(f"refusing to overwrite the article: --out resolves to the "
+                 f"input path ({art}); pass a different --out")
     lines, fm_close, paras, coverage, unaccounted = parse_paragraphs(art, a.min_words)
     # Validated before any scan or model call: an invalid selection must cost
     # nothing.
@@ -856,7 +882,7 @@ def main():
 
     # Last, so it can record the Pangram numbers when there are any. Written
     # beside the draft rather than into the temp dir, which the OS reaps.
-    manifest = re.sub(r"\.md$", ".generation.yaml", out)
+    manifest = manifest_path(out)
     used = write_manifest(manifest, a, voice_dir, results, pangram_pair,
                           guard=guard_warns)
     print(f"\nprovenance: {manifest}")
