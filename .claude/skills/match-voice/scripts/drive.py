@@ -187,6 +187,8 @@ def anchor_flags(a):
         f += ["--stratum", a.stratum]
     if a.anchor_tags:
         f += ["--tags", a.anchor_tags]
+    if a.author:
+        f += ["--author", a.author]
     return f
 
 
@@ -220,14 +222,17 @@ def inert_filters(va, d, a):
     sample is pre-AI). Reported by name, at the point it is applied.
     """
     pre, tags = _selection(a)
-    n = len(va.sample_paths(d, role=a.role, pre_ai=pre, tags=tags))
+    author = getattr(a, "author", None)
+    n = len(va.sample_paths(d, role=a.role, pre_ai=pre, tags=tags, author=author))
     out = []
-    if a.stratum and len(va.sample_paths(d, role=a.role, pre_ai=None, tags=tags)) == n:
+    if a.stratum and len(va.sample_paths(d, role=a.role, pre_ai=None, tags=tags, author=author)) == n:
         out.append(f"stratum={a.stratum}")
-    if a.role and len(va.sample_paths(d, role=None, pre_ai=pre, tags=tags)) == n:
+    if a.role and len(va.sample_paths(d, role=None, pre_ai=pre, tags=tags, author=author)) == n:
         out.append(f"role={a.role}")
-    if tags and len(va.sample_paths(d, role=a.role, pre_ai=pre, tags=None)) == n:
+    if tags and len(va.sample_paths(d, role=a.role, pre_ai=pre, tags=None, author=author)) == n:
         out.append(f"tags={a.anchor_tags}")
+    if author and len(va.sample_paths(d, role=a.role, pre_ai=pre, tags=tags, author=None)) == n:
+        out.append(f"author={author}")
     return out
 
 
@@ -248,7 +253,8 @@ def realized_mix(va, d, a, paras, limit=None):
     chosen = paras if limit is None else paras[:limit]
     roles, sources = Counter(), Counter()
     for _s, _e, txt in chosen:
-        for x in va.anchors(d, txt, k=3, role=a.role, pre_ai=pre, tags=tags):
+        for x in va.anchors(d, txt, k=3, role=a.role, pre_ai=pre, tags=tags,
+                            author=getattr(a, "author", None)):
             roles[x.get("role", "?")] += 1
             sources[x.get("file", "?")] += 1
     return roles, sources, len(chosen), len(paras)
@@ -277,11 +283,13 @@ def anchor_provenance(a, article, paras, full=False):
                  "run plain filter-tells instead")
 
     pre, tags = _selection(a)
-    paths = va.sample_paths(d, role=a.role, pre_ai=pre, tags=tags)
+    author = getattr(a, "author", None)
+    paths = va.sample_paths(d, role=a.role, pre_ai=pre, tags=tags, author=author)
     mix = Counter(r for _, r in paths)
     filt = " ".join(x for x in (f"role={a.role}" if a.role else "",
                                 f"stratum={a.stratum}" if a.stratum else "",
-                                f"tags={a.anchor_tags}" if a.anchor_tags else "") if x)
+                                f"tags={a.anchor_tags}" if a.anchor_tags else "",
+                                f"author={author}" if author else "") if x)
     weight = va.AUTHOR_VOICE_DICTION_WEIGHT
     print(f"anchors: {len(paths)} exemplars available from {d}")
     print(f"         pool {dict(mix)}{'  [' + filt + ']' if filt else ''}")
@@ -380,6 +388,7 @@ def write_manifest(path, a, voice_dir, results, pangram=None):
            f"  model: {_yaml_scalar(a.model)}",
            f"  voice_dir: {_yaml_scalar(voice_dir)}",
            f"  no_anchors: {str(a.no_anchors).lower()}",
+           f"  anchor_author: {_yaml_scalar(getattr(a, 'author', None))}",
            f"  anchor_role: {_yaml_scalar(a.role)}",
            f"  anchor_tags: [{', '.join(_yaml_scalar(t) for t in tags)}]",
            f"  stratum: {_yaml_scalar(a.stratum)}",
@@ -462,6 +471,9 @@ def main():
                          "across roles. Inert on a corpus whose diction-eligible "
                          "samples are all pre-AI — the run says so when it is. "
                          "To steer register, reach for --role/--anchor-tags")
+    ap.add_argument("--author", help="hard pin anchors to a named author "
+                                     "(case-insensitive match against the "
+                                     "exemplar author field)")
     ap.add_argument("--no-anchors", action="store_true",
                     help="run without voice anchors; skip retrieval entirely")
     ap.add_argument("--coverage-only", action="store_true",
@@ -478,8 +490,8 @@ def main():
                          "and it is asked for per document. Costs two scans.")
     a = ap.parse_args()
 
-    if a.no_anchors and any([a.role, a.anchor_tags, a.stratum]):
-        ap.error("--no-anchors contradicts --role/--anchor-tags/--stratum")
+    if a.no_anchors and any([a.role, a.anchor_tags, a.stratum, a.author]):
+        ap.error("--no-anchors contradicts --role/--anchor-tags/--stratum/--author")
 
     art = os.path.abspath(a.article)
     out = a.out or re.sub(r"\.md$", ".vr-draft.md", art)
