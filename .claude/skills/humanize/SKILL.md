@@ -13,21 +13,26 @@ description: >-
 # Humanize (three-step pipeline)
 
 Orchestrates the three prose skills that together move an AI-drafted article
-from 100% AI-flagged to human-passing on Pangram. Each step exists because
-the other two cannot compensate for its absence.
+away from a 100% AI verdict on Pangram. The verified effect (2026-07-29,
+working gate) is 100% AI -> Mixed: 23.8% AI / 76.2% AI-assisted, mean window
+0.993 -> 0.576. Each step exists because the other two cannot compensate for
+its absence.
 
 ## Why three steps
 
 | step | what it does | what happens without it |
 |---|---|---|
-| match-outline | section-level rewrite — changes enough sentence structure that the downstream paragraph rewriter can clear the mechanical gate | match-voice rewrites land at distance 0.0 from the original; the gate rejects every paragraph and nothing changes |
+| match-outline | section-level rewrite — changes enough sentence structure that the downstream paragraph rewriter can clear the mechanical gate | match-voice rewrites land at distance 0.0 from the original; the gate rejects every paragraph and nothing changes (unverified — measured against the broken gate, see calibration note) |
 | filter-tells semantic cleanup | collapse antithesis pairs, remove CoT leakage, cut recap ballast, fix banned words | Pangram score stays at 100% AI even after match-voice, because the rhetorical patterns survive diction changes |
 | match-voice --no-anchors | paragraph-level diction rewrite via gpt-oss with no voice anchors | prose retains the original model's lexical fingerprint; Pangram detects it |
 
 The compound effect: semantic cleanup alone does not move Pangram (rhetorical
-patterns are not what it measures). match-voice alone on raw text gets
-gate-rejected (distance 0.0). Both steps together, with match-outline
-providing the structural divergence, produce 100% human.
+patterns are not what it measures). Both steps together, with match-outline
+providing the structural divergence, moved the verified run from 100% AI to
+Mixed (76.2% AI-assisted, mean window 0.576). The ablation rows that showed
+match-voice alone gate-rejected at distance 0.0 were measured against the
+broken gate (GH-318) and are unverified — see the calibration note at the
+end.
 
 ## Why no anchors for match-voice
 
@@ -273,6 +278,13 @@ baseline, after-outline, after-tells, after-voice, and the total delta
 
 ## When it breaks
 
+- **Every paragraph kept-original with reason `?`:** suspect a gate crash
+  before blaming the rewrite model. GH-318 had verify.py crashing on the
+  `--no-anchors` anchors JSON, and drive.py recorded every crash as an
+  ordinary rejection — runs shipped an untouched copy of the input while
+  reporting success (Pangram before == after is the tell). Check the
+  provenance YAML: `accepted: 0` with unchanged scores means the gate never
+  ran, not that the rewrites failed.
 - **match-voice gate rejects everything (distance 0.0):** the match-outline
   step did not change the prose enough. Try a different model or blueprint
   for match-outline, or apply more aggressive semantic edits in Phase 2.
@@ -288,16 +300,29 @@ baseline, after-outline, after-tells, after-voice, and the total delta
 ## Calibration data
 
 Tested on `2026-10-29-how-to-break-an-ais-heresy.md` (2,357 words) with
-hardcoded Evans how-to blueprint and anchor-tags:
+hardcoded Evans how-to blueprint and anchor-tags.
 
-| variant | pipeline | Pangram human % | mean score |
-|---|---|---|---|
-| original | none | 0% | 0.993 |
-| match-outline only | Kimi rewrite | 0% | 0.993 |
-| semantic cleanup only | filter-tells on Kimi rewrite | 0% | 0.993 |
-| match-voice venue-voice | Kimi + semantic + Tanenbaum/Martin anchors | 0% | 0.765 |
-| match-voice author 2.5x | Kimi + semantic + Djukic anchors | 26.6% | 0.454 |
-| match-voice Evans how-to | Kimi + semantic + Evans anchors | 0% | 0.955 |
-| **match-voice no-anchors** | **Kimi + semantic + gpt-oss no anchors** | **100%** | **0.245** |
-| no match-outline | semantic + gpt-oss no anchors on original | 0% | 0.993 (gate rejected) |
-| no semantic cleanup | gpt-oss no anchors on original | 0% | 0.993 (gate rejected) |
+**Gate-bug caveat (GH-318, fixed 2026-07-29).** Through 2026-07-28, verify.py
+crashed on the list-format anchors JSON that `--no-anchors` writes, and
+drive.py recorded every crash as kept-original. Any `--no-anchors` row from
+that window may describe an untouched copy of its input, not a rewrite: the
+on-disk provenance for the 2026-07-28 no-anchors runs shows `accepted: 0`
+with Pangram before == after. Rows marked *unverified* below predate the fix
+and could not be reproduced from provenance; the *verified* row is a
+post-fix run with all 35 paragraphs accepted (distance 0.533).
+
+| variant | pipeline | Pangram human % | mean score | status |
+|---|---|---|---|---|
+| original | none | 0% | 0.993 | verified |
+| match-outline only | Kimi rewrite | 0% | 0.993 | verified |
+| semantic cleanup only | filter-tells on Kimi rewrite | 0% | 0.993 | verified |
+| match-voice venue-voice | Kimi + semantic + Tanenbaum/Martin anchors | 0% | 0.765 | pre-fix, anchored |
+| match-voice author 2.5x | Kimi + semantic + Djukic anchors | 26.6% | 0.454 | pre-fix, anchored |
+| match-voice Evans how-to | Kimi + semantic + Evans anchors | 0% | 0.955 | pre-fix, anchored |
+| match-voice no-anchors | Kimi + semantic + gpt-oss no anchors | 100% | 0.245 | **unverified** (broken-gate window) |
+| **match-voice no-anchors (2026-07-29)** | **Kimi + semantic + gpt-oss no anchors** | **0% human, 76.2% AI-assisted, 23.8% AI** | **0.576** | **verified, working gate** |
+| no match-outline | semantic + gpt-oss no anchors on original | 0% | 0.993 (gate rejected) | **unverified** — matches the GH-318 crash signature |
+| no semantic cleanup | gpt-oss no anchors on original | 0% | 0.993 (gate rejected) | **unverified** — matches the GH-318 crash signature |
+
+The ablation claim (each step necessary) rests on the two unverified rows and
+needs re-measurement with the working gate before it can be stated as fact.
