@@ -350,6 +350,29 @@ def cmd_anchors(args):
                      indent=2, ensure_ascii=False))
 
 
+def cmd_tags(args):
+    d = _resolve_dir(args)
+    exemplars = load_manifest(d)
+    tags = set()
+    for ex in exemplars:
+        for t in (ex.get("tags") or []):
+            tags.add(str(t).lower())
+    roles = set()
+    for ex in exemplars:
+        r = ex.get("role")
+        if r:
+            roles.add(r)
+    authors = set()
+    for ex in exemplars:
+        a = ex.get("author")
+        if a:
+            authors.add(a)
+    out = {"writing_voice": d, "exemplars": len(exemplars),
+           "tags": sorted(tags), "roles": sorted(roles),
+           "authors": sorted(authors)}
+    print(json.dumps(out, indent=2, ensure_ascii=False))
+
+
 def main():
     p = argparse.ArgumentParser(description="writing-voice support for filter-tells")
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -377,6 +400,11 @@ def main():
     an.add_argument("--author", help="hard pin to a named author (case-insensitive "
                                      "match against the exemplar author field)")
     an.set_defaults(func=cmd_anchors)
+
+    tg = sub.add_parser("tags", help="list available tags, roles, and authors")
+    tg.add_argument("--voice-dir")
+    tg.add_argument("--for", dest="for_file")
+    tg.set_defaults(func=cmd_tags)
 
     args = p.parse_args()
     args.func(args)
