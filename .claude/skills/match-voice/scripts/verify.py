@@ -132,7 +132,9 @@ def _similarity(rewrite_text, anchors_json, max_shared_run):
     if not anchors_json or not os.path.exists(anchors_json):
         return None
     data = json.load(open(anchors_json))
-    anchors = data.get("anchors") or []
+    # retrieve.py --json emits a bare list; --no-anchors writes []. The dict
+    # form {"anchors": [...]} is the other producer. Both are valid input.
+    anchors = data if isinstance(data, list) else (data.get("anchors") or [])
     if not anchors:
         return None
     sibling = os.path.normpath(
