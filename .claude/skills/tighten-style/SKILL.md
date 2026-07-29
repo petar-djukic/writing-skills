@@ -25,12 +25,22 @@ prose with nothing behind it.
 
 ## The floor
 
-**Tightening stops at the author's own density.** Shorter is not the target.
-Cutting past the author's measured function-word ratio manufactures the
+**Tightening stops at the target register's own density.** Shorter is not the
+target. Cutting past the measured function-word ratio manufactures the
 clipped, aphoristic register that reads as machine-written — the failure
 `filter-tells` calls overshoot. Where a `writing-voice/` corpus exists,
 `match-structure` supplies that floor; without one, stop at each rule's stated
 threshold.
+
+**The floor is venue-keyed (GH-338).** By default it is the author's own
+density. With `--venue <name>`, the venue profile
+(`writing-voice/venues/<name>.yaml`, see the writing-voice rule) supplies it
+instead: the profile's `targets` (`sentence_length_mean`/`stdev`) become the
+sentence floor — a whitepaper tightened to newsletter density reads clipped —
+and its `hedge_policy` keys the TS-08 threshold: `zero` flags every hedge
+(book voice, rule 10), `minimal` flags pairs, `calibrated` keeps single
+calibrated hedges on empirical claims and only flags stacks. An explicit
+`--sent-floor` still wins over the profile. No `--venue`, no change.
 
 Never touch a direct quotation, a normative requirement, a citation, or a
 number.
@@ -38,8 +48,8 @@ number.
 ## Procedure
 
 ```bash
-python3 <tighten-style>/scripts/check_style.py <file> [--json]     # findings, rule-keyed
-python3 <tighten-style>/scripts/tighten.py --article <file>        # the rewrite, via Ollama
+python3 <tighten-style>/scripts/check_style.py <file> [--json] [--hedge-policy zero|minimal|calibrated]
+python3 <tighten-style>/scripts/tighten.py --article <file> [--venue <name>]   # the rewrite, via Ollama
 python3 <tighten-style>/scripts/tighten.py --article <file> --check-only   # plan without model calls
 ```
 

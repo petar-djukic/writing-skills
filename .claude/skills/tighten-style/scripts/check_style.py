@@ -81,6 +81,13 @@ DEMONSTRATIVE_VERY = re.compile(r"\b(?:these|this|those|that)\s+very\b")
 HEDGES = r"\b(may|might|could|perhaps|possibly|arguably|somewhat|fairly|seems? to|appears? to|suggests? that|tends? to|relatively|generally|typically|often)\b"
 HEDGE_STACK = 3
 
+# Venue hedge policies (GH-338): the stack threshold is venue-keyed. The book
+# voice removes every hedge (rule 10: no hedging on things you know), academic
+# prose keeps single calibrated hedges on empirical claims and only flags
+# stacks. Callers map a venue profile's hedge_policy to a threshold; absent a
+# policy, HEDGE_STACK applies unchanged.
+HEDGE_POLICY_STACK = {"zero": 1, "minimal": 2, "calibrated": HEDGE_STACK}
+
 # TS-15: words that assert importance instead of demonstrating it. The
 # term-of-art exception is load-bearing — see the rule.
 IMPORTANCE = r"\b(critical|critically|key|fundamental|strategic|breakthrough|principled|deliberate|grounded|standards-aligned|robust|seamless|delve|delves|delving|ripple|at the heart of|leverage|leverages|leveraging)\b"
@@ -151,7 +158,7 @@ def find(rule, line, detail, text, fix=None):
             "text": text[:120], "fix": fix}
 
 
-def tighten_style_check(text, rules=None, base_line=1):
+def tighten_style_check(text, rules=None, base_line=1, hedge_stack=None):
     """Paragraph-scoped style check on a raw text string.
 
     Runs TS-01, TS-02, TS-03, TS-04, TS-05, TS-08, TS-15 on the text.
@@ -160,6 +167,8 @@ def tighten_style_check(text, rules=None, base_line=1):
 
     If rules is a set of rule IDs, only those are checked.
     base_line offsets reported line numbers (for embedding in a larger file).
+    hedge_stack overrides the TS-08 threshold (venue hedge policy, GH-338);
+    None keeps HEDGE_STACK.
     """
     _shared()
     rm = _markers()
@@ -215,7 +224,7 @@ def tighten_style_check(text, rules=None, base_line=1):
 
         if not want or "TS-08" in want:
             n = len(re.findall(HEDGES, low))
-            if n >= HEDGE_STACK:
+            if n >= (hedge_stack or HEDGE_STACK):
                 findings.append(find("TS-08", base_line,
                                      f"{n} hedges in one sentence", sent,
                                      "keep the one carrying real uncertainty"))
@@ -250,7 +259,7 @@ def tighten_style_check(text, rules=None, base_line=1):
 check_paragraph = tighten_style_check
 
 
-def check(path):
+def check(path, hedge_stack=None):
     text, parsed = load_prose(path)
     findings = []
     prose_lines = {ln for ln, cat in parsed.coverage.items() if cat == "prose"}
@@ -303,7 +312,7 @@ def check(path):
             low = sent.lower()
 
             n = len(re.findall(HEDGES, low))
-            if n >= HEDGE_STACK:
+            if n >= (hedge_stack or HEDGE_STACK):
                 findings.append(find("TS-08", para[0],
                                      f"{n} hedges in one sentence", sent,
                                      "keep the one carrying real uncertainty"))
@@ -388,11 +397,16 @@ def main():
     ap.add_argument("file")
     ap.add_argument("--json", action="store_true")
     ap.add_argument("--rule", help="comma-separated rule IDs to limit to")
+    ap.add_argument("--hedge-policy", choices=sorted(HEDGE_POLICY_STACK),
+                    help="venue hedge policy for TS-08 (GH-338): zero flags "
+                         "every hedge, minimal flags pairs, calibrated flags "
+                         "stacks (the default threshold)")
     a = ap.parse_args()
 
     if not os.path.isfile(a.file):
         sys.exit(f"no such file: {a.file}")
-    findings = check(a.file)
+    findings = check(a.file,
+                     hedge_stack=HEDGE_POLICY_STACK.get(a.hedge_policy))
     if a.rule:
         want = {r.strip().upper() for r in a.rule.split(",")}
         findings = [f for f in findings if f["rule"] in want]
