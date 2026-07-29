@@ -487,14 +487,17 @@ def select_voice_corpus(voice_dir, role=None, tags=None, pre_ai=None):
 
 
 def mean_of(dicts, key):
-    vals = [d[key] for d in dicts if d and key in d]
+    # A metric can be present but None (e.g. paragraph_cohesion on a
+    # single-paragraph sample); one thin exemplar must not crash the corpus
+    # aggregate (GH-339).
+    vals = [d[key] for d in dicts if d and d.get(key) is not None]
     return round(sum(vals) / len(vals), 2) if vals else None
 
 
 def std_of(dicts, key):
     """Population std across papers, so consumers (filter-tells voice-distance)
     can compute z-scores instead of unscaled deltas."""
-    vals = [d[key] for d in dicts if d and key in d]
+    vals = [d[key] for d in dicts if d and d.get(key) is not None]
     if len(vals) < 2:
         return None
     m = sum(vals) / len(vals)

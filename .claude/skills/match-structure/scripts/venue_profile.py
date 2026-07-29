@@ -22,6 +22,17 @@ Usage:
   venue_profile.py list   [--voice-dir D | --for F]   # available venue names
   venue_profile.py show   --venue NAME [--voice-dir D | --for F]
   venue_profile.py validate <profile.yaml> [...]
+  venue_profile.py bootstrap [--voice-dir D | --for F]
+                             [--role R] [--tags a,b] [--stratum pre-ai|ai-era]
+                             [--files f.md ...] [--venue NAME --write]
+  venue_profile.py set-anchors --venue NAME [--voice-dir D | --for F]
+                               (--arm "tags~clipped" | --role R --tags a,b ...)
+                               [--composite X] [--note "..."]
+
+`bootstrap` (GH-339) measures a corpus slice with match-structure's metrics
+and emits the profile's `targets` block — profiles are measured, never
+hand-written. `set-anchors` records a winning tune-anchors arm (or a hand
+query) into the profile's `anchor_query` with provenance.
 """
 
 import argparse
@@ -201,6 +212,85 @@ def resolve(start_path=None, voice_dir=None, venue=None):
     return data
 
 
+# --- bootstrap: measured targets (GH-339) ------------------------------------
+
+def bootstrap_targets(voice_dir=None, role=None, tags=None, stratum=None,
+                      files=None):
+    """Measure a corpus slice and return the profile's targets block.
+
+    Returns a dict with targets / targets_std / targets_provenance keys, ready
+    to merge into a venue profile. Selection is either an explicit file list
+    or a manifest query (role/tags/stratum) against voice_dir.
+    """
+    import datetime
+    if files:
+        paths = [os.path.abspath(f) for f in files]
+        corpus_desc = {"files": len(paths)}
+    else:
+        if not voice_dir:
+            raise ValueError("need --voice-dir/--for or --files")
+        pre_ai = None if stratum is None else (stratum == "pre-ai")
+        selected = style.select_voice_corpus(
+            voice_dir, role=role, tags=tags, pre_ai=pre_ai)
+        paths = [p for _, p in selected]
+        corpus_desc = {k: v for k, v in
+                       (("role", role), ("tags", tags), ("stratum", stratum))
+                       if v}
+    if not paths:
+        raise ValueError("corpus selection matched no files")
+
+    profiles = [style.profile_file(p) for p in paths]
+    agg = style.aggregate(profiles)
+    targets = {k: v for k, v in agg["metrics"].items() if v is not None}
+    targets_std = {k: v for k, v in agg["metrics_std"].items()
+                   if v is not None}
+    return {
+        "targets": targets,
+        "targets_std": targets_std,
+        "targets_provenance": {
+            "measured": datetime.date.today().isoformat(),
+            "corpus": corpus_desc,
+            "papers": len(paths),
+            "total_words": agg["total_words"],
+        },
+    }
+
+
+def merge_into_profile(path, updates):
+    """Merge top-level keys into a profile YAML file, preserving the rest."""
+    with open(path) as f:
+        data = yaml.safe_load(f) or {}
+    data.update(updates)
+    clean = {k: v for k, v in data.items() if not k.startswith("_")}
+    with open(path, "w") as f:
+        yaml.safe_dump(clean, f, sort_keys=False, allow_unicode=True)
+    return clean
+
+
+def arm_to_anchor_query(exprs):
+    """Translate tune-anchors arm expressions into an anchor_query mapping.
+
+    Reuses tune-anchors' own parser so the syntax cannot drift; pre_ai
+    arms map onto the profile's stratum field.
+    """
+    ta = os.path.normpath(os.path.join(
+        os.path.dirname(os.path.abspath(__file__)),
+        "..", "..", "tune-anchors", "scripts"))
+    if ta not in sys.path:
+        sys.path.insert(0, ta)
+    import ledger
+    q = {}
+    for expr in exprs:
+        kw = ledger.parse_arm(expr)
+        if "pre_ai" in kw:
+            q["stratum"] = "pre-ai" if kw["pre_ai"] else "ai-era"
+        if "role" in kw:
+            q["role"] = kw["role"]
+        if "tags" in kw:
+            q.setdefault("tags", []).extend(kw["tags"])
+    return q
+
+
 # --- CLI ---------------------------------------------------------------------
 
 def _voice_dir_from_args(args):
@@ -257,6 +347,83 @@ def cmd_validate(args):
     sys.exit(1 if failed else 0)
 
 
+def cmd_bootstrap(args):
+    voice_dir = None
+    if args.voice_dir or args.for_file:
+        voice_dir = _voice_dir_from_args(args)
+    tags = [t.strip() for t in args.tags.split(",")] if args.tags else None
+    try:
+        block = bootstrap_targets(voice_dir=voice_dir, role=args.role,
+                                  tags=tags, stratum=args.stratum,
+                                  files=args.files)
+    except ValueError as e:
+        sys.exit(str(e))
+
+    if args.write:
+        if not args.venue:
+            sys.exit("--write requires --venue")
+        path = os.path.join(venues_dir(voice_dir), args.venue + ".yaml")
+        if not os.path.exists(path):
+            sys.exit(f"profile does not exist yet: {path} — author the "
+                     f"profile first, then bootstrap its targets")
+        merged = merge_into_profile(path, block)
+        errors, warnings = validate_profile(
+            dict(merged, _voice_dir=voice_dir),
+            manifest=va.load_manifest(voice_dir))
+        print(json.dumps({"written": path,
+                          "papers": block["targets_provenance"]["papers"],
+                          "errors": errors, "warnings": warnings}, indent=2))
+        sys.exit(1 if errors else 0)
+    print(yaml.safe_dump(block, sort_keys=False, allow_unicode=True))
+
+
+def cmd_set_anchors(args):
+    voice_dir = _voice_dir_from_args(args)
+    path = os.path.join(venues_dir(voice_dir), args.venue + ".yaml")
+    if not os.path.exists(path):
+        sys.exit(f"no venue profile {args.venue!r} in {venues_dir(voice_dir)} "
+                 f"(available: {list_venues(voice_dir) or 'none'})")
+
+    import datetime
+    if args.arm:
+        try:
+            q = arm_to_anchor_query(args.arm)
+        except ValueError as e:
+            sys.exit(f"bad arm expression: {e}")
+        source = "tune-anchors"
+    else:
+        q = {}
+        if args.role:
+            q["role"] = args.role
+        if args.tags:
+            q["tags"] = [t.strip() for t in args.tags.split(",") if t.strip()]
+        if args.stratum:
+            q["stratum"] = args.stratum
+        if args.author:
+            q["author"] = args.author
+        if not q:
+            sys.exit("nothing to record: give --arm or at least one of "
+                     "--role/--tags/--stratum/--author")
+        source = "hand"
+
+    provenance = {"anchor_query_source": source,
+                  "swept": datetime.date.today().isoformat()}
+    if args.composite is not None:
+        provenance["composite"] = args.composite
+    if args.note:
+        provenance["note"] = args.note
+
+    merged = merge_into_profile(path, {"anchor_query": q,
+                                       "provenance": provenance})
+    errors, warnings = validate_profile(
+        dict(merged, _voice_dir=voice_dir),
+        manifest=va.load_manifest(voice_dir))
+    print(json.dumps({"written": path, "anchor_query": q,
+                      "provenance": provenance,
+                      "errors": errors, "warnings": warnings}, indent=2))
+    sys.exit(1 if errors else 0)
+
+
 def main():
     p = argparse.ArgumentParser(description="Venue profile loader/validator")
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -279,6 +446,37 @@ def main():
     v = sub.add_parser("validate", help="validate profile files")
     v.add_argument("files", nargs="+")
     v.set_defaults(fn=cmd_validate)
+
+    b = sub.add_parser("bootstrap",
+                       help="measure a corpus slice, emit the targets block")
+    b.add_argument("--voice-dir")
+    b.add_argument("--for", dest="for_file")
+    b.add_argument("--role", choices=sorted(ROLES))
+    b.add_argument("--tags", help="comma-separated register tags")
+    b.add_argument("--stratum", choices=sorted(STRATA))
+    b.add_argument("--files", nargs="+",
+                   help="explicit file list instead of a manifest query")
+    b.add_argument("--venue", help="profile name for --write")
+    b.add_argument("--write", action="store_true",
+                   help="merge the block into venues/<venue>.yaml")
+    b.set_defaults(fn=cmd_bootstrap)
+
+    sa = sub.add_parser("set-anchors",
+                        help="record an anchor query into a profile")
+    sa.add_argument("--venue", required=True)
+    sa.add_argument("--voice-dir")
+    sa.add_argument("--for", dest="for_file")
+    sa.add_argument("--arm", action="append",
+                    help="tune-anchors arm expression (repeatable); "
+                         "e.g. tags~clipped, role=venue-voice, pre_ai=true")
+    sa.add_argument("--role", choices=sorted(ROLES))
+    sa.add_argument("--tags", help="comma-separated register tags")
+    sa.add_argument("--stratum", choices=sorted(STRATA))
+    sa.add_argument("--author")
+    sa.add_argument("--composite", type=float,
+                    help="register composite of the winning arm (from rank)")
+    sa.add_argument("--note", help="free-text provenance note")
+    sa.set_defaults(fn=cmd_set_anchors)
 
     args = p.parse_args()
     args.fn(args)
