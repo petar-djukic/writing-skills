@@ -253,6 +253,42 @@ $RUN <match-structure>/scripts/style.py profile <output.md>
 
 Record as the "after-voice" column.
 
+### Phase 3b (optional): anchored seed + iterated no-anchors passes
+
+A single no-anchors pass leaves most windows near 0.75. Iterating the
+Phase 3 rewrite on its own output keeps stripping the previous model's
+fingerprint — up to a point. Measured on the stay-on-track article
+(2026-07-29, experiments/2026-07-29-gptoss-iter/): the per-pass mean
+window traces a **U-curve** — 0.992 -> 0.579 -> 0.432 (55% human) ->
+0.489 -> 0.418 -> then monotonic regression back to 0.70 by pass 10.
+Past the floor, each pass concentrates the rewriter's own single-family
+signature, which is exactly what Pangram's synthetic-mirror training
+detects (arXiv:2402.14873).
+
+Rules:
+
+1. **Seed with a different family than the iterator.** The best floor
+   came from seeding with an anchored gemma pass (Krugman tags) that
+   itself scored 0.992 — useless as an endpoint, useful as a seed. The
+   iterator (gpt-oss) then has a foreign fingerprint to erase.
+2. **Score every pass** (`--pangram`) and **stop at the first upturn**.
+   Never run a fixed pass count. The floor is typically pass 2-4.
+3. **Keep every pass on disk** with its provenance YAML; the publish
+   candidate is the floor pass, not the last pass.
+4. **Expect decay.** Pangram retrains on new model families; a floor
+   measured today drifts up as the iterator model enters their mirror
+   set. Re-measure before reusing a recipe.
+
+```bash
+PREV=<seed.md>
+for i in 01 02 03 04; do
+  $RUN <match-voice>/scripts/drive.py --article $PREV \
+    --model gpt-oss:120b-cloud --no-anchors --pangram \
+    --out pass$i.md
+  PREV=pass$i.md   # read mean window from pass$i.generation.yaml; stop on upturn
+done
+```
+
 ### Phase 4: Consolidated report
 
 Print a single report with five categories. Each metric shows four columns:
@@ -402,3 +438,22 @@ needs re-measurement with the working gate before it can be stated as fact.
 
 All calibration above was measured with match-outline as the structural
 step. tighten-style calibration is pending.
+
+**Iteration calibration (2026-07-29, working gate, stay-on-track article,
+published as pass02).** Seed: Kimi match-outline + filter-tells + gemma4
+match-voice with Krugman anchors (0.992 — anchored passes still do not move
+Pangram, but change the fingerprint the iterator erases). Then gpt-oss
+no-anchors, iterated; full per-pass data in
+idea-factory:substack/2026/Q4/experiments/2026-07-29-gptoss-iter/stats.csv.
+
+| pass | mean window | human % |
+|---|---|---|
+| seed | 0.992 | 0 |
+| 1 | 0.579 | 43 |
+| **2** | **0.432** | **55** |
+| 4 | 0.418 (floor) | 34 |
+| 10 | 0.700 | 0 |
+
+Same-family iteration is a no-op: kimi match-voice on kimi-derived prose
+moved distance 0.05, Pangram 0.993 -> 0.993. The iterator must be a
+different family from whatever produced the input.
