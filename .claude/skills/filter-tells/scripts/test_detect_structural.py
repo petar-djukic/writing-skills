@@ -95,6 +95,29 @@ def test_para_index_in_issues():
     print("  para_index_in_issues: ok")
 
 
+def test_yaml_directory_and_file_input():
+    """YAML files are collected and analyzed through the aligned prose view
+    (GH-345): metrics see prose scalar content only, never keys or comments."""
+    import subprocess
+    sample = os.path.normpath(os.path.join(
+        HERE, "..", "..", "..", "scripts", "testdata_prose_sample.yaml"))
+    script = os.path.join(HERE, "detect-structural.py")
+    r = subprocess.run([sys.executable, script, sample, "--json"],
+                       capture_output=True, text=True)
+    assert r.returncode in (0, 1), r.stderr
+    import json as _json
+    result = _json.loads(r.stdout)
+    assert result["file"].endswith("testdata_prose_sample.yaml")
+    assert result["metrics"]["word_count"] > 0
+    # Directory input picks the yaml file up.
+    r2 = subprocess.run([sys.executable, script,
+                         os.path.dirname(sample), "--json"],
+                        capture_output=True, text=True)
+    assert r2.returncode in (0, 1), r2.stderr
+    assert "testdata_prose_sample.yaml" in r2.stdout
+    print("  yaml_directory_and_file_input: ok")
+
+
 def main():
     test_filter_tells_paragraph_returns_shape()
     test_detect_paragraph_alias()
@@ -103,6 +126,7 @@ def main():
     test_short_paragraph_skipped()
     test_dominant_opener_detected()
     test_para_index_in_issues()
+    test_yaml_directory_and_file_input()
     print("test_detect_structural: all assertions passed")
 
 

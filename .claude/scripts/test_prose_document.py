@@ -274,6 +274,41 @@ def test_yaml_to_parse_result():
     print("  yaml_to_parse_result: ok")
 
 
+def test_yaml_aligned_lines():
+    doc = pd.ProseDocument.open(YAML_SAMPLE)
+    with open(YAML_SAMPLE, encoding="utf-8") as f:
+        raw = f.read().split("\n")
+    aligned = doc.aligned_lines()
+    assert len(aligned) == len(raw), \
+        f"aligned view has {len(aligned)} lines, source has {len(raw)}"
+    joined = "\n".join(aligned)
+    # Scaffolding blanked: no keys, comments, or block indicators survive.
+    assert "summary:" not in joined
+    assert "overview:" not in joined
+    assert "# This comment" not in joined
+    assert "short value not prose" not in joined
+    # Inline prose scalar: value on the key's line, prefix stripped.
+    desc_ln = next(i for i, l in enumerate(raw) if l.startswith("description:"))
+    assert aligned[desc_ln].startswith("A pipeline that turns"), aligned[desc_ln]
+    # Literal block: prose lines stay on their source lines, dedented.
+    sys_ln = next(i for i, l in enumerate(raw) if "This system provides" in l)
+    assert aligned[sys_ln].startswith("This system provides")
+    # Folded block: content maps back to its source lines too.
+    fold_ln = next(i for i, l in enumerate(raw) if "Folded" in l)
+    assert "Folded" in aligned[fold_ln]
+    print("  yaml_aligned_lines: ok")
+
+
+def test_md_aligned_lines():
+    doc = pd.ProseDocument.open(MD_SAMPLE)
+    with open(MD_SAMPLE, encoding="utf-8") as f:
+        raw = f.read().split("\n")
+    assert doc.aligned_lines() == raw, \
+        "markdown aligned view should be the file's own lines"
+    assert pd.prose_view_aligned(MD_SAMPLE) == raw
+    print("  md_aligned_lines: ok")
+
+
 def main():
     test_md_extraction()
     test_md_round_trip()
@@ -293,6 +328,8 @@ def main():
     test_unsupported_format()
     test_md_to_parse_result()
     test_yaml_to_parse_result()
+    test_yaml_aligned_lines()
+    test_md_aligned_lines()
     print("test_prose_document: all assertions passed")
 
 

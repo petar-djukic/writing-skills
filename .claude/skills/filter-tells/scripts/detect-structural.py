@@ -22,7 +22,9 @@ Measures:
 Usage:
     python3 detect-structural.py <file-or-dir> [file-or-dir ...] [--json] [--threshold=strict]
 
-Accepts: single file, multiple files, directories (scans *.md recursively).
+Accepts: single file, multiple files, directories (scans *.md, *.tex, and
+*.yaml recursively). YAML files are analyzed through the line-aligned prose
+view (prose_document.py), so keys and structure never enter the metrics.
 Exit codes: 0 = clean, 1 = issues found, 2 = usage error
 """
 
@@ -41,6 +43,7 @@ _SHARED = __import__("os").path.normpath(__import__("os").path.join(
 if _SHARED not in sys.path:
     sys.path.insert(0, _SHARED)
 import detex  # LaTeX -> prose preprocessing (shared scripts, GH-196)
+import prose_document  # YAML -> prose preprocessing (shared scripts, GH-345)
 
 # --- Thresholds ---
 THRESHOLDS = {
@@ -1788,12 +1791,13 @@ def main():
         print("Usage: detect-structural.py <file-or-dir> [file-or-dir ...] [--json] [--threshold=strict|medium|relaxed]", file=sys.stderr)
         sys.exit(2)
 
-    # Resolve all paths into a list of .md files
+    # Resolve all paths into a list of .md/.tex/.yaml files
     files = []
     for p in paths:
         path = Path(p)
         if path.is_dir():
-            files.extend(sorted(list(path.rglob("*.md")) + list(path.rglob("*.tex"))))
+            files.extend(sorted(list(path.rglob("*.md")) + list(path.rglob("*.tex"))
+                                + list(path.rglob("*.yaml")) + list(path.rglob("*.yml"))))
         elif path.is_file():
             files.append(path)
         else:
@@ -1801,7 +1805,8 @@ def main():
             sys.exit(2)
 
     if not files:
-        print("Error: No .md files found in the given paths.", file=sys.stderr)
+        print("Error: No .md, .tex, or .yaml files found in the given paths.",
+              file=sys.stderr)
         sys.exit(2)
 
     any_issues = False
@@ -1818,6 +1823,11 @@ def main():
         # whole document into one paragraph and skew paragraph metrics.
         if filepath.suffix == ".tex":
             text = "\n".join(detex.detex_aligned(text))
+        # YAML input: same aligned-view contract — prose scalar content stays
+        # on its source lines, keys/comments/structure are blanked, so line
+        # numbers in findings refer to the real file.
+        elif filepath.suffix in (".yaml", ".yml"):
+            text = "\n".join(prose_document.prose_view_aligned(str(filepath)))
         result = analyze(text, threshold)
         file_proses.append((str(filepath), extract_prose(text)))
         file_raws.append((str(filepath), text))
