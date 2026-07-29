@@ -138,11 +138,18 @@ def _markers():
 def load_prose(path):
     """Prose view of the file, plus the shared paragraph extractor's blocks."""
     _shared()
-    with open(path, encoding="utf-8", errors="replace") as f:
-        text = f.read()
-    if path.endswith(".tex"):
-        import detex
-        text = "\n".join(detex.detex_aligned(text))
+    if path.endswith((".yaml", ".yml")):
+        # YAML input (GH-348): same aligned-view contract as detex below —
+        # prose scalar content on its source lines, structure blanked — so
+        # every finding's line number refers to the real file.
+        import prose_document
+        text = "\n".join(prose_document.prose_view_aligned(path))
+    else:
+        with open(path, encoding="utf-8", errors="replace") as f:
+            text = f.read()
+        if path.endswith(".tex"):
+            import detex
+            text = "\n".join(detex.detex_aligned(text))
     import md_paragraphs
     return text, md_paragraphs.parse(text)
 
