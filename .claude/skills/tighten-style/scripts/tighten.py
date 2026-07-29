@@ -34,6 +34,7 @@ import tempfile
 SK = os.path.dirname(os.path.abspath(__file__))
 SHARED = os.path.normpath(os.path.join(SK, "..", "..", "..", "scripts"))
 MATCH_VOICE = os.path.normpath(os.path.join(SK, "..", "..", "match-voice", "scripts"))
+MATCH_STRUCTURE = os.path.normpath(os.path.join(SK, "..", "..", "match-structure", "scripts"))
 PANGRAM = os.path.join(SHARED, "pangram.py")
 PANGRAM_REPORT = os.path.join(SHARED, "pangram_report.py")
 
@@ -157,10 +158,42 @@ def main():
     ap.add_argument("--sent-floor", nargs=2, type=float, metavar=("MEAN", "SD"),
                     help="minimum sentence_length_mean and stdev; logs an "
                          "advisory when candidates push below this floor")
+    ap.add_argument("--venue",
+                    help="venue profile name (writing-voice/venues/, GH-338): "
+                         "its targets supply the sentence floor and its "
+                         "hedge_policy sets the TS-08 threshold; explicit "
+                         "--sent-floor still wins")
     a = ap.parse_args()
 
     pd, rm, _, cs = _mods()
     art = os.path.abspath(a.article)
+
+    # Venue profile: tighten toward the venue's measured register, not the
+    # global author floor. The profile's targets become the sentence floor —
+    # the venue density is where tightening stops, never a level to shoot
+    # past — and hedge_policy keys the TS-08 threshold (zero for the book
+    # voice, calibrated for academic prose).
+    hedge_stack = None
+    if a.venue:
+        if MATCH_STRUCTURE not in sys.path:
+            sys.path.insert(0, MATCH_STRUCTURE)
+        import venue_profile as vprof
+        try:
+            prof = vprof.resolve(start_path=art, venue=a.venue)
+        except (FileNotFoundError, ValueError) as e:
+            sys.exit(f"venue profile: {e}")
+        hedge_stack = cs.HEDGE_POLICY_STACK.get(prof.get("hedge_policy"))
+        targets = prof.get("targets") or {}
+        if not a.sent_floor:
+            mean = targets.get("sentence_length_mean")
+            sd = targets.get("sentence_length_stdev")
+            if mean is not None and sd is not None:
+                a.sent_floor = [float(mean), float(sd)]
+        print(f"venue: {prof['name']} (hedge_policy="
+              f"{prof.get('hedge_policy')}, sent_floor="
+              f"{a.sent_floor or 'unset'})")
+        for w in prof.get("_warnings", []):
+            print(f"venue profile warning: {w}", file=sys.stderr)
     ext = os.path.splitext(art)[1].lower()
     out = a.out or re.sub(r"\.(md|yaml|yml)$", ".tight\\1", art)
     if out == art:
@@ -169,7 +202,7 @@ def main():
     parsed = doc.to_parse_result()
 
     # Findings per paragraph line-range, from the checker run once whole-file.
-    all_findings = cs.check(art)
+    all_findings = cs.check(art, hedge_stack=hedge_stack)
     by_para = {}
     for f in all_findings:
         for start, end, _ in parsed.paragraphs:
