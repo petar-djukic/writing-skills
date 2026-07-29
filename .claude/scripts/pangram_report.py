@@ -7,7 +7,8 @@ output is a list of passages to rewrite rather than a grade.
 
 Three subcommands:
 
-  payload   Build the exact text to submit, from the shared markdown extractor.
+  payload   Build the exact text to submit, from the shared paragraph
+            extractor (markdown via md_paragraphs, YAML via ProseDocument).
             Prose only — code fences, tables, and front matter are neither
             written by a person in the sense a prose detector measures nor free
             to send, since billing counts started 1,000-word blocks. Writes a
@@ -52,7 +53,8 @@ A full comparison costs two scans. Nothing here enforces a quota: pangram.py
 for too many requests. Those answers are the source of truth, not a remembered
 daily figure.
 
-Stdlib only. Every subcommand except scan consumes pangram.py --json output
+Stdlib only for markdown input; YAML input imports ruamel.yaml through
+prose_document.py. Every subcommand except scan consumes pangram.py --json output
 without calling the API, so that half is testable with no key and no credits;
 scan is the one subcommand that submits.
 """
@@ -84,6 +86,25 @@ def _md_paragraphs():
         sys.exit(f"could not import md_paragraphs.py from {shared}: {e}")
 
 
+def _parse(path):
+    """Paragraph extraction, format-dispatched (GH-346).
+
+    Markdown keeps the direct md_paragraphs path (stdlib only). YAML goes
+    through ProseDocument, whose to_parse_result() returns the same shape;
+    its ruamel.yaml dependency is only imported for .yaml/.yml input.
+    """
+    ext = os.path.splitext(path)[1].lower()
+    if ext in (".yaml", ".yml"):
+        if SK not in sys.path:
+            sys.path.insert(0, SK)
+        try:
+            from prose_document import ProseDocument
+        except ImportError as e:
+            sys.exit(f"could not import prose_document.py from {SK}: {e}")
+        return ProseDocument.open(path).to_parse_result()
+    return _md_paragraphs().parse_file(path)
+
+
 def build_payload(path, min_words=0, sep="\n\n"):
     """Assemble prose-only submission text plus the span map.
 
@@ -92,7 +113,7 @@ def build_payload(path, min_words=0, sep="\n\n"):
     `start`/`end` are character offsets into the returned text, which is what
     Pangram's window offsets index into.
     """
-    r = _md_paragraphs().parse_file(path)
+    r = _parse(path)
     spans, chunks, pos = [], [], 0
     for i, (ls, le, txt) in enumerate(r.paragraphs):
         if len(txt.split()) < min_words:
@@ -123,7 +144,7 @@ def build_paragraph_payloads(path, min_words=0, word_limit=1000, sep="\n\n"):
               mapping each bag back to its source paragraphs with character
               offsets so bulk results can be mapped to individual paragraphs
     """
-    r = _md_paragraphs().parse_file(path)
+    r = _parse(path)
     paras = []
     for ls, le, txt in r.paragraphs:
         flat = " ".join(txt.split())

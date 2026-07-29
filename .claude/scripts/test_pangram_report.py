@@ -249,6 +249,28 @@ def main():
         except SystemExit as e:
             assert "scan failed" in str(e.code) and "No API key" in str(e.code)
 
+    # 23. YAML articles dispatch through ProseDocument (GH-346): prose scalar
+    #     content forms the payload, keys and structure never enter it.
+    yaml_sample = os.path.join(HERE, "testdata_prose_sample.yaml")
+    ytext, yspans = pr.build_payload(yaml_sample)
+    assert len(yspans) >= 3, f"expected >=3 yaml paragraphs, got {len(yspans)}"
+    assert "This system provides a pipeline" in ytext
+    assert "summary:" not in ytext, "yaml key leaked into the payload"
+    assert "components:" not in ytext, "yaml key leaked into the payload"
+    assert "# This comment" not in ytext, "yaml comment leaked into the payload"
+    for s in yspans:
+        assert ytext[s["start"]:s["end"]].startswith(s["preview"][:30]), \
+            f"yaml span {s['index']} does not index its own text"
+
+    # 24. Markdown payload is unchanged by the dispatch (regression guard).
+    text_again, spans_again = pr.build_payload(SAMPLE)
+    assert text_again == text and len(spans_again) == len(spans)
+
+    # 25. Bulk items build from YAML too.
+    yitems, ybags = pr.build_paragraph_payloads(yaml_sample)
+    assert yitems and ybags
+    assert "summary:" not in yitems[0]["text"]
+
     print("test_pangram_report: all assertions passed (no network, no key)")
 
 
