@@ -195,6 +195,32 @@ def test_verify_dict_anchors():
     print("  verify_dict_anchors: ok")
 
 
+def test_classify_gate_crash():
+    # GH-319: a verify.py crash (nonzero exit, traceback on stderr, no JSON
+    # verdict) is a gate-error, not a rejection. A rejection carries a JSON
+    # verdict on stdout even though the exit code is nonzero.
+    import drive
+    crash = drive.classify_gate_crash(
+        1, "", 'Traceback (most recent call last):\n  AttributeError: ...')
+    assert crash is not None
+    assert crash["status"] == "gate-error"
+    assert "AttributeError" in crash["err"]
+
+    # Rejection: nonzero exit WITH a JSON verdict — normal path, no crash.
+    rejection = drive.classify_gate_crash(1, '{"clean": false}', "")
+    assert rejection is None
+
+    # Pass: exit 0 — normal path.
+    passed = drive.classify_gate_crash(0, '{"clean": true}', "")
+    assert passed is None
+
+    # Crash with empty stderr still yields a non-empty reason.
+    silent = drive.classify_gate_crash(2, "", "")
+    assert silent["status"] == "gate-error"
+    assert silent["err"]
+    print("  classify_gate_crash: ok")
+
+
 def main():
     test_returns_shape()
     test_accepted_when_clean()
@@ -203,6 +229,7 @@ def main():
     test_verify_list_anchors_empty()
     test_verify_list_anchors_nonempty()
     test_verify_dict_anchors()
+    test_classify_gate_crash()
     print("test_match_voice: all assertions passed")
 
 

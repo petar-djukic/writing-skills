@@ -395,10 +395,12 @@ def write_manifest(path, a, voice_dir, results, pangram=None):
            "  anchor_files:"]
     out += [f"    - {_yaml_scalar(f)}" for f in anchor_files] or ["    []"]
     out.append("  result: {accepted: %d, kept_original: %d, skipped_short: %d, "
-               "rewrite_error: %d}" % (counts.get("accepted-mechanical", 0),
-                                       counts.get("kept-original", 0),
-                                       counts.get("skipped-short", 0),
-                                       counts.get("rewrite-error", 0)))
+               "rewrite_error: %d, gate_error: %d}"
+               % (counts.get("accepted-mechanical", 0),
+                  counts.get("kept-original", 0),
+                  counts.get("skipped-short", 0),
+                  counts.get("rewrite-error", 0),
+                  counts.get("gate-error", 0)))
     if pangram:
         before, after = pangram
         out.append("  pangram:")
@@ -419,6 +421,20 @@ def write_manifest(path, a, voice_dir, results, pangram=None):
                 out.append(f"      num_windows: {p['num_windows']}")
     open(path, "w").write("\n".join(out) + "\n")
     return anchor_files
+
+
+def classify_gate_crash(returncode, stdout, stderr):
+    """The gate-error record for a verify.py CRASH, or None on the normal path.
+
+    A crash is a missing verdict, not a rejection: verify.py exits nonzero
+    with a JSON verdict when it rejects, and with a traceback and no JSON when
+    it breaks. Treating the two the same shipped no-op runs as successes
+    (GH-318) — every rewrite silently discarded, reason '?'.
+    """
+    if returncode != 0 and not stdout.strip().startswith("{"):
+        return {"status": "gate-error",
+                "err": (stderr or "verify.py produced no verdict").strip()[:200]}
+    return None
 
 
 def restore_full_bold(original, candidate):
@@ -590,6 +606,10 @@ def main():
             cf = f"{work}/p{n:02d}.cand.txt"; open(cf, "w").write(cand_text)
             vf = run(["python3", f"{SK}/verify.py", "--original", pf, "--rewrite", cf,
                       "--anchors-json", ajf, "--json"])
+            crash = classify_gate_crash(vf.returncode, vf.stdout, vf.stderr)
+            if crash:
+                rec.update(crash)
+                break
             de = run(["bash", DEAI, cf])
             fj = vf.stdout if vf.stdout.strip().startswith("{") else "{}"
             warnings = []
@@ -641,9 +661,16 @@ def main():
             why = ",".join(x.get("check", "?") for x in v.get("findings", [])) \
                 if isinstance(v, dict) else "?"
             print(f"  kept p{r['n']:02d} (L{r['lines'][0]}): {why}")
+        if r["status"] == "gate-error":
+            print(f"  GATE-ERROR p{r['n']:02d} (L{r['lines'][0]}): {r.get('err', '?')}")
         if r.get("warnings"):
             print(f"  advisory p{r['n']:02d} (L{r['lines'][0]}): "
                   f"{','.join(r['warnings'])}")
+    gate_errors = [r for r in results if r["status"] == "gate-error"]
+    if gate_errors:
+        print(f"\nWARNING: the verification gate CRASHED on {len(gate_errors)} "
+              "paragraph(s) — those rewrites were never judged, only discarded. "
+              "Fix the gate before trusting this draft.", file=sys.stderr)
     print("\nMechanical gate only. Before accepting the draft: run the meaning-"
           "entailment review (references/prompts.md) on each accepted paragraph, "
           "and filter-tells over the assembled file.")
@@ -683,6 +710,14 @@ def main():
     used = write_manifest(manifest, a, voice_dir, results, pangram_pair)
     print(f"\nprovenance: {manifest}")
     print(f"  {len(used)} distinct exemplars anchored this draft")
+
+    # After the manifest, so the forensics survive: when the gate crashed on
+    # every rewritable paragraph, nothing was ever verified and the "draft" is
+    # a copy of the input. Success would present that copy as a rewrite.
+    gated = [r for r in results if r["status"] != "skipped-short"]
+    if gated and all(r["status"] == "gate-error" for r in gated):
+        sys.exit("gate-error on every paragraph: the verification gate never "
+                 "ran. The draft is an untouched copy — do not use it.")
 
 
 if __name__ == "__main__":
