@@ -147,12 +147,46 @@ def report_structural(article, draft):
         print(f"  {k:26} {b:>6} -> {a:<6}{'  WORSE' if worse else ''}")
 
 
+# Relative-increase ceilings, article -> draft, on per_1000 rates. Advisory:
+# the gate governs fidelity; nothing hard-fails a run for style drift. The
+# calibrating case is gpt-oss --no-anchors doubling passives (4.1 -> 8.6),
+# which the plain UP arrow reported identically to a 0.1 uptick (GH-324).
+GUARD_THRESHOLDS = {"passive": 0.50, "nominalization": 0.25, "filler": 0.50}
+# A metric rising from zero has no relative increase; warn only when the
+# draft's rate is visible on its own.
+GUARD_ZERO_FLOOR = 2.0
+
+
+def readability_guard(before_per_1000, after_per_1000):
+    """WARN records for register metrics that degraded past their threshold."""
+    warns = []
+    for metric, limit in GUARD_THRESHOLDS.items():
+        b, a = before_per_1000.get(metric), after_per_1000.get(metric)
+        if b is None or a is None or a <= b:
+            continue
+        if b == 0:
+            if a >= GUARD_ZERO_FLOOR:
+                warns.append({"metric": metric, "before": b, "after": a,
+                              "rise_pct": None,
+                              "threshold_pct": round(limit * 100)})
+            continue
+        rise = (a - b) / b
+        if rise > limit:
+            warns.append({"metric": metric, "before": b, "after": a,
+                          "rise_pct": round(rise * 100, 1),
+                          "threshold_pct": round(limit * 100)})
+    return warns
+
+
 def report_register(article, draft):
     """Register markers before -> after, via the shared reporter (GH-222).
 
     One marker vocabulary everywhere: the numbers in issues and the numbers in
     run output are the same numbers. A falling AI score with rising markers is
     the GH-219/GH-220 failure — the objective met, the prose worse.
+
+    Returns the readability-guard warnings (GH-324) so the manifest records
+    them; [] when clean or when the markers cannot be read.
     """
     r = run([sys.executable, os.path.join(SHARED, "register_markers.py"),
              "--compare", article, draft])
@@ -161,6 +195,25 @@ def report_register(article, draft):
         print(r.stdout.rstrip())
         if r.stderr.strip():
             print(r.stderr.rstrip(), file=sys.stderr)
+    j = run([sys.executable, os.path.join(SHARED, "register_markers.py"),
+             "--compare", article, draft, "--json"])
+    if j.returncode != 0 or not j.stdout.strip():
+        return []
+    try:
+        data = json.loads(j.stdout)
+    except json.JSONDecodeError:
+        return []
+    warns = readability_guard(data.get("before", {}).get("per_1000", {}),
+                              data.get("after", {}).get("per_1000", {}))
+    if warns:
+        print("readability guard:")
+        for w in warns:
+            rise = "from zero" if w["rise_pct"] is None else f"+{w['rise_pct']}%"
+            print(f"  WARN {w['metric']} {w['before']} -> {w['after']} /1000w "
+                  f"({rise}, threshold +{w['threshold_pct']}%)")
+    else:
+        print("readability guard: clean")
+    return warns
 
 
 def pangram_delta(before, after):
@@ -419,7 +472,7 @@ def _pangram_summary(response_path):
     }
 
 
-def write_manifest(path, a, voice_dir, results, pangram=None):
+def write_manifest(path, a, voice_dir, results, pangram=None, guard=None):
     """Run provenance beside the draft, in the shape a front-matter block wants.
 
     The anchor set is the single most important input to a rewrite — it is what
@@ -477,6 +530,13 @@ def write_manifest(path, a, voice_dir, results, pangram=None):
                 mws = p['mean_window_score']
                 out.append(f"      mean_window_score: {mws if mws is not None else 'null'}")
                 out.append(f"      num_windows: {p['num_windows']}")
+    if guard:
+        out.append("  guard:")
+        for w in guard:
+            rise = w["rise_pct"] if w["rise_pct"] is not None else "from-zero"
+            out.append(f"    - {{metric: {w['metric']}, before: {w['before']}, "
+                       f"after: {w['after']}, rise_pct: {rise}, "
+                       f"threshold_pct: {w['threshold_pct']}}}")
     open(path, "w").write("\n".join(out) + "\n")
     return anchor_files
 
@@ -773,6 +833,7 @@ def main():
     # The outcome measure, last because it is the result of the run. Without a
     # baseline there is nothing to compare, so the second scan is not spent.
     pangram_pair = None
+    guard_warns = []
     if not a.pangram:
         print("\nexternal check: skipped (no --pangram). The gate proves the "
               "candidates kept their citations, numbers, and meaning; it cannot "
@@ -786,7 +847,7 @@ def main():
             pangram_delta(baseline, after)
             # Beside the score, never instead of it: the two moving in
             # opposite directions is the whole GH-219 finding.
-            report_register(art, out)
+            guard_warns = report_register(art, out)
             pangram_pair = (_pangram_summary(baseline[0]), _pangram_summary(after[0]))
         else:
             print(f"\nexternal check: the draft scan failed. The baseline stands "
@@ -796,7 +857,8 @@ def main():
     # Last, so it can record the Pangram numbers when there are any. Written
     # beside the draft rather than into the temp dir, which the OS reaps.
     manifest = re.sub(r"\.md$", ".generation.yaml", out)
-    used = write_manifest(manifest, a, voice_dir, results, pangram_pair)
+    used = write_manifest(manifest, a, voice_dir, results, pangram_pair,
+                          guard=guard_warns)
     print(f"\nprovenance: {manifest}")
     print(f"  {len(used)} distinct exemplars anchored this draft")
 
