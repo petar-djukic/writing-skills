@@ -137,11 +137,72 @@ def test_restore_full_bold():
     print("  restore_full_bold: ok")
 
 
+def test_verify_list_anchors_empty():
+    # GH-318: drive.py --no-anchors writes [] (a bare list) to the anchors
+    # JSON. verify() must treat that as "no anchors", not crash on .get().
+    import json
+    import tempfile
+    import verify as vf
+    with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as f:
+        json.dump([], f)
+        path = f.name
+    try:
+        result = vf.verify("The original paragraph text.",
+                           "A rewrite of the paragraph.", anchors_json=path)
+    finally:
+        os.unlink(path)
+    assert result["clean"] is True
+    assert result["similarity"] is None
+    print("  verify_list_anchors_empty: ok")
+
+
+def test_verify_list_anchors_nonempty():
+    # Bare-list format with content: the similarity guard runs, no crash.
+    import json
+    import tempfile
+    import verify as vf
+    anchors = [{"file": "a1.md", "text": "Entirely unrelated exemplar prose."}]
+    with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as f:
+        json.dump(anchors, f)
+        path = f.name
+    try:
+        result = vf.verify("The original paragraph text.",
+                           "A rewrite of the paragraph.", anchors_json=path)
+    finally:
+        os.unlink(path)
+    assert result["clean"] is True
+    assert result["similarity"] is not None
+    print("  verify_list_anchors_nonempty: ok")
+
+
+def test_verify_dict_anchors():
+    # The dict form {"anchors": [...]} keeps working.
+    import json
+    import tempfile
+    import verify as vf
+    payload = {"anchors": [{"file": "a1.md",
+                            "text": "Entirely unrelated exemplar prose."}]}
+    with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as f:
+        json.dump(payload, f)
+        path = f.name
+    try:
+        result = vf.verify("The original paragraph text.",
+                           "A rewrite of the paragraph.", anchors_json=path)
+    finally:
+        os.unlink(path)
+    assert result["clean"] is True
+    assert result["similarity"] is not None
+    print("  verify_dict_anchors: ok")
+
+
 def main():
     test_returns_shape()
     test_accepted_when_clean()
     test_rejected_after_retries()
     test_restore_full_bold()
+    test_verify_list_anchors_empty()
+    test_verify_list_anchors_nonempty()
+    test_verify_dict_anchors()
     print("test_match_voice: all assertions passed")
 
 
