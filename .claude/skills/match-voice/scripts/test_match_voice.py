@@ -265,6 +265,34 @@ def test_compress_ranges():
     print("  compress_ranges: ok")
 
 
+def test_readability_guard():
+    # GH-324: relative-increase thresholds on register per_1000 rates. The
+    # calibrating case (passive 4.1 -> 8.6, +110%) must warn; drift below
+    # threshold and improvements must not.
+    import drive
+    guard = drive.readability_guard
+
+    warns = guard({"passive": 4.1, "nominalization": 35.4, "filler": 1.8},
+                  {"passive": 8.6, "nominalization": 33.7, "filler": 1.8})
+    assert [w["metric"] for w in warns] == ["passive"]
+    assert warns[0]["rise_pct"] > 100
+
+    # Below threshold: passive +40% under the 50% ceiling.
+    assert guard({"passive": 5.0}, {"passive": 7.0}) == []
+    # Improvement never warns.
+    assert guard({"passive": 8.0}, {"passive": 4.0}) == []
+    # Nominalization has the tighter 25% ceiling.
+    warns = guard({"nominalization": 20.0}, {"nominalization": 26.0})
+    assert [w["metric"] for w in warns] == ["nominalization"]
+    # From zero: no relative rise; warns only at a visible absolute rate.
+    assert guard({"filler": 0.0}, {"filler": 1.0}) == []
+    warns = guard({"filler": 0.0}, {"filler": 3.0})
+    assert warns and warns[0]["rise_pct"] is None
+    # Missing metrics are skipped, not crashed on.
+    assert guard({}, {"passive": 9.9}) == []
+    print("  readability_guard: ok")
+
+
 def main():
     test_returns_shape()
     test_accepted_when_clean()
@@ -277,6 +305,7 @@ def main():
     test_compose_note()
     test_parse_paragraph_selection()
     test_compress_ranges()
+    test_readability_guard()
     print("test_match_voice: all assertions passed")
 
 

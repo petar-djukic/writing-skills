@@ -322,6 +322,14 @@ model calls on — or risking regressions in — the ones that already cleared.
 An invalid selection (malformed, out of range) exits 2 before any scan or
 model call. The selection is recorded in the provenance YAML.
 
+**Readability guard.** After the register-markers comparison (the `--pangram`
+path), the run prints one WARN line per metric whose relative increase
+crosses its ceiling — passive +50%, nominalization +25%, filler +50% on the
+per-1,000-word rates — or `readability guard: clean`. Advisory only: the
+gate governs fidelity and nothing hard-fails on style drift, but a doubling
+passive rate should not look like a 0.1 uptick. Triggered warnings are
+recorded in the provenance YAML under `guard:`.
+
 ## Did it work? (the --pangram measurement)
 
 The gate proves a candidate preserved citations, numbers, and meaning. It
