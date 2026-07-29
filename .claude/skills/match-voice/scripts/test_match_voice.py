@@ -234,6 +234,37 @@ def test_compose_note():
     print("  compose_note: ok")
 
 
+def test_parse_paragraph_selection():
+    # GH-322: 'N,M-K' syntax, 1-based, validated against the paragraph count
+    # before any model call.
+    import drive
+    parse = drive.parse_paragraph_selection
+    assert parse("3", 10) == {3}
+    assert parse("1,3,5", 10) == {1, 3, 5}
+    assert parse("2-4", 10) == {2, 3, 4}
+    assert parse("1,3-5,9", 10) == {1, 3, 4, 5, 9}
+    assert parse(" 1 , 3-5 ", 10) == {1, 3, 4, 5}
+    for bad in ("abc", "1-2-3", "0", "11", "5-11", "5-3", "", ","):
+        try:
+            parse(bad, 10)
+            assert False, f"selection '{bad}' should have raised"
+        except ValueError:
+            pass
+    print("  parse_paragraph_selection: ok")
+
+
+def test_compress_ranges():
+    # The next-pass string round-trips through the selection parser.
+    import drive
+    assert drive.compress_ranges([1, 3, 4, 5, 9]) == "1,3-5,9"
+    assert drive.compress_ranges([2]) == "2"
+    assert drive.compress_ranges([1, 2, 3]) == "1-3"
+    assert drive.compress_ranges([5, 1, 2]) == "1-2,5"
+    spec = drive.compress_ranges([1, 3, 4, 5, 9])
+    assert drive.parse_paragraph_selection(spec, 10) == {1, 3, 4, 5, 9}
+    print("  compress_ranges: ok")
+
+
 def main():
     test_returns_shape()
     test_accepted_when_clean()
@@ -244,6 +275,8 @@ def main():
     test_verify_dict_anchors()
     test_classify_gate_crash()
     test_compose_note()
+    test_parse_paragraph_selection()
+    test_compress_ranges()
     print("test_match_voice: all assertions passed")
 
 
