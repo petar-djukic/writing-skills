@@ -88,7 +88,8 @@ def test_result_counts_come_from_the_statuses():
         _p, _used, text = write(tmp, Args(), res)
         assert load(text)["result"] == {"accepted": 1, "kept_original": 1,
                                         "skipped_short": 1, "rewrite_error": 1,
-                                        "gate_error": 0, "unselected": 0}
+                                        "gate_error": 0, "unselected": 0,
+                                        "excluded_key": 0}
 
 
 def _pangram_dict(frac_ai=0.0, frac_human=1.0, mean_ws=0.25):

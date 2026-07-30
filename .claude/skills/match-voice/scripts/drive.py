@@ -527,13 +527,15 @@ def write_manifest(path, a, voice_dir, results, pangram=None, guard=None):
            "  anchor_files:"]
     out += [f"    - {_yaml_scalar(f)}" for f in anchor_files] or ["    []"]
     out.append("  result: {accepted: %d, kept_original: %d, skipped_short: %d, "
-               "rewrite_error: %d, gate_error: %d, unselected: %d}"
+               "rewrite_error: %d, gate_error: %d, unselected: %d, "
+               "excluded_key: %d}"
                % (counts.get("accepted-mechanical", 0),
                   counts.get("kept-original", 0),
                   counts.get("skipped-short", 0),
                   counts.get("rewrite-error", 0),
                   counts.get("gate-error", 0),
-                  counts.get("unselected", 0)))
+                  counts.get("unselected", 0),
+                  counts.get("excluded-key", 0)))
     if pangram:
         before, after = pangram
         out.append("  pangram:")
@@ -632,7 +634,7 @@ def assemble_draft(art, lines, accept, rng, out):
 
 
 def parse_paragraphs(path, min_words):
-    """Return (lines, fm_close, paragraphs, coverage, unaccounted).
+    """Return (lines, fm_close, paragraphs, coverage, unaccounted, doc).
 
     Uses ProseDocument for both markdown and YAML files, with the
     to_parse_result() adapter for backward-compat tuple shape.
@@ -640,7 +642,7 @@ def parse_paragraphs(path, min_words):
     pd = _prose_document()
     doc = pd.ProseDocument.open(path)
     r = doc.to_parse_result()
-    return r.lines, r.fm_close, r.paragraphs, r.coverage, r.unaccounted
+    return r.lines, r.fm_close, r.paragraphs, r.coverage, r.unaccounted, doc
 
 
 def main():
@@ -693,6 +695,11 @@ def main():
                          "UPLOADS this article and the draft to a third party "
                          "that retains them; passing the flag is the consent, "
                          "and it is asked for per document. Costs two scans.")
+    ap.add_argument("--exclude-keys", nargs="*", default=None,
+                    help="YAML key-path globs whose paragraphs skip rewriting "
+                         "(default for YAML: section_goal, goals.*.goal, "
+                         "acceptance.*, meta.*). Pass --exclude-keys with no "
+                         "args to disable")
     a = ap.parse_args()
 
     if a.no_anchors and any([a.role, a.anchor_tags, a.stratum, a.author]):
@@ -703,7 +710,20 @@ def main():
     if out == art:
         sys.exit(f"refusing to overwrite the article: --out resolves to the "
                  f"input path ({art}); pass a different --out")
-    lines, fm_close, paras, coverage, unaccounted = parse_paragraphs(art, a.min_words)
+    lines, fm_close, paras, coverage, unaccounted, doc = parse_paragraphs(art, a.min_words)
+
+    pd = _prose_document()
+    exclude = set()
+    ext = os.path.splitext(art)[1].lower()
+    if ext in (".yaml", ".yml"):
+        patterns = (a.exclude_keys if a.exclude_keys is not None
+                    else pd.YAML_EXCLUDE_KEYS_DEFAULT)
+        if patterns:
+            exclude = pd.excluded_indices(doc.paragraphs, patterns)
+            if exclude:
+                print(f"exclude-keys: skipping {len(exclude)} contract-field "
+                      f"paragraph(s): {sorted(exclude)}")
+
     # Validated before any scan or model call: an invalid selection must cost
     # nothing.
     selection = None
@@ -770,6 +790,8 @@ def main():
             rec["status"] = "skipped-short"; results.append(rec); continue
         if selection is not None and n not in selection:
             rec["status"] = "unselected"; results.append(rec); continue
+        if n in exclude:
+            rec["status"] = "excluded-key"; results.append(rec); continue
         pf = f"{work}/p{n:02d}.orig.txt"; open(pf, "w").write(txt)
         if a.no_anchors:
             ajf = f"{work}/p{n:02d}.anchors.json"; open(ajf, "w").write("[]")
@@ -918,7 +940,7 @@ def main():
     # every rewritable paragraph, nothing was ever verified and the "draft" is
     # a copy of the input. Success would present that copy as a rewrite.
     gated = [r for r in results
-             if r["status"] not in ("skipped-short", "unselected")]
+             if r["status"] not in ("skipped-short", "unselected", "excluded-key")]
     if gated and all(r["status"] == "gate-error" for r in gated):
         sys.exit("gate-error on every paragraph: the verification gate never "
                  "ran. The draft is an untouched copy — do not use it.")

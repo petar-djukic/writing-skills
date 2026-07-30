@@ -193,6 +193,11 @@ def main():
                          "its targets supply the sentence floor and its "
                          "hedge_policy sets the TS-08 threshold; explicit "
                          "--sent-floor still wins")
+    ap.add_argument("--exclude-keys", nargs="*", default=None,
+                    help="YAML key-path globs whose paragraphs skip rewriting "
+                         "(default for YAML: section_goal, goals.*.goal, "
+                         "acceptance.*, meta.*). Pass --exclude-keys with no "
+                         "args to disable")
     a = ap.parse_args()
 
     pd, rm, _, cs = _mods()
@@ -231,6 +236,16 @@ def main():
     doc = pd.ProseDocument.open(art)
     parsed = doc.to_parse_result()
 
+    exclude = set()
+    if ext in (".yaml", ".yml"):
+        patterns = (a.exclude_keys if a.exclude_keys is not None
+                    else pd.YAML_EXCLUDE_KEYS_DEFAULT)
+        if patterns:
+            exclude = pd.excluded_indices(doc.paragraphs, patterns)
+            if exclude:
+                print(f"exclude-keys: skipping {len(exclude)} contract-field "
+                      f"paragraph(s): {sorted(exclude)}")
+
     # Findings per paragraph line-range, from the checker run once whole-file.
     all_findings = cs.check(art, hedge_stack=hedge_stack)
     by_para = {}
@@ -268,6 +283,10 @@ def main():
                "rules": sorted(by_para.get(start, []))}
         if rec["words"] < a.min_words:
             rec["status"] = "skipped-short"
+            results.append(rec)
+            continue
+        if n in exclude:
+            rec["status"] = "excluded-key"
             results.append(rec)
             continue
         pf = os.path.join(work, f"p{n:02d}.orig.txt")

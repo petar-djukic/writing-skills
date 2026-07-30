@@ -34,6 +34,45 @@ if HERE not in sys.path:
 
 MIN_PROSE_WORDS = 5
 
+YAML_EXCLUDE_KEYS_DEFAULT = [
+    "section_goal", "goals.*.goal", "acceptance.*", "meta.*",
+]
+
+
+def _match_key_glob(key_path, pattern):
+    """Match a dot-joined key path against a glob pattern.
+
+    Segments are matched literally except ``*`` which matches exactly one
+    segment.  A trailing ``.*`` matches anything rooted at the prefix.
+    """
+    if key_path is None:
+        return False
+    parts = ".".join(key_path) if isinstance(key_path, list) else key_path
+    pp = pattern.split(".")
+    kp = parts.split(".")
+    if pp[-1] == "*" and len(pp) >= 2:
+        prefix = pp[:-1]
+        if len(kp) < len(prefix):
+            return False
+        return all(a == b or a == "*" for a, b in zip(prefix, kp[:len(prefix)]))
+    if len(pp) != len(kp):
+        return False
+    return all(a == b or a == "*" for a, b in zip(pp, kp))
+
+
+def excluded_indices(paragraphs, patterns):
+    """Return set of 1-based paragraph indices whose key_path matches any pattern."""
+    out = set()
+    for p in paragraphs:
+        kp = p._key_path if hasattr(p, "_key_path") else getattr(p, "key_path", None)
+        if kp is None:
+            continue
+        for pat in patterns:
+            if _match_key_glob(kp, pat):
+                out.add(p.index + 1)
+                break
+    return out
+
 
 class Paragraph:
     __slots__ = ("index", "text", "start_line", "end_line",
@@ -49,8 +88,12 @@ class Paragraph:
         self.word_count = len(text.split())
         self._key_path = key_path
 
+    @property
+    def key_path(self):
+        return list(self._key_path) if self._key_path else None
+
     def to_dict(self):
-        return {
+        d = {
             "index": self.index,
             "text": self.text,
             "start_line": self.start_line,
@@ -58,6 +101,9 @@ class Paragraph:
             "context": self.context,
             "word_count": self.word_count,
         }
+        if self._key_path is not None:
+            d["key_path"] = self.key_path
+        return d
 
 
 class ProseDocument:
