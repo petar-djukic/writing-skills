@@ -209,6 +209,18 @@ def test_ascii_normalization_catches_nonbreaking_hyphen():
     assert result["clean"], "non-breaking hyphen should normalize to ASCII hyphen"
 
 
+# --- normalize_ascii is importable by drivers (GH-365) -----------------------
+
+def test_normalize_ascii_importable_from_verify():
+    from verify import normalize_ascii
+    assert normalize_ascii("’test”") == "'test\""
+
+
+def test_normalize_ascii_idempotent():
+    s = "already plain ascii"
+    assert verify.normalize_ascii(verify.normalize_ascii(s)) == s
+
+
 # --- end ----------------------------------------------------------------------
 
 def main():

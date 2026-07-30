@@ -198,6 +198,9 @@ def main():
                          "(default for YAML: section_goal, goals.*.goal, "
                          "acceptance.*, meta.*). Pass --exclude-keys with no "
                          "args to disable")
+    ap.add_argument("--must-preserve", nargs="*", default=None,
+                    help="exact phrases that must survive rewriting; verify.py "
+                         "rejects candidates that lose any of them")
     a = ap.parse_args()
 
     pd, rm, _, cs = _mods()
@@ -312,13 +315,18 @@ def main():
                 break
             if not cand or not cand.strip():
                 break
+            import verify as _vmod
+            cand_clean = _vmod.normalize_ascii(cand.strip())
             cf = os.path.join(work, f"p{n:02d}.cand.txt")
             with open(cf, "w") as f:
-                f.write(cand.strip())
-            v = run([sys.executable, os.path.join(MATCH_VOICE, "verify.py"),
-                     "--original", pf, "--rewrite", cf, "--json"])
+                f.write(cand_clean)
+            vcmd = [sys.executable, os.path.join(MATCH_VOICE, "verify.py"),
+                    "--original", pf, "--rewrite", cf, "--json"]
+            if a.must_preserve:
+                vcmd += ["--must-preserve"] + a.must_preserve
+            v = run(vcmd)
             if v.returncode == 0:
-                rec["cand"] = cand.strip()
+                rec["cand"] = cand_clean
                 status = "tightened"
                 break
         rec["status"] = status
