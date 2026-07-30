@@ -700,6 +700,9 @@ def main():
                          "(default for YAML: section_goal, goals.*.goal, "
                          "acceptance.*, meta.*). Pass --exclude-keys with no "
                          "args to disable")
+    ap.add_argument("--must-preserve", nargs="*", default=None,
+                    help="exact phrases that must survive rewriting; verify.py "
+                         "rejects candidates that lose any of them")
     a = ap.parse_args()
 
     if a.no_anchors and any([a.role, a.anchor_tags, a.stratum, a.author]):
@@ -832,9 +835,14 @@ def main():
             # the way out has to be patched before the gate reads it, or the
             # repair and the check disagree about the same paragraph.
             cand_text = restore_full_bold(txt, rw.stdout.strip())
+            import verify as _vmod
+            cand_text = _vmod.normalize_ascii(cand_text)
             cf = f"{work}/p{n:02d}.cand.txt"; open(cf, "w").write(cand_text)
-            vf = run(["python3", f"{SK}/verify.py", "--original", pf, "--rewrite", cf,
-                      "--anchors-json", ajf, "--json"])
+            vcmd = ["python3", f"{SK}/verify.py", "--original", pf, "--rewrite", cf,
+                    "--anchors-json", ajf, "--json"]
+            if a.must_preserve:
+                vcmd += ["--must-preserve"] + a.must_preserve
+            vf = run(vcmd)
             crash = classify_gate_crash(vf.returncode, vf.stdout, vf.stderr)
             if crash:
                 rec.update(crash)
