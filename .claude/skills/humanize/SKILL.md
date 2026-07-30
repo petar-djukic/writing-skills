@@ -53,6 +53,33 @@ Pangram catches. See calibration data at the end.
 - For Pangram measurement: an API key configured per the match-voice
   credential contract (`.secrets/keys.json` with `"pangram"` entry)
 
+## Contract-field protection (GH-362)
+
+YAML spec files carry contract fields (section_goal, goals, acceptance
+criteria, metadata) whose values are terse, lowercase phrases the repo's
+audit tools grep for. The pipeline protects them in two layers:
+
+**Exclude keys.** Both tighten.py and drive.py accept `--exclude-keys` with
+dot-separated key-path globs. For YAML files, the default exclusion list is
+`section_goal`, `goals.*.goal`, `acceptance.*`, `meta.*`. These paragraphs
+get status `excluded-key` and never reach the rewriter. Pass `--exclude-keys`
+with no arguments to disable the default.
+
+**Guard phrases.** verify.py accepts `--must-preserve` with exact phrases
+that must survive rewriting unchanged. A candidate that loses a guard phrase
+is rejected (fatal finding) and the original text is kept. Use this for
+claims-integrity markers like "recorded as planned", "no number is cited",
+"submission-status care" that the repo's claims audit greps for.
+
+**ASCII normalization.** verify.py normalizes typographic unicode (curly
+quotes, non-breaking hyphens and spaces, en-dashes) to ASCII before running
+any check. A rewrite that reintroduces them is caught by the gate rather
+than silently passing.
+
+When running the pipeline on spec YAML, the exclude-keys defaults apply
+automatically. For guard phrases, pass them explicitly on the drive.py or
+tighten.py command line, or configure them in the venue profile.
+
 ## Procedure
 
 ### Phase 0: Discover and choose targets

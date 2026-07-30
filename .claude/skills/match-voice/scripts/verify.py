@@ -22,12 +22,18 @@ Checks:
   similarity n-gram overlap against the anchor passages, so the model does not
              simply copy the exemplars (reuses match-structure's shingle guard).
              Advisory (warn) — logged, never blocks acceptance.
+  must-preserve  exact phrases that must survive rewriting unchanged (GH-362);
+             loss is fatal. For spec YAML: claims-integrity markers whose
+             presence the repo's audit greps for.
+  ascii      typographic unicode (curly quotes, non-breaking hyphens/spaces) is
+             normalized to ASCII before any check runs (GH-362), so the gate
+             diffs like-for-like and a rewrite that reintroduces them is caught.
 
 Exit: 0 clean, 1 violations (the loop retries or keeps the original), 2 usage.
 
 Usage:
   verify.py --original <file> --rewrite <file> [--anchors-json <file>]
-            [--max-shared-run 8] [--json]
+            [--max-shared-run 8] [--must-preserve <phrase>...] [--json]
 """
 
 import argparse
@@ -52,6 +58,24 @@ KNOWN_UNITS = {
     "m", "km", "cm", "mm", "x", "k", "w", "kw", "mw",
 }
 ACRONYM = re.compile(r"\b([A-Z]{2,}(?:-\d+)?)\b")
+
+# Typographic unicode that models reintroduce even after cleanup (GH-360).
+# Maps each to its ASCII equivalent for pre-gate normalization.
+_TYPO_MAP = str.maketrans({
+    "‘": "'", "’": "'",   # curly single quotes
+    "“": '"', "”": '"',   # curly double quotes
+    "‐": "-", "‑": "-",   # hyphens (non-breaking, figure)
+    "‒": "-", "–": "-",   # figure dash, en-dash
+    "­": "",                    # soft hyphen
+    " ": " ",                   # non-breaking space
+    " ": " ",                   # narrow non-breaking space
+    " ": " ",                   # thin space
+})
+
+
+def normalize_ascii(text):
+    """Replace typographic unicode with ASCII equivalents."""
+    return text.translate(_TYPO_MAP)
 
 # Inline markup, stripped in this order so a span is counted once: code spans
 # first (their contents are literal and may hold asterisks), then bold, then
@@ -158,8 +182,16 @@ def _similarity(rewrite_text, anchors_json, max_shared_run):
             "violation": longest >= max_shared_run}
 
 
-def verify(original, rewritten, anchors_json=None, max_shared_run=8):
+def verify(original, rewritten, anchors_json=None, max_shared_run=8,
+           must_preserve=None):
+    rewritten = normalize_ascii(rewritten)
     findings = []
+
+    if must_preserve:
+        for phrase in must_preserve:
+            if phrase in original and phrase not in rewritten:
+                findings.append({"check": "must-preserve", "severity": "fatal",
+                                 "detail": f"guard phrase lost: {phrase!r}"})
 
     o_c, r_c = _citation_keys(original), _citation_keys(rewritten)
     for key, n in o_c.items():
@@ -254,11 +286,14 @@ def main():
     p.add_argument("--anchors-json", help="retrieve.py --json output, for the copy guard")
     p.add_argument("--max-shared-run", type=int, default=8,
                    help="longest verbatim run allowed against an anchor (words)")
+    p.add_argument("--must-preserve", nargs="*", default=None,
+                   help="exact phrases that must survive rewriting; loss is fatal")
     p.add_argument("--json", action="store_true")
     args = p.parse_args()
 
     result = verify(open(args.original).read(), open(args.rewrite).read(),
-                    args.anchors_json, args.max_shared_run)
+                    args.anchors_json, args.max_shared_run,
+                    must_preserve=args.must_preserve)
     if args.json:
         print(json.dumps(result, indent=2, ensure_ascii=False))
     else:
