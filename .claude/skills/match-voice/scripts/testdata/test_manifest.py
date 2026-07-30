@@ -29,6 +29,8 @@ class Args:
         self.role = kw.get("role")
         self.anchor_tags = kw.get("anchor_tags")
         self.stratum = kw.get("stratum")
+        self.no_anchors = kw.get("no_anchors", False)
+        self.author = kw.get("author")
 
 
 def results(*anchor_lists, statuses=None):
@@ -85,17 +87,31 @@ def test_result_counts_come_from_the_statuses():
                                 "skipped-short", "rewrite-error"])
         _p, _used, text = write(tmp, Args(), res)
         assert load(text)["result"] == {"accepted": 1, "kept_original": 1,
-                                        "skipped_short": 1, "rewrite_error": 1}
+                                        "skipped_short": 1, "rewrite_error": 1,
+                                        "gate_error": 0, "unselected": 0}
+
+
+def _pangram_dict(frac_ai=0.0, frac_human=1.0, mean_ws=0.25):
+    return {"fraction_ai": frac_ai, "fraction_ai_assisted": 0.0,
+            "fraction_human": frac_human, "num_ai": 0,
+            "num_ai_assisted": 0, "num_human": 1,
+            "mean_window_score": mean_ws, "num_windows": 1}
 
 
 def test_pangram_block_records_its_scope():
     """The driver submits a prose-only payload, so these numbers will not match
     a whole-file scan. Saying so in the manifest is the point."""
+    before = _pangram_dict(frac_ai=0.8, frac_human=0.2, mean_ws=0.676)
+    after = _pangram_dict(frac_ai=0.1, frac_human=0.9, mean_ws=0.389)
     with tempfile.TemporaryDirectory() as tmp:
         _p, _u, text = write(tmp, Args(), results(["A.md"]),
-                             pangram=(0.676, 0.389))
+                             pangram=(before, after))
         pg = load(text)["pangram"]
-        assert pg == {"scope": "prose-only", "before": 0.676, "after": 0.389}
+        assert pg["scope"] == "prose-only"
+        assert pg["before"]["mean_window_score"] == 0.676
+        assert pg["after"]["mean_window_score"] == 0.389
+        assert pg["before"]["fraction_ai"] == 0.8
+        assert pg["after"]["fraction_human"] == 0.9
 
 
 def test_pangram_block_absent_without_the_flag():
