@@ -226,6 +226,23 @@ Immediately capture the pattern or insight:
 - Maintain calm, observational tone throughout
 - **Focus on patterns, not achievements**: Frame insights as discovered patterns, not personal accomplishments. Less "I built X" and more "Here's what works"
 
+#### Subscribe Placement
+
+Mark subscribe-block positions in the draft with an HTML comment
+(`<!-- subscribe-block -->`) so the person pasting into Substack knows where
+the editor blocks go. The measured failure mode (2026-08-09 audit): articles
+asked before the value (~5% depth) and after the references (~92%), leaving
+the entire payoff — where a search visitor actually reads — with no capture
+point, and lifetime conversion at 3 signups.
+
+- One marker **right after the first complete payoff** — the first section
+  where the reader has something working — typically 40-50% of the article.
+- Articles over ~3,000 words get a second marker near two-thirds.
+- Keep the early captioned block and the default end block; the markers add
+  the middle, they do not replace the ends.
+- Caption stays the standing one (free subscription, care, leg up); never
+  invent urgency copy.
+
 #### References Section
 
 Include 4-7 credible sources:
