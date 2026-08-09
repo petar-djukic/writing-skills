@@ -234,6 +234,12 @@ edits that matter most for this pipeline:
    without adding new information.
 4. **Banned words** — swap any remaining banned words (check the lexical
    scan output).
+5. **Author-stance narration** — sentences written from the author's chair:
+   scope negotiation ("here we deal with", "this article covers"), and system
+   facts stated as author experience ("waiting for my approval"). Rewrite as
+   claims about the system ("a human approves it before it exists"). The
+   bridge sentence and the learning-objectives paragraph are the sanctioned
+   exceptions; everything else in this register goes.
 
 After editing, re-run both scans to confirm:
 - Structural verdict: MINOR-ISSUES or better (was LIKELY-AI)

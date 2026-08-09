@@ -658,6 +658,20 @@ META_NARRATION=(
   'as (we|discussed) (will (see|show)|above|below)'
   'in the sections? that follow'
   'the remainder of this (article|paper|section)'
+  # Author-stance / scope narration (added 2026-08-09, from the loop-article
+  # editing days): the writer negotiating scope with themselves in public, or
+  # stating system facts from the author's chair. SANCTIONED EXCEPTIONS the
+  # semantic pass must not flag: the bridge sentence ("...and this article
+  # introduces it") and the learning-objectives paragraph ("In this article I
+  # show you..."). Everything else in this register gets rewritten as a claim
+  # about the system ("a human approves it before it exists"), not the author.
+  'here (we|i|they) (deal|turn|cover|matter)'
+  'this (article|piece|section) (covers|delivers|provides|is about)'
+  'to be clear about'
+  'what matters here'
+  '(waiting )?for my (approval|review|sign-off)'
+  'i walk through'
+  'the other half of this'
 )
 
 # --- Venue lexicons (GH-337) ---
