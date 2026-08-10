@@ -240,7 +240,7 @@ point, and lifetime conversion at 3 signups.
 - Articles over ~3,000 words get a second marker near two-thirds.
 - Keep the early captioned block and the default end block; the markers add
   the middle, they do not replace the ends.
-- Caption stays the standing one (free subscription, care, leg up); never
+- Caption stays the standing one (free subscription, leg up); never
   invent urgency copy.
 
 #### References Section
