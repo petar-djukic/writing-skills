@@ -117,7 +117,18 @@ $RUN <skill>/scripts/match_outline.py --db <db-path> \
 
 # Rewrite a draft (uses gpt-oss:120b-cloud by default)
 $RUN <skill>/scripts/match_outline.py <draft.md> --db <db-path> --rewrite
+
+# A long chapter on a local model needs longer than the 600s default
+$RUN <skill>/scripts/match_outline.py <draft.md> --db <db-path> --rewrite \
+  --timeout 2400
 ```
+
+`--rewrite` is one generation call, so the wait scales with the document rather
+than with how warm the model is: a 1,427-word chapter took 604s at 14.2 tok/s
+against an already-resident local model. Raise `--timeout` — or set
+`MATCH_OUTLINE_TIMEOUT` — instead of warming the model. The other two
+environment overrides are `MATCH_OUTLINE_MODEL` and `OLLAMA_ENDPOINT`, each the
+default for the flag of the same name.
 
 ## Exemplar sources
 

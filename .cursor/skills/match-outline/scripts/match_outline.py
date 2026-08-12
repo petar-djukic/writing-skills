@@ -48,6 +48,12 @@ REPORT_TEMPLATE = os.path.join(SKILL_DIR, "references", "comparison-report-templ
 
 DEFAULT_MODEL = os.environ.get("MATCH_OUTLINE_MODEL", "gpt-oss:120b-cloud")
 DEFAULT_ENDPOINT = os.environ.get("OLLAMA_ENDPOINT", "http://localhost:11434")
+# --rewrite is a single generation call whose output scales with the document,
+# so the ceiling has to move with the machine: a 1,427-word chapter took 604s at
+# 14.2 tok/s on a resident local model, and warming does not help when
+# generation itself is the cost (GH-23). rewrite.py already exposed its own
+# timeout; passing 600 explicitly at the call site is what defeated it.
+DEFAULT_TIMEOUT = int(os.environ.get("MATCH_OUTLINE_TIMEOUT", "600"))
 MAX_EXCERPT_CHARS = 12000          # per paper in comparison and rewrite mode
 MAX_CORPUS_CHARS = 350000          # ~100K tokens
 
@@ -104,7 +110,7 @@ def _call_claude(client, model, system, content_blocks, max_tokens=16000):
     return text, response.usage
 
 
-def _call_ollama(endpoint, model, system, content_blocks):
+def _call_ollama(endpoint, model, system, content_blocks, timeout=DEFAULT_TIMEOUT):
     """One Ollama generation call, matching the interface call_model uses."""
     if MATCH_VOICE not in sys.path:
         sys.path.insert(0, MATCH_VOICE)
@@ -115,7 +121,7 @@ def _call_ollama(endpoint, model, system, content_blocks):
         b["text"] for b in content_blocks if b.get("type") == "text")
     prompt = f"{sys_text}\n\n{user_text}"
     text = rw.generate(prompt, endpoint=endpoint, model=model,
-                       temperature=0.7, timeout=600)
+                       temperature=0.7, timeout=timeout)
     if not text or not text.strip():
         sys.exit("Empty response from Ollama")
 
@@ -130,7 +136,8 @@ def call_model(backend, system, content_blocks, max_tokens=16000):
         return _call_claude(backend["client"], backend["model"],
                             system, content_blocks, max_tokens)
     return _call_ollama(backend["endpoint"], backend["model"],
-                        system, content_blocks)
+                        system, content_blocks,
+                        timeout=backend.get("timeout", DEFAULT_TIMEOUT))
 
 
 def resolve_paper(spec, db_path):
@@ -466,6 +473,11 @@ def main():
                         "Anthropic API; pass a non-claude name to use Ollama)")
     p.add_argument("--endpoint", default=DEFAULT_ENDPOINT,
                    help="Ollama endpoint (ignored for claude-* models)")
+    p.add_argument("--timeout", type=int, default=DEFAULT_TIMEOUT,
+                   help="seconds to wait on one Ollama generation call "
+                        "(default: %(default)s, or MATCH_OUTLINE_TIMEOUT). "
+                        "--rewrite output scales with the document, so a long "
+                        "chapter on a local model needs more than the default")
     p.add_argument("--voice-dir", default=None,
                    help="writing-voice directory (alternative to --db)")
     p.add_argument("--role", default=None,
@@ -498,7 +510,7 @@ def main():
             sys.exit(msg)
         print(f"model: {msg}", file=sys.stderr)
         backend = {"type": "ollama", "model": args.model,
-                   "endpoint": args.endpoint}
+                   "endpoint": args.endpoint, "timeout": args.timeout}
 
     summary = {}
 
