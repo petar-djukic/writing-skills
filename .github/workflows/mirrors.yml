@@ -1,0 +1,38 @@
+# Assistant configuration is canonical under .claude/ and generated outward
+# into .cursor, .opencode, .github and .agents by scripts/sync-mirrors.sh.
+# Nothing forced anyone to run it: GH-9's skill landed without a regeneration,
+# so it was missing from all four surfaces and AGENTS.md undercounted, and that
+# survived two merges before anyone happened to run --check (GH-13, GH-16).
+#
+# This file lives inside a tree the generator otherwise owns, which is safe:
+# sync-mirrors.sh takes .github per-subdirectory (AREAS lists .github/prompts,
+# .github/skills and .github/scripts, each rsynced with --delete on its own),
+# and .github/workflows is not one of them.
+#
+# It is not portable, though. The .github tree is documented as working through
+# a bare symlink into another repository; Actions does not reliably discover
+# workflows that way, and the job below runs a script a consuming repository
+# does not carry. This workflow is for this repository only.
+name: mirrors
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  check:
+    name: mirrors match .claude/
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: sync-mirrors.sh --check
+        run: |
+          if ! bash scripts/sync-mirrors.sh --check; then
+            echo
+            echo "::error::Generated mirrors do not match canonical .claude/."
+            echo "Run 'bash scripts/sync-mirrors.sh' and commit the result."
+            echo "Never edit a mirror directly — edit .claude/ and regenerate."
+            exit 1
+          fi
