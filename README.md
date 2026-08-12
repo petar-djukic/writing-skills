@@ -15,7 +15,7 @@ flowchart LR
 
 ## Scope and Status
 
-The repository hosts 11 skills and 3 commands, canonical under `.claude/`. The prose pipeline consists of `humanize` (the three-step orchestrator), `filter-tells`, `match-voice`, `match-outline`, `match-structure`, `tighten-style`, and `tune-anchors`. Reference handling uses `update-references` and `audit-references`, which keep a CSL-YAML bibliography current and checked against retrieved sources. `patent-disclosure` populates an eleven-section invention-disclosure template, while `pattern-language` extracts Alexandrian pattern languages from repositories. The commands — `brainstorm-article`, `write-article`, `seo-pass` — drive an end-to-end article pipeline. History traces back to [coding-skills](https://github.com/petar-djukic/coding-skills), where these skills lived through August 2026; the coding commands remain there.
+The repository hosts 12 skills and 3 commands, canonical under `.claude/`. The prose pipeline consists of `humanize` (the three-step orchestrator), `filter-tells`, `match-voice`, `match-outline`, `match-structure`, `tighten-style`, and `tune-anchors`. Reference handling uses `update-references` and `audit-references`, which keep a CSL-YAML bibliography current and checked against retrieved sources. `patent-disclosure` populates an eleven-section invention-disclosure template, while `pattern-language` extracts Alexandrian pattern languages from repositories. `review-chapter` puts a book chapter draft through six critics, each testing something a checker cannot. The commands — `brainstorm-article`, `write-article`, `seo-pass` — drive an end-to-end article pipeline. History traces back to [coding-skills](https://github.com/petar-djukic/coding-skills), where these skills lived through August 2026; the coding commands remain there.
 
 ## Documentation
 
@@ -30,7 +30,7 @@ The target voice sits in a `writing-voice/` directory of exemplar prose — the 
 ## Repository Structure
 
 ```
-.claude/skills/      the 11 skills, one directory each
+.claude/skills/      the 12 skills, one directory each
 .claude/commands/    brainstorm-article, write-article, seo-pass
 .claude/rules/       writing-voice contract, technical document types
 .claude/scripts/     shared plumbing: credentials, Pangram client, prose parsing
