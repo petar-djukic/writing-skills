@@ -85,6 +85,7 @@ These have legitimate uses but are AI tells in most contexts.
 | robust | Engineering spec with definition | Vague praise |
 | seamless, seamlessly | Never legitimate | — |
 | seam, seams | Literal join (fabric, geology, a real code boundary named as such) | Metaphor: "breaks at a seam", "edit seams", "the seam is X" |
+| unfalsifiable | Discussing falsifiability as such (Popper, philosophy of science, a claim's formal logical status) | Standing in for the concrete observation. Say what is missing: "nothing would show it is wrong", "no fact could embarrass it", "it cannot be checked" |
 | innovative | Never self-describe | — |
 | enhance, enhancing | Database/image operations | Vague improvement claim |
 | ecosystem | Actual software ecosystem | Metaphor for "group of things" |

@@ -69,12 +69,21 @@ artifacts together regardless of the working directory.
 
 ## The database format
 
-The database is CSL (Citation Style Language) YAML — a bare list with no root key. Each entry has
+The database is CSL (Citation Style Language) YAML — by default a bare list with
+no root key. Each entry has
 standard CSL fields that pandoc understands (`id`, `type`, `title`, `author`,
 `container-title`, `URL`, `issued`) plus skill-internal fields (`status`,
 `version`, `pdf_path`, `arxiv_id`, etc.) that pandoc ignores. This means the
 file is directly usable as `pandoc --bibliography references.yaml` with no
 conversion step.
+
+A `references:` root key is also accepted, because that is the form pandoc's own
+documentation shows and what an existing pandoc bibliography usually looks like;
+so is the skill's earlier `papers:` key. Whichever shape a file arrives in is
+preserved when the skill writes it back, so pointing the skill at a bibliography
+you already maintain does not reformat it. Any other shape is refused rather
+than read as an empty database, and no command will write an empty database over
+a file that had entries.
 
 An entry looks like:
 

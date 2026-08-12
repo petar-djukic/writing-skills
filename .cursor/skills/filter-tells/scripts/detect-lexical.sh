@@ -195,6 +195,7 @@ BANNED_WORDS=(
   "hinges on"
   "lands" "land"
   "seam" "seams"
+  "unfalsifiable"
 )
 
 # --- Category: AI cliché phrases ---
