@@ -16,6 +16,7 @@ Stdlib only except PyYAML.
 import argparse
 import json
 import os
+import _refdb
 import re
 import sys
 
@@ -40,17 +41,12 @@ _STOPWORDS = {
 }
 
 
-def load_db(path):
-    if not os.path.exists(path):
-        return []
-    with open(path) as f:
-        data = yaml.safe_load(f)
-    if isinstance(data, list):
-        return data
-    if isinstance(data, dict) and "papers" in data:
-        return data["papers"]
-    return []
 
+
+# load_db/save_db live in _refdb so every script that writes this database
+# reads it the same way, and the empty-write guard cannot drift (GH-22).
+load_db = _refdb.load_db
+save_db = _refdb.save_db
 
 def normalize_tag(text):
     """Obsidian tag form: lowercase, hyphenated, alnum (hierarchy `/` kept)."""
@@ -239,4 +235,7 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except _refdb.DatabaseError as exc:
+        sys.exit(str(exc))

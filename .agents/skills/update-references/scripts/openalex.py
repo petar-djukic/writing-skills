@@ -40,6 +40,7 @@ import urllib.request
 from datetime import date
 
 import _naming
+import _refdb
 
 try:
     import yaml
@@ -55,22 +56,13 @@ SELECT = ("id,doi,title,publication_year,cited_by_count,fwci,"
 
 # --- db helpers (same shape as the sibling backends) ------------------------
 
-def load_db(path):
-    if not os.path.exists(path):
-        return []
-    data = yaml.safe_load(open(path))
-    if isinstance(data, list):
-        return data
-    if isinstance(data, dict) and "papers" in data:
-        return data["papers"]
-    return []
 
 
-def save_db(path, entries):
-    os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
-    with open(path, "w") as f:
-        yaml.safe_dump(entries, f, sort_keys=False, allow_unicode=True, width=100)
 
+# load_db/save_db live in _refdb so every script that writes this database
+# reads it the same way, and the empty-write guard cannot drift (GH-22).
+load_db = _refdb.load_db
+save_db = _refdb.save_db
 
 def normalize_title(t):
     return re.sub(r"\s+", " ", (t or "").lower().strip())
@@ -464,4 +456,7 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except _refdb.DatabaseError as exc:
+        sys.exit(str(exc))

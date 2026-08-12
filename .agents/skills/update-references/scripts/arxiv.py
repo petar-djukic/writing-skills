@@ -42,6 +42,7 @@ import xml.etree.ElementTree as ET
 from datetime import date
 
 import _naming
+import _refdb
 
 try:
     import yaml
@@ -56,26 +57,13 @@ USER_AGENT = "update-references-skill/1.0 (https://github.com/petar-djukic/spind
 
 # --------------------------------------------------------------------------- #
 # Database helpers
+# Both live in _refdb so every script that writes this database reads it the
+# same way, and the empty-write guard cannot drift between copies (GH-22).
+load_db = _refdb.load_db
+save_db = _refdb.save_db
+
 # --------------------------------------------------------------------------- #
 
-def load_db(path):
-    if not os.path.exists(path):
-        return []
-    with open(path) as f:
-        data = yaml.safe_load(f)
-    if data is None:
-        return []
-    if isinstance(data, list):
-        return data
-    if isinstance(data, dict) and "papers" in data:
-        return data["papers"]
-    return []
-
-
-def save_db(path, entries):
-    os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
-    with open(path, "w") as f:
-        yaml.safe_dump(entries, f, sort_keys=False, allow_unicode=True, width=100)
 
 
 def index_by_id(entries):
@@ -670,4 +658,7 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except _refdb.DatabaseError as exc:
+        sys.exit(str(exc))

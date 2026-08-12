@@ -43,6 +43,10 @@ banned-patterns.md section (or prompt) that documents the WHY.
 - State results, not reactions: delete "sobering", "striking", "remarkably",
   or replace them with the number that earned the adjective.
   [Editorializing adjectives]
+- Name the missing thing, not its category. "Unfalsifiable" is the category; write
+  what is absent — nothing would show it wrong, no fact could embarrass it, it cannot
+  be checked. Same for "vague" and "hand-wavy": say which term has no referent.
+  [Tier 2: unfalsifiable]
 - Do not announce structure: "One rule organizes it: R" → just state R.
   [Stage-setting frames; Narrative Pivots]
 - Write a unit as its own subject stating its function, not as a reader-
