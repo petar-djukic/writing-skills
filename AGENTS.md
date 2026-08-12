@@ -6,56 +6,27 @@ Assistant configuration is canonical under `.claude/`. Codex discovers this
 repository's skills from `.agents/skills/` (generated). Regenerate every
 surface with `scripts/sync-mirrors.sh`; verify with `--check`.
 
-## Mandatory workflow: issue → worktree → pull request
+## Skills and commands
 
-All work goes through a GitHub issue and a pull request. Never commit to
-`main` directly.
+Codex discovers both from `.agents/skills/`.
 
-1. **File an issue first** — run the `gh-issue-push` skill. It enumerates
-   every file the change touches before drafting, so nothing is missed.
-   (Beads repositories use `bd-issue-push` instead.)
-2. **Pop it into a worktree** — run the `gh-issue-pop` skill. All
-   implementation happens inside the worktree at `../gh-<number>-<slug>`,
-   never in the main checkout, which stays on `main`.
-3. **Do the work** — run the `do-work` skill inside the worktree, once per
-   sub-issue, until the epic is complete. It detects the tracker (GitHub
-   issues or beads) and works either.
-4. **Open the PR** — the pop skill's final phase opens it, records the actual
-   lines of code against the estimate, and closes the issue on merge.
+Reusable skills (11): audit-references, filter-tells, humanize, match-outline, match-structure, match-voice, patent-disclosure, pattern-language, tighten-style, tune-anchors, update-references.
 
-One issue per logical change; small fixes still need an issue. The only
-exceptions are an emergency hotfix authorized in-session and `exp/*`
-experiment branches, which never merge to `main`.
+Command workflows (3), each carrying its full workflow inline: brainstorm-article, seo-pass, write-article.
 
-## Skills
-
-Reusable skills and one command skill per canonical command are discovered
-from `.agents/skills/`. Command skills carry the complete workflow inline.
-
-Python-backed skills run in a pixi environment that ships beside them: run
-`.agents/scripts/ensure-env.sh` once per machine, then invoke scripts with
-`pixi run --manifest-path .agents/pixi.toml python <script>`. API keys
-(`SERPAPI_KEY`, `ANTHROPIC_API_KEY`, `OPENALEX_MAILTO`) come from the
-environment, not from pixi.
+Python-backed skills run in a pixi environment that ships beside them:
+run `.agents/scripts/ensure-env.sh` once per machine, then invoke scripts
+with `pixi run --manifest-path .agents/pixi.toml python <script>`.
+API credentials resolve through the repository's gitignored `.secrets/`
+directory, never from the skills tree — see the secrets rule below.
 
 ## Conventions
 
 These are summaries; the canonical rule files hold the detail.
 
-- **Git** — issue and PR for every change; work in worktrees; never commit to
-  `main`. See `.claude/rules/git-workflow.md`.
-- **Python** — environments are managed with pixi, never bare pip or
-  virtualenv. See `.claude/rules/pixi-python.md`.
-- **Documentation** — specifications are the source of truth and code serves
-  them; YAML for structured documents, markdown for prose; active voice;
-  observe the forbidden-terms list. See
-  `.claude/rules/documentation-standards.md`.
-- **READMEs** — written as a technical brief: title, thesis, diagram, scope,
-  then build instructions last. See `.claude/rules/readme-format.md`.
-- **Document types** — pick the right external form (concept paper, RFC,
-  specification, invention disclosure) from
-  `.claude/rules/technical-document-types.md`.
+- **The `.secrets/` Directory Contract** — API credentials belong to the repository you are working in, never to the skills. See `.claude/rules/secrets.md`.
+- **Technical Document Types** — We catalog the document types of standards bodies and engineering practice. See `.claude/rules/technical-document-types.md`.
+- **The `writing-voice/` Directory Contract** — Any writing repository may carry a `writing-voice/` directory of exemplar samples that define the target voice for text generated in that repository. See `.claude/rules/writing-voice.md`.
 
-Before committing, run the repository's consistency check if one exists
-(`mage audit` or `mage analyze`), and commit after each round of edits rather
-than accumulating changes.
+Before committing, run the repository's consistency check if it defines
+one, and commit after each round of edits rather than accumulating them.
