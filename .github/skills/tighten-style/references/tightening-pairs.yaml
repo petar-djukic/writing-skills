@@ -1,0 +1,129 @@
+# Instead -> do pairs, per rule. These are what the tightening model SEES —
+# it never reads the rule prose, because GH-220/GH-222 measured what happens
+# when an instruction-tuned model applies rules: the text converges on that
+# model's own register, to a tenth of a point.
+#
+# Sources per pair, because provenance is what makes a pair reviewable:
+#   strunk-1918     Strunk's own examples, public domain
+#   plain-language  the US plain-language tradition (public domain guidance)
+#   generated       the wordy side written by the drafting model — safe, its
+#                   native register is exactly the negative example — with the
+#                   tight side kept short enough to carry no register at all
+#
+# The self-test (testdata/test_pairs.py) enforces both directions where the
+# checker can see: every `do:` is clean, and every `instead:` for a
+# script-visible rule fires the rule it illustrates.
+
+TS-01:  # omit needless words
+  - instead: owing to the fact that the experiment failed, we changed the design
+    do: because the experiment failed, we changed the design
+    why: '"owing to the fact that" is "because" wearing a costume'
+    source: strunk-1918
+  - instead: he was aware of the fact that the deadline had passed
+    do: he knew the deadline had passed
+    why: '"the fact that" buries a plain verb'
+    source: strunk-1918
+  - instead: it is important to note that the cache has the ability to expire entries early
+    do: the cache can expire entries early
+    why: the announcement adds nothing the statement does not carry
+    source: generated
+  - instead: in order to reduce latency for the purpose of improving responsiveness, we added a cache
+    do: to reduce latency, we added a cache
+    why: '"in order to" is "to"; a purpose stated twice is stated once too many'
+    source: generated
+
+TS-02:  # active voice
+  - instead: my first visit to Boston will always be remembered by me
+    do: I shall always remember my first visit to Boston
+    why: the actor was in the sentence all along, hiding behind "by me"
+    source: strunk-1918
+  - instead: the configuration file is read by the loader before the flags are parsed by the runtime
+    do: the loader reads the configuration file before the runtime parses the flags
+    why: two agentive passives; both actors were already named
+    source: generated
+  - instead: errors are handled by the wrapper and warnings are suppressed by the logger
+    do: the wrapper handles errors and the logger suppresses warnings
+    why: name the actor as the subject and the sentence shortens itself
+    source: generated
+
+TS-03:  # positive form
+  - instead: he was not very often on time
+    do: he usually came late
+    why: say what is, not what is not
+    source: strunk-1918
+  - instead: the parser did not remember the previous token
+    do: the parser forgot the previous token
+    why: negation asks the reader to compute the complement
+    source: strunk-1918
+  - instead: the results were not consistent with the model and not important for the conclusion
+    do: the results contradicted the model and were trifling for the conclusion
+    why: two negations, two computations the reader should not have to do
+    source: generated
+
+TS-04:  # verbs, not nominalizations
+  - instead: the implementation of the validation of the input is the responsibility of the caller
+    do: the caller validates the input
+    why: three buried verbs, one real one
+    source: generated
+  - instead: we performed an analysis of the logs and made a determination of the cause
+    do: we analyzed the logs and determined the cause
+    why: '"performed an analysis" is "analyzed" plus packaging'
+    source: plain-language
+  - instead: the utilization of the connection pool led to a reduction of the latency
+    do: pooling connections cut latency
+    why: every -tion here is a verb in a box
+    source: generated
+
+TS-05:  # intensifiers that measure nothing
+  - instead: the results were very surprising and really quite significant for the field
+    do: the results startled us
+    why: a strong verb beats a propped-up weak one
+    source: generated
+  - instead: this step is extremely important and absolutely necessary for correctness
+    do: skip this step and the output is wrong
+    why: show the stakes instead of asserting them
+    source: generated
+
+TS-08:  # hedge stacks
+  - instead: this may perhaps suggest that the effect could possibly be somewhat larger
+    do: this suggests the effect may be larger
+    why: keep the one hedge that carries the real uncertainty
+    source: generated
+  - instead: it seems that the cache might tend to grow in what appears to be an unbounded way
+    do: the cache appears to grow without bound
+    why: four hedges stacked on one observation is a claim declined
+    source: generated
+
+TS-09:  # concrete over abstract
+  - instead: a period of unfavorable weather set in
+    do: it rained every day for a week
+    why: the specific fact is the information; the abstraction is its shadow
+    source: strunk-1918
+  - instead: we observed a significant improvement in performance characteristics
+    do: latency fell from 40 ms to 12 ms
+    why: a number can be checked; "significant improvement" cannot
+    source: generated
+
+TS-15:  # words that assert importance
+  - instead: this critical and fundamental step is at the heart of the strategic design
+    do: this step decides whether the design works
+    why: state what makes it matter, or the adjectives are noise
+    source: generated
+  - instead: the framework leverages a robust and seamless architecture to deliver key capabilities
+    do: the framework schedules jobs and retries failures
+    why: say what it does; adjectives that could describe anything describe nothing
+    source: generated
+
+TS-16:  # one claim, stated once
+  - instead: >-
+      In this section we will describe the cache. The cache stores recent
+      results. As described above, recently used results are kept in the cache.
+    do: the cache stores recent results
+    why: announce, say, recap is three passes at one sentence
+    source: generated
+  - instead: >-
+      It bears repeating that correctness matters. The output must be correct.
+      Correctness, as noted, is essential.
+    do: the output must be correct
+    why: repetition does not strengthen a claim; evidence does
+    source: generated

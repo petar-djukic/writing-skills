@@ -1,0 +1,141 @@
+# =============================================================================
+# pattern-language.yaml
+# A Pattern Language for <DOMAIN>
+# =============================================================================
+#
+# WHAT THIS FILE IS
+# -----------------
+# A self-contained dictionary of the design patterns for <DOMAIN>, written in
+# the tradition of Christopher Alexander's "A Pattern Language" (1977): the
+# patterns are not an unordered catalogue of tips but a *language*. Each
+# pattern names a recurring field of forces and the configuration that
+# resolves them, and each connects to the patterns above it (which create its
+# context) and below it (which complete it).
+#
+# <IF PAPER SCAFFOLDING — INTERNAL-ONLY RULE>
+# The coined pattern names in this file NEVER appear in the paper's prose.
+# Each pattern carries a `paper` field that says where it lives in the draft
+# and how it reads in natural language.
+#
+# <IF SIBLING LANGUAGES EXIST — SCOPE BOUNDARY>
+# This language covers <SCOPE> only. <OTHER SCOPE> belongs to <SIBLING FILE>;
+# where a pattern here touches one of those, it links via grammar.overlaps or
+# examples.kind=sibling and never restates it.
+#
+# THE ARGUMENT, TOP TO BOTTOM
+# ---------------------------
+# <One paragraph walking the numbered patterns in order, so the grammar reads
+# as a single argument from the largest context to the finest refinement.>
+#
+# HOW TO READ EACH ENTRY
+# ----------------------
+#   id            stable machine-readable key
+#   number        position in the language (larger/earlier -> smaller/later)
+#   name          human-readable pattern name
+#   also_known_as prior names for the same structure
+#   confidence    2 deep invariant | 1 well-supported, form newer | 0 tentative
+#   intent        one-sentence statement of what the pattern does
+#   context       the situation (and larger patterns) that must exist first
+#   problem       the headline tension, stated as a question of forces
+#   applicability when to use it, and when its cost is not justified
+#   forces        the competing pressures (the CONSTRAINT side)
+#   solution      the imperative resolution (the RECIPE side)
+#   implementation construction rules that make the pattern executable
+#   consequences  benefits and liabilities — both required
+#   grammar       within / requires / contains / enables / overlaps
+#   syntax        a one-line "sentence" showing the pattern in combination
+#   examples      independent occurrences, each cited to the bibliography;
+#                 kind: external | internal | sibling
+#
+# =============================================================================
+
+title: A Pattern Language for <DOMAIN>
+version: 1
+based_on: >
+  Christopher Alexander, Sara Ishikawa, Murray Silverstein, "A Pattern
+  Language: Towns, Buildings, Construction" (Oxford University Press, 1977).
+
+# extends: >
+#   "<SIBLING LANGUAGE TITLE>", version N (<path>), referenced with the
+#   "<px>:" prefix.
+
+# --- Domain summary: define the whole this language builds -------------------
+# <domain_key>:
+#   summary: >
+#     <What the whole is, in one paragraph.>
+#   canonical_example: >
+#     <A concrete, minimal instance a reader can hold in mind.>
+
+conventions:
+  confidence_scale:
+    "2": Deep invariant; the same force is resolved the same way across many independent systems and prior literature.
+    "1": Well supported by prior art, but the specific form presented here is more recent.
+    "0": Tentative; corroboration is thin and the structure is largely from the single reference implementation.
+  relationship_types:
+    within: Larger patterns whose context this pattern helps complete.
+    requires: Patterns that must already be in place for this one to hold.
+    contains: Smaller patterns that complete or refine this one.
+    enables: Patterns that this one makes possible.
+    overlaps: Patterns that address a neighbouring force by a different means.
+
+# =============================================================================
+# THE PATTERNS
+# =============================================================================
+
+patterns:
+
+  # ---------------------------------------------------------------------------
+  - id: example-pattern
+    number: 1
+    name: Example Pattern
+    also_known_as: [Prior Name, Another Prior Name]
+    confidence: 1
+    intent: >
+      One sentence: what configuration this pattern establishes and why.
+    context: >
+      The situation that must already exist — including any larger patterns —
+      before this pattern's forces arise.
+    problem: >
+      How do you <resolve the headline tension>, when <the pressure that makes
+      it hard>?
+    applicability: >
+      Use this when <conditions>. It is not justified when <the cheaper case>.
+    forces:
+      - <Pressure one, stated as a hard sentence.>
+      - <Pressure two, in tension with pressure one.>
+      - <Pressure three; three or more forces or it is not a pattern.>
+    solution: >
+      Therefore: <imperative, specific enough to check a design against>.
+      This is the recipe; the forces above are the constraint — one thing
+      seen from two sides.
+    implementation: >
+      <Construction rules and checks that make the pattern executable without
+      consulting any other document.>
+    consequences:
+      benefits:
+        - <What the resolution buys.>
+      liabilities:
+        - <What it costs. A pattern with no liabilities is advertising.>
+    grammar:
+      within: []
+      requires: []
+      contains: []
+      enables: []
+      overlaps: []
+    syntax: >
+      <One line placing the pattern in combination with its neighbours.>
+    examples:
+      - system: <Independent system or literature>
+        cite: example-cite-1977
+        kind: external
+        note: <Why this is the same forces resolved the same way.>
+    # paper: >            # paper-scaffolding instances only
+    #   <Section binding and the natural-language phrasing used in prose.>
+
+# =============================================================================
+# BIBLIOGRAPHY
+# =============================================================================
+
+bibliography:
+  example-cite-1977:
+    text: "Alexander, C., Ishikawa, S., & Silverstein, M. (1977). A Pattern Language: Towns, Buildings, Construction. Oxford University Press."

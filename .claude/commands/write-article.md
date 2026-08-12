@@ -66,13 +66,20 @@ Read the specified brainstorm file from `substack/brainstorm/`:
 
 **Load the article constitution.** The brainstorm file declares its form
 with a `Form:` line (how-to, concept-essay, field-report, or
-macro-observation). Read the matching contract from
-`.claude/constitutions/articles/` before drafting — it states what each
-section owes the reader, the opening/figure/reference contracts, and the
-form's known failure modes. If the brainstorm has no `Form:` line, pick
-the form using `.claude/constitutions/articles/README.md` and record the
-choice in the brainstorm file. The draft must satisfy every [CHECK] item;
-[READ] items are for the critic pass to adjudicate.
+macro-observation). Read the matching contract from the writing
+repository's `constitutions/articles/` before drafting — it states what
+each section owes the reader, the opening/figure/reference contracts, and
+the form's known failure modes. If the brainstorm has no `Form:` line,
+pick the form using that directory's `README.md` and record the choice in
+the brainstorm file. The draft must satisfy every [CHECK] item; [READ]
+items are for the critic pass to adjudicate.
+
+The constitutions are a per-repository input, not something this
+repository ships: discover them by walking up from the article file, the
+rule `writing-voice/` and `.secrets/` already use. Absent, draft to the
+brainstorm's outline and the pattern-language move alone, and record in
+the completion note that no constitution was found — the section contract
+is then unenforced, which is a weaker draft, not a failed one.
 
 **Load the pattern language.** The brainstorm file declares `Altitude:`
 and `Move:` lines (see `substack/pattern-language.yaml`). Read the
@@ -277,7 +284,8 @@ The writing must be distinguishable from the median tech newsletter. If a senten
 - No self-congratulation: "exciting," "fascinating" when describing your own work
 - Specificity is the antidote: a concrete number, a named tool, a real situation beats any of the above
 
-**Technical standards (from .claude/rules/substack-writing.md):**
+**Technical standards** (from the writing repository's voice rules,
+`rules/substack-writing.md`, where it provides them):
 - No bold text, excessive italics, or horizontal rules
 - Support all claims with evidence
 
