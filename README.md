@@ -17,6 +17,12 @@ flowchart LR
 
 The repository hosts 11 skills and 3 commands, canonical under `.claude/`. The prose pipeline consists of `humanize` (the three-step orchestrator), `filter-tells`, `match-voice`, `match-outline`, `match-structure`, `tighten-style`, and `tune-anchors`. Reference handling uses `update-references` and `audit-references`, which keep a CSL-YAML bibliography current and checked against retrieved sources. `patent-disclosure` populates an eleven-section invention-disclosure template, while `pattern-language` extracts Alexandrian pattern languages from repositories. The commands — `brainstorm-article`, `write-article`, `seo-pass` — drive an end-to-end article pipeline. History traces back to [coding-skills](https://github.com/petar-djukic/coding-skills), where these skills lived through August 2026; the coding commands remain there.
 
+## Documentation
+
+The pipeline is described in [How to Build a Writing Pipeline](https://meshintelligence.substack.com/p/how-to-build-a-writing-pipeline?utm_source=github&utm_campaign=writing-skills) — the three passes, why fixing one tell class leaves the others, and the detector scores before and after each step.
+
+Two books draft their chapters through it: [agentic-coding-book](https://github.com/petar-djukic/agentic-coding-book) and [agentic-applications-book](https://github.com/petar-djukic/agentic-applications-book). Chapters run as articles first, so the skills here are what shapes them.
+
 ## Methodology
 
 The target voice sits in a `writing-voice/` directory of exemplar prose — the contract is in [.claude/rules/writing-voice.md](.claude/rules/writing-voice.md). Skills gauge a draft's distance from that corpus, pull anchors from it, and gate every rewrite: a candidate must keep citations, numbers, and meaning, or the original remains. The external Pangram check is consent-gated per document; everything else runs locally against an Ollama endpoint.
