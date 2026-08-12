@@ -1,0 +1,37 @@
+{
+  "stage": "STAGE_SUCCESS",
+  "text": "The text to analyze with Pangram",
+  "version": "3.0",
+  "headline": "AI Detected",
+  "prediction": "We are confident that this document contains AI-generated or AI-assisted content.",
+  "prediction_short": "Mixed",
+  "fraction_ai": 0.7,
+  "fraction_ai_assisted": 0.2,
+  "fraction_human": 0.1,
+  "num_ai_segments": 7,
+  "num_ai_assisted_segments": 2,
+  "num_human_segments": 1,
+  "dashboard_link": "https://www.pangram.com/history/123e4567-e89b-12d3-a456-426614174000",
+  "windows": [
+    {
+      "text": "The text to analyze",
+      "label": "AI-Generated",
+      "ai_assistance_score": 0.85,
+      "confidence": "High",
+      "start_index": 0,
+      "end_index": 19,
+      "word_count": 4,
+      "token_length": 5
+    },
+    {
+      "text": "with Pangram",
+      "label": "Moderately AI-Assisted",
+      "ai_assistance_score": 0.45,
+      "confidence": "Medium",
+      "start_index": 20,
+      "end_index": 32,
+      "word_count": 2,
+      "token_length": 3
+    }
+  ]
+}

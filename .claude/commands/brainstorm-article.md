@@ -135,10 +135,13 @@ it. An idea that cannot be phrased as an instance of the one question
 **Form (pick the constitution):**
 
 Choosing the form is the brainstorm's structural decision. Pick one of
-the four article constitutions in `.claude/constitutions/articles/`
-(how-to, concept-essay, field-report, macro-observation — the README has
-the selection table) and record it in the brainstorm file as a `Form:`
-line. The outline below must fill that constitution's section contract —
+the four article constitutions in the writing repository's
+`constitutions/articles/` (how-to, concept-essay, field-report,
+macro-observation — the README has the selection table) and record it in
+the brainstorm file as a `Form:` line. That directory is a
+per-repository input, discovered by walking up from the brainstorm file;
+absent, pick from the four form names alone and note that the selection
+table was unavailable. The outline below must fill that constitution's section contract —
 a brainstorm that fills the contract IS the outline. If the idea wants
 two forms, it is two articles; split it.
 
@@ -201,7 +204,7 @@ This is different from:
 
 **Subtitle**: [Descriptive subtitle]
 
-**Form**: [how-to | concept-essay | field-report | macro-observation — see .claude/constitutions/articles/]
+**Form**: [how-to | concept-essay | field-report | macro-observation — see the repository's constitutions/articles/]
 
 **Altitude**: [workflow | economics | organization | industry — see substack/pattern-language.yaml]
 

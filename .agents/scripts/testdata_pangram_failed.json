@@ -1,0 +1,15 @@
+{
+  "stage": "STAGE_FAILED",
+  "text": "",
+  "version": "",
+  "headline": "preprocessing: Input text contains no valid text after preprocessing",
+  "prediction": "",
+  "prediction_short": "",
+  "fraction_ai": 0.0,
+  "fraction_ai_assisted": 0.0,
+  "fraction_human": 0.0,
+  "num_ai_segments": 0,
+  "num_ai_assisted_segments": 0,
+  "num_human_segments": 0,
+  "windows": []
+}

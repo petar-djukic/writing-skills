@@ -1,0 +1,30 @@
+id: sample-doc
+title: "Sample Architecture"
+description: A pipeline that turns specifications into verified binaries without any manual coding step in between.
+
+# This comment must survive round-trip
+overview:
+  summary: |
+    This system provides a pipeline from specifications to verified binaries.
+    Each utility follows the same four-stage flow: extract, specify, synthesize,
+    verify. The synthesis stage is driven by an automated code generation system.
+  lifecycle: |
+    For each utility a human operator clones the source repository, analyzes
+    flags and edge cases, and produces two specification artifacts: a requirements
+    document and a use case. The requirements document is the primary input to
+    code generation.
+
+components:
+  - name: Operator
+    responsibility: |
+      Guides specification development for each utility. Clones the source,
+      analyzes flags and edge cases, and produces a requirements document and
+      a use case. Decides when the spec artifacts are complete enough to hand
+      off to the orchestrator.
+  - name: Repository
+    responsibility: short value not prose
+
+notes: >
+  The generation system runs each utility through the same flow. Folded
+  scalars wrap prose across source lines and the aligned view must map
+  the content back to those lines.

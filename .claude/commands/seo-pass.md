@@ -25,7 +25,7 @@ The voice rule is firm: titles stay literary. The SEO work happens in places tha
 
 **Searchable term**: a phrase that appears in real search queries. Tool names (Aider, OpenHands, Crush), company names (Oracle, Anthropic), technical concepts ("agent harness," "RAG chatbot," "tool selection"), and paper/framework names are searchable. Literary phrasing ("the squeeze," "drinking your milkshake," "pull the lever") is not.
 
-**Voice-safe edit**: a change that adds searchable terms without violating the rules in `.claude/rules/substack-writing.md` — no banned words, no AI-recognizable patterns, no corporate filler.
+**Voice-safe edit**: a change that adds searchable terms without violating the writing repository's voice rules — no banned words, no AI-recognizable patterns, no corporate filler.
 
 ## Process
 
@@ -86,7 +86,11 @@ For each gap, propose a specific, voice-safe edit. Show before/after for each. O
 
 ### 6. Voice Check
 
-Before applying any edit, run it through the voice rules in `.claude/rules/substack-writing.md`:
+Before applying any edit, run it through the voice rules below. The
+writing repository may carry its own `rules/substack-writing.md`
+(discovered by walking up from the article); where it does, it wins and
+extends this list. Where it does not, these four still apply, and
+`filter-tells` measures the first three:
 
 - No banned words (critical, key, deliberate, strategic, leverage-as-verb, etc.)
 - No corporate filler (ecosystem, at scale, move the needle, unlock, north star, etc.)
@@ -132,7 +136,7 @@ After applying, summarize:
 
 ## Reference Files
 
-- `.claude/rules/substack-writing.md` — voice rules, banned words, prohibited patterns
+- `rules/substack-writing.md` — voice rules, banned words, prohibited patterns. Supplied by the writing repository, not by this one; absent, `filter-tells` covers the banned words and the AI patterns.
 - `.memory/project_substack_growth.md` — goal stack (readership now leads), search vs. regulation tension, the Five Coding Agents data point
 
 ## Success Criteria

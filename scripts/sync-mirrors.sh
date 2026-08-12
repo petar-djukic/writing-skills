@@ -101,16 +101,20 @@ build_stage() {
     mkdir -p "$STAGE/$target/commands" "$STAGE/$target/skills"
     # commands: canonical body prefixed with front matter (description) so
     # Cursor/OpenCode display it. Files whose canonical form already has
-    # front matter are copied verbatim (no double wrap).
+    # front matter keep it (no double wrap). The skills prefix is rewritten
+    # to this surface, as it is for the skills tree below: a command copied
+    # verbatim still named .claude/skills/, so a repository mounting only
+    # .cursor had commands pointing at a tree it had not linked (GH-4).
     for cmdfile in "$ROOT/.claude/commands/"*.md; do
       name="$(basename "$cmdfile")"
       if head -1 "$cmdfile" | grep -q '^---$'; then
-        cp "$cmdfile" "$STAGE/$target/commands/$name"
+        sed "s|\.claude/skills/|$target/skills/|g" "$cmdfile" \
+          > "$STAGE/$target/commands/$name"
       else
         cdesc="$(extract_description "$cmdfile")"
         {
           printf -- '---\ndescription: "%s"\n---\n\n' "$cdesc"
-          cat "$cmdfile"
+          sed "s|\.claude/skills/|$target/skills/|g" "$cmdfile"
         } > "$STAGE/$target/commands/$name"
       fi
     done
@@ -130,7 +134,12 @@ build_stage() {
   mkdir -p "$STAGE/.github/prompts" "$STAGE/.github/skills"
 
   # One prompt per command: the full canonical body inlined beneath generated
-  # front matter, so the prompt stands alone with no pointer to .claude.
+  # front matter, so the prompt stands alone with no pointer to .claude. The
+  # body takes the same rewrites as the skills copy below and as .agents —
+  # omitting them here was GH-1/GH-4: a command that named a skill script by
+  # its canonical path put a .claude/ string in the staged prompt, the
+  # self-containment guard caught it, and the script aborted before writing
+  # any mirror at all.
   local cmd desc
   for cmd in "$ROOT/.claude/commands/"*.md; do
     name="$(basename "$cmd" .md)"
@@ -139,7 +148,11 @@ build_stage() {
       printf -- '---\ndescription: "%s"\n---\n\n' "$desc"
       printf 'Execute the /%s command. The full workflow follows; treat any\n' "$name"
       printf 'text after the prompt invocation as its arguments ($ARGUMENTS).\n\n'
-      command_body "$cmd"
+      command_body "$cmd" | sed \
+        -e 's|\.claude/skills/|.github/skills/|g' \
+        -e 's|\.claude/commands/|.github/prompts/|g' \
+        -e 's|\.claude/rules/||g' \
+        -e 's|\.claude/||g'
     } > "$STAGE/.github/prompts/$name.prompt.md"
   done
 
