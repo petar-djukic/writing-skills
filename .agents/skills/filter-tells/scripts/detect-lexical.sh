@@ -18,6 +18,49 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
+# Character-safe truncation of the reported line previews (GH-3).
+#
+# head -c counts bytes, so a cut landing inside a multi-byte character emitted
+# a partial sequence and the --json output stopped being valid UTF-8. drive.py
+# reads it with text=True: in a UTF-8 locale that raises UnicodeDecodeError and
+# the whole scan dies before producing a result, and in the C locale Python's
+# surrogateescape hides it and the preview is silently mojibake. One arrow, en
+# dash or curly quote anywhere in a document was enough for either.
+#
+# cut -c counts characters, but only in a UTF-8 locale — under LC_ALL=C both
+# BSD and GNU cut fall back to counting bytes — so the locale is pinned to the
+# truncation instead of inherited from the caller, leaving every other command
+# in this script at the caller's locale.
+# FILTER_TELLS_TRUNC_LOCALE overrides the search: a locale name pins that
+# locale, and the value "none" forces the fallback below. The tests use it to
+# reach a branch that would otherwise never run on a developer machine.
+TRUNC_LOCALE=""
+case "${FILTER_TELLS_TRUNC_LOCALE:-}" in
+  none) ;;
+  ?*)   TRUNC_LOCALE="$FILTER_TELLS_TRUNC_LOCALE" ;;
+  *)
+    for _loc in C.UTF-8 en_US.UTF-8; do
+      if locale -a 2>/dev/null | grep -qx "$_loc"; then
+        TRUNC_LOCALE="$_loc"
+        break
+      fi
+    done
+    unset _loc
+    ;;
+esac
+
+# $1 = maximum characters; text on stdin.
+truncate_chars() {
+  if [[ -n "$TRUNC_LOCALE" ]]; then
+    LC_ALL="$TRUNC_LOCALE" cut -c "1-$1"
+  else
+    # No UTF-8 locale on the system: cut to bytes, then drop any trailing run
+    # of non-ASCII bytes. Ends the preview up to one character early rather
+    # than ever emitting half a character.
+    LC_ALL=C head -c "$1" | LC_ALL=C sed 's/[^ -~]*$//'
+  fi
+}
+
 if [[ $# -lt 1 ]]; then
   echo "Usage: $0 <file-or-dir> [file-or-dir ...] [--json]" >&2
   exit 2
@@ -747,9 +790,9 @@ scan_patterns() {
         local lineno="${line%%:*}"
         local content="${line#*:}"
         if [[ "$JSON_MODE" == "--json" ]]; then
-          RESULTS+=("{\"line\": $lineno, \"category\": \"$category\", \"pattern\": \"$(echo "$pattern" | tr -d '\000-\010\013\014\016-\037' | sed 's/\\/\\\\/g; s/"/\\"/g')\", \"text\": \"$(echo "$content" | tr -d '\000-\010\013\014\016-\037' | sed 's/\\/\\\\/g; s/"/\\"/g' | head -c 200)\"}")
+          RESULTS+=("{\"line\": $lineno, \"category\": \"$category\", \"pattern\": \"$(echo "$pattern" | tr -d '\000-\010\013\014\016-\037' | sed 's/\\/\\\\/g; s/"/\\"/g')\", \"text\": \"$(echo "$content" | tr -d '\000-\010\013\014\016-\037' | sed 's/\\/\\\\/g; s/"/\\"/g' | truncate_chars 200)\"}")
         else
-          printf "  L%-4s [%s] %s\n" "$lineno" "$pattern" "$(echo "$content" | head -c 120)"
+          printf "  L%-4s [%s] %s\n" "$lineno" "$pattern" "$(echo "$content" | truncate_chars 120)"
         fi
       done <<< "$matches"
     fi
@@ -774,9 +817,9 @@ scan_candidates() {
         local lineno="${line%%:*}"
         local content="${line#*:}"
         if [[ "$JSON_MODE" == "--json" ]]; then
-          RESULTS+=("{\"line\": $lineno, \"category\": \"$category\", \"severity\": \"candidate\", \"pattern\": \"$(echo "$pattern" | tr -d '\000-\010\013\014\016-\037' | sed 's/\\/\\\\/g; s/"/\\"/g')\", \"text\": \"$(echo "$content" | tr -d '\000-\010\013\014\016-\037' | sed 's/\\/\\\\/g; s/"/\\"/g' | head -c 200)\"}")
+          RESULTS+=("{\"line\": $lineno, \"category\": \"$category\", \"severity\": \"candidate\", \"pattern\": \"$(echo "$pattern" | tr -d '\000-\010\013\014\016-\037' | sed 's/\\/\\\\/g; s/"/\\"/g')\", \"text\": \"$(echo "$content" | tr -d '\000-\010\013\014\016-\037' | sed 's/\\/\\\\/g; s/"/\\"/g' | truncate_chars 200)\"}")
         else
-          printf "  L%-4s [%s] %s\n" "$lineno" "$pattern" "$(echo "$content" | head -c 120)"
+          printf "  L%-4s [%s] %s\n" "$lineno" "$pattern" "$(echo "$content" | truncate_chars 120)"
         fi
       done <<< "$matches"
     fi
@@ -907,9 +950,9 @@ run_on_file() {
     if [[ "$distinct" -ge 2 ]]; then
       ISSUES_FOUND=1
       if [[ "$JSON_MODE" == "--json" ]]; then
-        RESULTS+=("{\"line\": $lineno, \"category\": \"ordinal-sequence\", \"pattern\": \"First,/Second,/...\", \"text\": \"$(echo "$line" | tr -d '\000-\010\013\014\016-\037' | sed 's/\\/\\\\/g; s/"/\\"/g' | head -c 160)\"}")
+        RESULTS+=("{\"line\": $lineno, \"category\": \"ordinal-sequence\", \"pattern\": \"First,/Second,/...\", \"text\": \"$(echo "$line" | tr -d '\000-\010\013\014\016-\037' | sed 's/\\/\\\\/g; s/"/\\"/g' | truncate_chars 160)\"}")
       else
-        printf "  L%-4s [%s distinct ordinals] %s\n" "$lineno" "$distinct" "$(echo "$line" | head -c 120)"
+        printf "  L%-4s [%s distinct ordinals] %s\n" "$lineno" "$distinct" "$(echo "$line" | truncate_chars 120)"
       fi
     fi
   done < "$FILE"
