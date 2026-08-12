@@ -153,6 +153,9 @@ build_stage() {
       fi
     done < <(canonical_commands)
     # skills: copy tree, rewriting canonical path references
+    # A repository carrying only commands has no skills directory, and that is
+    # a normal state, not an error (GH-20).
+    [[ -d "$ROOT/.claude/skills" ]] || continue
     (cd "$ROOT/.claude/skills" && find . -type f ! -path '*/__pycache__/*') | while IFS= read -r rel; do
       local src="$ROOT/.claude/skills/$rel"
       local dst="$STAGE/$target/skills/$rel"
@@ -195,6 +198,8 @@ build_stage() {
   # .cursor/.opencode copies (which keep a sibling .claude/ and rewrite only
   # the skills prefix), the .github copy must also flatten .claude/commands and
   # .claude/rules mentions — those files are not carried by a bare symlink.
+  # A commands-only repository has no skills directory; skip the copy (GH-20).
+  [[ -d "$ROOT/.claude/skills" ]] && \
   (cd "$ROOT/.claude/skills" && find . -type f ! -path '*/__pycache__/*') | while IFS= read -r rel; do
     local src="$ROOT/.claude/skills/$rel"
     local dst="$STAGE/.github/skills/$rel"
@@ -282,6 +287,8 @@ EOF
 
   # Reusable skill trees, with canonical path references rewritten to stay
   # inside .agents.
+  # A commands-only repository has no skills directory; skip the copy (GH-20).
+  [[ -d "$ROOT/.claude/skills" ]] && \
   (cd "$ROOT/.claude/skills" && find . -type f ! -path '*/__pycache__/*') | while IFS= read -r rel; do
     local src="$ROOT/.claude/skills/$rel"
     local dst="$STAGE/.agents/skills/$rel"
@@ -360,8 +367,15 @@ AGENTSEOF
     # find, not `ls -d .../*/`: an unmatched glob makes ls exit non-zero, and
     # under `set -o pipefail` that failed the assignment and aborted the whole
     # script before it printed anything — an empty .claude/skills produced a
-    # silent exit 1 (GH-18). find reports an empty directory as zero results.
-    agents_count="$(find "$ROOT/.claude/skills" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | wc -l | tr -d ' ')"
+    # silent exit 1 (GH-18). find reports an empty directory as zero results,
+    # but exits non-zero on a directory that is not there at all, which fails
+    # the same way: git cannot track an empty directory, so a repository that
+    # has emptied .claude/skills ships clones with no directory (GH-20, hit in
+    # coding-skills while porting this generator). Hence the guard.
+    agents_count=0
+    if [ -d "$ROOT/.claude/skills" ]; then
+      agents_count="$(find "$ROOT/.claude/skills" -mindepth 1 -maxdepth 1 -type d | wc -l | tr -d ' ')"
+    fi
     if [ -n "$agents_names" ]; then
       printf 'Reusable skills (%s): %s.\n\n' "$agents_count" "$agents_names"
     fi
