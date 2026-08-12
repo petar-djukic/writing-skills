@@ -8,6 +8,31 @@ __pycache__/
 .secrets
 .secrets/
 
+# Coding commands, symlinked per-machine from ../coding-skills/.claude/commands
+# so the issue → worktree → PR workflow is available while working on this
+# repository. They are canonical and tracked in coding-skills; committing the
+# links would leave a clone without a sibling checkout holding 14 dangling
+# files, and this repository is public. Consuming projects link the whole
+# .claude tree instead — this one cannot, because it owns its own.
+#
+# Named rather than globbed: `.claude/commands/gh-*.md` would silently swallow
+# a future writing command that happened to start with gh-. sync-mirrors.sh
+# skips symlinks on its own (GH-5), so this governs only what git sees.
+.claude/commands/align-specs.md
+.claude/commands/bd-issue-pop.md
+.claude/commands/bd-issue-push.md
+.claude/commands/bd-issue-show.md
+.claude/commands/bootstrap.md
+.claude/commands/do-work.md
+.claude/commands/exp-start.md
+.claude/commands/exp-stop.md
+.claude/commands/gh-issue-pop.md
+.claude/commands/gh-issue-push.md
+.claude/commands/gh-issue-show.md
+.claude/commands/gh-release-push.md
+.claude/commands/make-work.md
+.claude/commands/test-clone.md
+
 # Vendored npm dependencies — reconstructible from the committed package.json
 # and package-lock.json (npm ci). 3,443 files / 52 MB were tracked here for a
 # month before anyone noticed (GH-183); opencode behaves identically with the
