@@ -399,7 +399,11 @@ def anchor_provenance(a, article, paras, full=False):
     25-paragraph rewrite; GH-233 was invisible because the pool was reported
     instead of the selection. Both are cheap to answer up front.
 
-    Returns the discovered voice directory, or None when there is none.
+    Returns the discovered voice directory. Exits when there is no corpus
+    (GH-308): a rewrite with no target register produces something nobody
+    asked for, and --no-anchors is how you say you meant it. Returns None only
+    when match-structure is not importable, which is a reporting gap rather
+    than a missing target.
     """
     va = _voice_anchors_module()
     if va is None:

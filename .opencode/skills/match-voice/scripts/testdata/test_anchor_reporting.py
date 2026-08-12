@@ -236,15 +236,31 @@ def test_provenance_warning_is_based_on_selection_not_pool():
         assert "MOSTLY author-voice" not in err, err
 
 
-def test_provenance_handles_a_missing_corpus():
+def test_provenance_refuses_a_missing_corpus():
+    """No corpus is a hard stop, not a warning (GH-308).
+
+    This asserted the opposite until GH-26 — that anchor_provenance returned
+    None and warned. GH-308 made it exit, because a rewrite with no target
+    register silently produces something nobody asked for; --no-anchors is how
+    you say you meant it. The stale assertion did not merely fail: SystemExit
+    escaped redirect_stderr, so the whole file aborted on a bare message with
+    no traceback, and it read as a missing corpus in the environment rather
+    than a test asserting a contract that had been deliberately replaced.
+    """
     with tempfile.TemporaryDirectory() as tmp:
         args = Args(None)
         out, err = io.StringIO(), io.StringIO()
-        with redirect_stdout(out), redirect_stderr(err):
-            d = drive.anchor_provenance(args, os.path.join(tmp, "article.md"),
+        raised = None
+        try:
+            with redirect_stdout(out), redirect_stderr(err):
+                drive.anchor_provenance(args, os.path.join(tmp, "article.md"),
                                         paras(PAPER))
-        assert d is None
-        assert "no writing-voice/" in err.getvalue()
+        except SystemExit as exc:
+            raised = exc
+        assert raised is not None, "expected SystemExit when no corpus is found"
+        message = str(raised.code)
+        assert "no writing-voice/" in message, message
+        assert "--no-anchors" in message, message
 
 
 def main():
