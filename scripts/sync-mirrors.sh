@@ -212,6 +212,11 @@ build_stage() {
   # resolves inside .github, so it survives a bare symlink.
   local skilldir sname sdesc
   for skilldir in "$ROOT/.claude/skills/"*/; do
+    # An empty skills directory leaves the glob unexpanded, and the literal
+    # */ then reached awk as a filename. Found while testing the empty-area
+    # guard above (GH-18); the same emptying that produced that case produces
+    # this one.
+    [ -d "$skilldir" ] || continue
     sname="$(basename "$skilldir")"
     sdesc="$(extract_description "$skilldir/SKILL.md")"
     cat > "$STAGE/.github/prompts/$sname.prompt.md" <<EOF
@@ -352,7 +357,11 @@ AGENTSEOF
         basename "$d"
       done | sort | awk '{printf "%s%s", sep, $0; sep=", "} END {print ""}'
     )"
-    agents_count="$(ls -d "$ROOT/.claude/skills/"*/ 2>/dev/null | wc -l | tr -d ' ')"
+    # find, not `ls -d .../*/`: an unmatched glob makes ls exit non-zero, and
+    # under `set -o pipefail` that failed the assignment and aborted the whole
+    # script before it printed anything — an empty .claude/skills produced a
+    # silent exit 1 (GH-18). find reports an empty directory as zero results.
+    agents_count="$(find "$ROOT/.claude/skills" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | wc -l | tr -d ' ')"
     if [ -n "$agents_names" ]; then
       printf 'Reusable skills (%s): %s.\n\n' "$agents_count" "$agents_names"
     fi
@@ -397,8 +406,11 @@ AGENTSEOF
   local surface
   for surface in .cursor .opencode .github .agents; do
     mkdir -p "$STAGE/$surface/scripts"
-    cp "$ROOT/.claude/pixi.toml" "$STAGE/$surface/pixi.toml"
-    cp "$ROOT/.claude/pixi.lock" "$STAGE/$surface/pixi.lock"
+    # Guarded, so a repository with no Python-backed skills stages no manifest
+    # rather than dying here on a missing source — which would abort before the
+    # FILES loop below could remove the stale mirror copies.
+    [[ -f "$ROOT/.claude/pixi.toml" ]] && cp "$ROOT/.claude/pixi.toml" "$STAGE/$surface/pixi.toml"
+    [[ -f "$ROOT/.claude/pixi.lock" ]] && cp "$ROOT/.claude/pixi.lock" "$STAGE/$surface/pixi.lock"
     # Every shared script, not a hardcoded filename: naming one file meant the
     # next script added to .claude/scripts/ was silently missing from all four
     # surfaces, and the skills that import it fell back to whatever else
@@ -471,6 +483,17 @@ fi
 
 drift=0
 for area in "${AREAS[@]}"; do
+  # An area with no canonical content stages as an empty directory, and git
+  # cannot track one, so no committed tree can ever match it: --check would
+  # report drift on every clean checkout and sync would leave stray empty
+  # directories behind. coding-skills hit this on all seven skills/scripts
+  # areas once the split emptied its .claude/skills and .claude/scripts
+  # (coding-skills GH-381, ported here as GH-18). Empty stage against an
+  # absent or empty target is agreement.
+  if [[ -z "$(ls -A "$STAGE/$area" 2>/dev/null)" ]] &&
+     [[ -z "$(ls -A "$ROOT/$area" 2>/dev/null)" ]]; then
+    continue
+  fi
   if [[ "$MODE" == "check" ]]; then
     if ! diff -r "$STAGE/$area" "$ROOT/$area" > /dev/null 2>&1; then
       drift=1
@@ -485,6 +508,17 @@ for area in "${AREAS[@]}"; do
 done
 
 for file in "${FILES[@]}"; do
+  # A file absent from the stage is one the canonical tree no longer carries
+  # (e.g. pixi manifests in a repository with no Python-backed skills): remove
+  # the mirror copy rather than fail the sync.
+  if [[ ! -f "$STAGE/$file" ]]; then
+    if [[ "$MODE" == "check" ]]; then
+      if [[ -f "$ROOT/$file" ]]; then drift=1; echo "DRIFT: $file (stale, no canonical source)"; fi
+    else
+      rm -f "$ROOT/$file"
+    fi
+    continue
+  fi
   if [[ "$MODE" == "check" ]]; then
     if ! diff "$STAGE/$file" "$ROOT/$file" > /dev/null 2>&1; then
       drift=1
