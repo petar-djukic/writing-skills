@@ -184,7 +184,12 @@ It is idempotent and prints counts (`converted`, `renamed`, `collisions`,
 `imported`, `needs_review`, `unregistered`). A non-zero `collisions` means two
 entries resolved to the same filename — usually a duplicated citation id — so
 the rename was refused and those files were left on their old names rather than
-one overwriting the other. Fix the duplicate and re-run. To register an
+one overwriting the other. Fix the duplicate and re-run.
+
+The same count covers a refused import: an orphan that identifies as a paper
+the database already holds is a duplicate copy, not a new paper, so it is left
+in `pdfs/` under its own name instead of being renamed over the copy already
+there. Delete it, or correct the entry it duplicates. To register an
 unidentified PDF by hand, give `ingest` the metadata and it creates the entry:
 
 ```bash
@@ -294,9 +299,11 @@ on the older naming scheme to the human-friendly stem (updating `pdf_path`,
 `md_path`, `summary_file`; citation `id` values left unchanged). It then scans
 `pdfs/` for files no entry references and imports them (arXiv-id recovery, then
 embedded-metadata `needs-review`, then the `unregistered-pdfs.md` list). It is
-idempotent — correctly-named, tracked files are left alone. Prints a JSON
-summary (`checked`, `converted`, `renamed`, `imported`, `needs_review`,
-`unregistered`, `skipped`).
+idempotent — correctly-named, tracked files are left alone — and no step ever
+moves a file onto one that already exists: a rename or an import that would
+replace another paper is refused, counted as a `collision`, and explained on
+stderr. Prints a JSON summary (`checked`, `converted`, `renamed`, `collisions`,
+`imported`, `needs_review`, `unregistered`, `skipped`).
 
 ## Dependencies
 

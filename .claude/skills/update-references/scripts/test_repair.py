@@ -20,7 +20,7 @@ import shutil
 import sys
 import tempfile
 import types
-from contextlib import redirect_stdout
+from contextlib import redirect_stderr, redirect_stdout
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
@@ -211,6 +211,102 @@ def main():
                     contents.append(f.read().strip())
         check("a stem collision does not destroy one of the PDFs",
               sorted(contents) == ["FIRST PAPER", "SECOND PAPER"], contents)
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+    # --- an orphan whose stem is already taken (GH-32) ----------------------
+    # The same failure as the collision above, on the path the GH-28 fix did
+    # not reach. A stray untracked copy of a paper already in the database —
+    # what a re-download leaves behind — identifies as its tracked twin and was
+    # renamed straight over it, reported as a successful import.
+    tmp = tempfile.mkdtemp(prefix="test-repair-")
+    try:
+        # The entry carries the arXiv id, so its stem is the arxiv- form it is
+        # already filed under and the migration leaves it alone. Without that
+        # the migration renames it to the scholar- form first, freeing the name
+        # and making the adoption legitimate — which is not the case under test.
+        db = build(tmp, [entry("hopper-2024", "Hopper", 2024,
+                               "A Study of Orphan Recovery",
+                               "pdfs/Hopper-2024-a-study-of-orphan-recovery-"
+                               "arxiv-2401.00001v1.pdf",
+                               arxiv_id="2401.00001", version="1")],
+                   extra_pdfs=["2401.00001.pdf"])
+        tracked_abs = os.path.join(tmp, _refdb.load_db(db)[0]["pdf_path"])
+        with open(tracked_abs, "w") as f:
+            f.write("THE REAL PAPER\n")
+        with open(os.path.join(tmp, "pdfs", "2401.00001.pdf"), "w") as f:
+            f.write("STRAY COPY\n")
+        arxiv.api_get_ids = lambda ids: [{
+            "id": "2401.00001", "version": "1", "published": "2024-01-02",
+            "title": "A Study of Orphan Recovery", "abs_url": "http://x/abs",
+            "authors": ["Grace Hopper"],
+            "primary_category": "cs.DC", "categories": ["cs.DC"],
+            "summary": "s", "pdf_url": "http://x/pdf",
+        }]
+        err = io.StringIO()
+        with redirect_stderr(err):
+            summary = repair(db)
+
+        with open(tracked_abs) as f:
+            check("a stray copy does not overwrite the tracked paper",
+                  f.read().strip() == "THE REAL PAPER", summary)
+        check("the refused adoption is counted, not reported as an import",
+              summary["imported"] == 0 and summary.get("collisions") == 1, summary)
+        check("the refusal names the file on stderr",
+              "2401.00001.pdf" in err.getvalue(), err.getvalue().strip()[:120])
+        check("the stray copy is left on disk for the curator",
+              os.path.exists(os.path.join(tmp, "pdfs", "2401.00001.pdf")))
+        check("no path dangles after a refused adoption", paths_resolve(db) == [],
+              paths_resolve(db))
+        # The markdown is the second casualty: converting after the rename
+        # would have written the stray file's text over the tracked entry's.
+        md_rel = _refdb.load_db(db)[0].get("md_path")
+        if md_rel:
+            with open(os.path.join(tmp, md_rel)) as f:
+                check("the tracked entry's markdown is not rewritten from the stray",
+                      "Converted" in f.read())
+
+        second = repair(db)
+        check("a refused adoption is refused again, not churned",
+              second.get("collisions") == 1 and second["imported"] == 0, second)
+        arxiv.api_get_ids = lambda ids: []
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+    # --- the same guard on the embedded-metadata path (arxiv.py:485) --------
+    # Driven directly rather than through cmd_repair, because two tier-2 scans
+    # cannot collide by derivation: citation_key disambiguates the second id to
+    # hopper-nda, which lands in the stem's scholar- tag, so the two stems
+    # differ. The guard here is defensive — it fires when the destination
+    # exists for some other reason, such as a file left by an interrupted run —
+    # and an untestable guard is one that rots, so it is exercised as a unit.
+    tmp = tempfile.mkdtemp(prefix="test-repair-")
+    try:
+        os.makedirs(os.path.join(tmp, "pdfs"))
+        arxiv._pdf_metadata = lambda path: ("An Inferred Title", "Grace Hopper")
+        orphan = os.path.join(tmp, "pdfs", "scan.pdf")
+        with open(orphan, "w") as f:
+            f.write("THE SCAN\n")
+        taken = os.path.join(tmp, "pdfs",
+                             "Hopper-nd-an-inferred-title-scholar-hopper-nd.pdf")
+        with open(taken, "w") as f:
+            f.write("ALREADY THERE\n")
+
+        entries = []
+        err = io.StringIO()
+        with redirect_stderr(err):
+            result = arxiv._reconcile_orphan(orphan, entries, tmp)
+
+        check("a tier-2 orphan whose name is taken is refused",
+              result == "collision", result)
+        check("the refusal adds no entry", entries == [], entries)
+        with open(taken) as f:
+            check("the occupying file is untouched", f.read().strip() == "ALREADY THERE")
+        with open(orphan) as f:
+            check("the refused scan stays where it is", f.read().strip() == "THE SCAN")
+        check("the tier-2 refusal is reported on stderr", "scan.pdf" in err.getvalue(),
+              err.getvalue().strip()[:120])
+        arxiv._pdf_metadata = lambda path: (None, None)
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 
