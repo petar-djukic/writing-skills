@@ -627,6 +627,14 @@ def cmd_repair(args):
     # Orphan import: PDFs in pdfs/ that no entry references. Recover metadata,
     # convert, name to the convention, and add an entry — so the database is
     # complete after a reconcile, not just consistent.
+    #
+    # This runs after the migration above, and the order is load-bearing.
+    # _convert_orphan_md writes papers/<stem>.md unconditionally; it is safe
+    # only because every live entry's markdown has already been moved to that
+    # entry's own stem, so the name an orphan derives is either free or belongs
+    # to the same paper — where rewriting it from the recovered PDF is the
+    # point. Swap these two loops and an import silently overwrites a
+    # bystander's markdown (GH-31, whose cases in test_repair.py pin this).
     imported = needs_review = 0
     unregistered = []
     pdfs_dir = os.path.join(db_dir, "pdfs")
