@@ -310,6 +310,74 @@ def main():
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 
+    # --- what keeps _convert_orphan_md safe (GH-31) -------------------------
+    # It writes papers/<stem>.md with no clobber check, which reads like the
+    # GH-28 bug one file type over. It is not, and the reason is ordering: the
+    # migration loop runs first and has already moved every live entry's
+    # markdown to that entry's own stem, so the name an orphan derives is
+    # either free or belongs to the same paper. The two cases below are that
+    # argument as assertions. They exist because the property is invisible in
+    # the code — swap the two loops and the clobber becomes real, with nothing
+    # else in this file failing.
+    tmp = tempfile.mkdtemp(prefix="test-repair-")
+    try:
+        stem = "Doe-2025-a-study-of-things-arxiv-2501.12345v1"
+        # A different paper is parked on the name the orphan will derive.
+        db = build(tmp, [entry("other-1999", "Other", 1999, "Something Else",
+                               "pdfs/other.pdf", "papers/%s.md" % stem)],
+                   extra_pdfs=["2501.12345.pdf"])
+        with open(os.path.join(tmp, "papers", "%s.md" % stem), "w") as f:
+            f.write("A DIFFERENT PAPER'S MARKDOWN\n")
+        arxiv.api_get_ids = lambda ids: [{
+            "id": "2501.12345", "version": "1", "published": "2025-01-15",
+            "title": "A Study of Things", "abs_url": "http://x/abs",
+            "authors": ["Jane Doe"], "primary_category": "cs.SE",
+            "categories": ["cs.SE"], "summary": "s", "pdf_url": "http://x/pdf",
+        }]
+        repair(db)
+        got = _refdb.load_db(db)
+        other = [e for e in got if e["id"] == "other-1999"][0]
+        with open(os.path.join(tmp, other["md_path"])) as f:
+            check("the migration moves a bystander's markdown clear of an import",
+                  f.read().strip() == "A DIFFERENT PAPER'S MARKDOWN",
+                  other.get("md_path"))
+        check("the bystander's markdown is filed under its own stem",
+              other["md_path"] == "papers/Other-1999-something-else-scholar-"
+                                  "other-1999.md", other.get("md_path"))
+        check("no path dangles after the import", paths_resolve(db) == [],
+              paths_resolve(db))
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+    tmp = tempfile.mkdtemp(prefix="test-repair-")
+    try:
+        # The other half: when the name genuinely is shared, it is the same
+        # paper — an entry that lost its PDF — and rewriting its markdown from
+        # the recovered file is the point, not a loss. A clobber guard here
+        # would suppress this.
+        stem = "Doe-2025-a-study-of-things-arxiv-2501.12345v1"
+        db = build(tmp, [{"id": "doe-2025", "type": "article",
+                          "title": "A Study of Things",
+                          "author": [{"family": "Doe", "given": "Jane"}],
+                          "issued": {"year": 2025}, "arxiv_id": "2501.12345",
+                          "version": "1", "md_path": "papers/%s.md" % stem}],
+                   extra_pdfs=["2501.12345.pdf"])
+        with open(os.path.join(tmp, "papers", "%s.md" % stem), "w") as f:
+            f.write("STALE MARKDOWN\n")
+        summary = repair(db)
+        got = _refdb.load_db(db)[0]
+
+        check("an entry that lost its PDF gets it back, not a duplicate",
+              len(_refdb.load_db(db)) == 1 and got.get("pdf_path"), summary)
+        with open(os.path.join(tmp, got["md_path"])) as f:
+            check("its markdown is rewritten from the recovered PDF",
+                  "Converted" in f.read(), got.get("md_path"))
+        check("no path dangles after the recovery", paths_resolve(db) == [],
+              paths_resolve(db))
+        arxiv.api_get_ids = lambda ids: []
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
     print()
     if FAILURES:
         print("%d failed: %s" % (len(FAILURES), ", ".join(FAILURES)))
