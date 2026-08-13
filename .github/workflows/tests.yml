@@ -1,0 +1,36 @@
+# The skills carry 35 standalone test files and nothing ran them. Two had been
+# stale for months when this was added (GH-26): one unpacked five values from a
+# function that returns six, the other asserted a contract GH-308 had
+# deliberately replaced. Both were invisible because a test nobody runs cannot
+# fail.
+#
+# Discovery and the zero-tests guard live in scripts/run-tests.sh, so this job
+# and a developer running it locally take the same code path.
+#
+# Sibling of mirrors.yml, and the same note applies: .github/workflows is not
+# one of sync-mirrors.sh's owned areas, so regeneration leaves it alone, and a
+# workflow is not portable through the bare .github symlink that tree is
+# designed for. Both files are for this repository only.
+name: tests
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  skills:
+    name: skill test suites
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: provision the pixi environment
+        run: |
+          bash .claude/scripts/ensure-env.sh
+          # ensure-env.sh exports PATH inside its own shell, which does not
+          # survive into the next step. Hand the install prefix forward.
+          echo "$HOME/.pixi/bin" >> "$GITHUB_PATH"
+
+      - name: run the suites
+        run: bash scripts/run-tests.sh

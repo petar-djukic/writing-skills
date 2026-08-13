@@ -36,7 +36,7 @@ def test_yaml_assemble_round_trip():
         with open(art, "w") as f:
             f.write(SAMPLE)
         out = os.path.join(tmp, "spec.vr-draft.yaml")
-        lines, _, paras, _, _ = drive.parse_paragraphs(art, 0)
+        lines, _, paras, _, _, _ = drive.parse_paragraphs(art, 0)
         assert len(paras) == 2, f"expected 2 prose paragraphs, got {len(paras)}"
         accept = {1: "A replacement paragraph with plenty of words in it."}
         rng = {n: (s, e) for n, (s, e, _) in enumerate(paras, 1)}
@@ -61,7 +61,7 @@ def test_md_assemble_unchanged():
         with open(art, "w") as f:
             f.write(md)
         out = os.path.join(tmp, "a.vr-draft.md")
-        lines, _, paras, _, _ = drive.parse_paragraphs(art, 0)
+        lines, _, paras, _, _, _ = drive.parse_paragraphs(art, 0)
         accept = {1: "Replaced first paragraph."}
         rng = {n: (s, e) for n, (s, e, _) in enumerate(paras, 1)}
         drive.assemble_draft(art, lines, accept, rng, out)
