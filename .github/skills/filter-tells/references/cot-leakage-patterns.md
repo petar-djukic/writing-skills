@@ -25,6 +25,8 @@ The model tells the reader what it's about to do instead of doing it.
 
 **Fix:** Apply the superfluity test: remove the sentence, re-read the paragraph. If no information is lost, delete it. If the meta-sentence wraps unique content, extract the content and restate without the scaffolding.
 
+**Related:** Category 15 (Brief Echo) is the same instinct at document scale — the model narrating the terms of the job rather than the next paragraph. It has no keyable phrase, and the superfluity test above under-fires on it.
+
 ## Category 2: Reasoning Connectives (Model Showing Its Chain)
 
 The model externalizes internal logical steps that should be implicit.
@@ -268,6 +270,108 @@ The model inserts short phrases or sentences that steer from one idea to the nex
 **Detection cue:** A short phrase (fewer than 6 words) at sentence start that could be deleted without losing any factual content. Often appears at paragraph boundaries or before a new argument strand.
 
 **Fix:** Delete and let the next sentence speak for itself. If the directional shift needs signaling, embed it in the content: "The question then becomes how factories compose" → "How factories compose is a separate problem."
+
+## Category 15: Brief Echo (Model Restating Its Task Spec)
+
+The model restates its authoring instructions as if they were findings. The sentence tells the reader how the work was commissioned instead of what it found.
+
+This generalizes Category 1. Meta-discourse announces the next move inside the text ("In this section we will…"); a brief echo announces the terms of the whole job. It carries no lexical marker, reads as confident subject-matter prose, and survives every phrase-keyed detector in this catalog.
+
+The seed case, from the abstract of a reference architecture:
+
+> The document is deliberately a research roadmap. It separates what is engineered today from what remains an open problem, and it prescribes no implementation technology.
+
+Nothing in Categories 1-14 fires. But it is the writing brief with the imperative mood stripped off — a paraphrase of *write a research roadmap; separate engineered from open; do not prescribe technology.*
+
+The origin differs from the rest of this catalog, which is why the shape does. Categories 1-14 model the leak as scaffolding the model needed to generate the next sentence. A brief echo is the model re-grounding itself in the task specification — dumping the instructions into the artifact so it can keep writing to them.
+
+### Sub-forms
+
+**1. Negative-scope restatement.** The brief's constraint restated as a property of the artifact.
+
+```
+"prescribes no implementation technology"
+"it names no particular software components or technologies"
+"says nothing about database schemas, serialization formats, or storage products"
+"does not tell an engineer which product to buy"
+```
+
+**2. Genre self-labelling with an intent adverb.** An authorial decision narrated. The reader needs the fact, never that it was chosen.
+
+```
+"The document is deliberately a research roadmap."
+"The scope is deliberately narrow."
+"self-orienting is left out on purpose"
+"specializes the spine for readability"
+```
+
+`deliberately`, `on purpose`, `by design` and `for readability` also have legitimate non-authorial uses — "change management moves deliberately slowly" describes the subject, not the writing. The tell is the adverb attached to a choice *about the document*. This needs the semantic pass; a lexical gate on these words would be wrong.
+
+**3. Reader-model / acceptance criteria.** The rubric the draft was written against, pasted into the draft.
+
+```
+"A reader who stops after the main sections should know what the architecture
+ claims. A reader who doubts a claim should be able to find what backs it."
+```
+
+**4. Notation rules in the third person about the text.** Style-guide entries for the author, addressed to the reader.
+
+```
+"Where the text argues about conformance it says L5; where it describes
+ behaviour it says self-evolving."
+"Because both loops appear in every view, the text marks which loop a
+ capability belongs to."
+```
+
+**5. Prose tables of contents.** The declarative form Category 1 misses, since it is keyed on "In this section we will".
+
+```
+"This view has three main sections. The Functional Architecture section
+ describes... The Functional Components section is... Component Interactions
+ then walks..."
+```
+
+**6. Anti-reprint notes.** Answers to an instruction about avoiding duplication. No reader wonders whether the catalog was reprinted.
+
+```
+"the prose here is about architectural intent, not a reprint of every catalog field"
+"This appendix draws on those shared definitions instead of reprinting their catalogs."
+```
+
+**7. Selection-rationale defences.** The model justifying its choice to whoever set the task.
+
+```
+"Fault management is the right scenario to do it with."
+"Two scenarios are taken past the summary treatment, chosen to span the space."
+"Mapping them in detail is what ties each role to a real operational need
+ instead of an invented one."
+```
+
+### The addressee test (the removal test under-fires here)
+
+The superfluity test used by Categories 1-14 — delete it, does the paragraph lose information? — gives the wrong answer on a brief echo, because the sentence usually carries a true fact. The document *is* a research roadmap. Deleting it loses that, so the test says keep, and the leak survives.
+
+Ask instead **who the sentence is addressed to**:
+
+> If it answers a question the commissioner of the work would ask — *did you keep it technology-neutral? did you cover both loops? is this a spec or a roadmap?* — rather than a question the reader would ask about the subject, it is a brief echo.
+
+### Fix: recast, do not delete
+
+The information is usually real and belongs to the reader in another form. Restate it as a claim about the subject:
+
+> **Before:** The document is deliberately a research roadmap. It separates what is engineered today from what remains an open problem, and it prescribes no implementation technology.
+>
+> **After:** No L5 network is deployable today. Some of what such a system needs is already engineering, and the rest is open research; the closing sections mark which is which.
+
+Same information, addressed to the reader.
+
+### The cross-file signal, and the one-canonical-home rule
+
+The strongest evidence is invisible to a sentence-level detector. In the document this category was derived from, one instruction — *this is a reference architecture, not an implementation specification* — appeared **nine times**, once near the top of nearly every chapter file, in nine different phrasings. Each was defensible scope-setting on its own. Nine is the model re-reading its brief at the start of every generation unit.
+
+**Paraphrasing hides it from a denylist, and is itself the tell.** A writer who wanted to say this once would say it once and cross-reference; only a generator restates it from scratch each time.
+
+So the second rule, for anything that recurs: **one canonical home**. A genuine convention — scope, notation, navigation — is stated once in the front matter, and every later occurrence is deleted rather than rephrased. Catching this needs a detector that sees the whole corpus at once, since no single file contains the evidence.
 
 ## Detection Strategy
 

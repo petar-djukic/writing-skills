@@ -58,6 +58,15 @@ banned-patterns.md section (or prompt) that documents the WHY.
   every section that serves them", "throughout this article", "as each section
   shows". State the content; a one-line roadmap is fine, plumbing narration is
   not. [Self-Referential Meta-Narration; Prompt 8b]
+- Never restate the brief. What you were told to write ("keep it
+  technology-neutral", "this is a roadmap, not a spec") is not a finding: cut
+  "prescribes no implementation technology", "the scope is deliberately
+  narrow", "not a reprint of the catalog". If a constraint on the work is worth
+  telling the reader, state it once in the front matter as a fact about the
+  subject — "no L5 network is deployable today", not "the document is
+  deliberately a research roadmap". Say it once and cross-reference: a second
+  phrasing in a later file is the tell, not a fix.
+  [CoT leakage Category 15: Brief Echo]
 
 ## Paragraphs and document shape
 
