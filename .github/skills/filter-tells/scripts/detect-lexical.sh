@@ -716,6 +716,27 @@ META_NARRATION=(
   '(waiting )?for my (approval|review|sign-off)'
   'i walk through'
   'the other half of this'
+  # Brief echo (GH-30, CoT Category 15): the writing brief restated as a
+  # finding. Two of the seven sub-forms are lexical enough to be worth
+  # candidates — the negative-scope restatement of a constraint, and an intent
+  # adverb attached to a choice about the document. These sit looser than the
+  # rest of this array on purpose: "by design" is ordinary English about a
+  # subject, and "does not specify" is what a real specification says about a
+  # real thing. The semantic pass (Prompt 4 category 8) applies the addressee
+  # test; a gate here would be wrong. The sub-form that matters most — one
+  # claim paraphrased once per file — has no lexical form at all, and is left
+  # to brief_echo_repetition in detect-structural.py.
+  '(prescribes|specifies|names|mandates) no\b'
+  'does not (specify|prescribe|mandate|dictate)'
+  'says nothing about'
+  'is deliberately (a|an|the|not)'
+  '(scope|treatment|selection) is deliberately'
+  'on purpose'
+  'by design'
+  'for readability'
+  'a reader who'
+  'the text (marks|says|means|uses|calls)'
+  '(instead of|not a) reprint'
 )
 
 # --- Venue lexicons (GH-337) ---

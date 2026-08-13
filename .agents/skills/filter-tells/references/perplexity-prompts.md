@@ -678,8 +678,11 @@ Runs over every body file of a multi-file document at once, not over a section.
 It is the only pass that can see this class: a brief echo repeated across files
 is invisible in any one of them, because each occurrence is defensible on its
 own. Seed with `brief_echo_repetition` from detect-structural.py where a
-multi-file scan produced it, but do not stop at those clusters — the script
-matches content-word overlap and misses paraphrases that share no vocabulary.
+multi-file scan produced it, but do not stop at its groups. The script matches
+five fixed constructions and groups by construction, not by meaning: it will
+miss a claim restated in a shape it has no pattern for, and it cannot tell two
+different scope claims apart. Deciding whether the occurrences are one claim is
+this prompt's job, not the script's.
 
 ```
 You are finding BRIEF ECHO REPETITION across the files of one document.

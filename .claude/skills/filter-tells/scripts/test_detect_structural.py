@@ -118,6 +118,75 @@ def test_yaml_directory_and_file_input():
     print("  yaml_directory_and_file_input: ok")
 
 
+# --- brief_echo_repetition (GH-30) --------------------------------------- #
+# The fixture is the shape of the real evidence: one scope claim restated once
+# per file, sharing almost no wording. That is the class — a matcher keyed on
+# wording finds none of them.
+
+BRIEF_ECHO_FILES = [
+    ("01-intro.md",
+     "Autonomic networks close a control loop without a human in it. "
+     "This document prescribes no implementation technology. "
+     "Operators run different stacks, and the argument holds across them."),
+    ("02-functional.md",
+     "The functional view decomposes the loop into five capabilities. "
+     "It names no products, runtimes, or deployment topologies. "
+     "What implements a capability is a per-deployment choice."),
+    ("03-information.md",
+     "State moves through the loop in three shapes. "
+     "The information view says nothing about database schemas, "
+     "serialization formats, or storage products. "
+     "Retention is where implementations first diverge."),
+]
+
+
+def test_brief_echo_clusters_paraphrases_across_files():
+    out = ds.brief_echo_repetition(BRIEF_ECHO_FILES)
+    kinds = {b["kind"]: b for b in out}
+    assert "scope-negation" in kinds, out
+    b = kinds["scope-negation"]
+    assert b["files"] == 3, b
+    assert b["count"] == 3, b
+    # The finding must not depend on shared wording. If this ever rises to a
+    # level an overlap threshold could cluster, the fixture has stopped being
+    # representative of the class.
+    assert b["max_overlap"] < 0.35, b["max_overlap"]
+    print("  brief_echo_clusters_paraphrases_across_files: ok")
+
+
+def test_brief_echo_silent_on_one_occurrence():
+    files = [BRIEF_ECHO_FILES[0],
+             ("02.md", "The functional view decomposes the loop into five "
+                       "capabilities. Each consumes a defined input and emits "
+                       "a defined output."),
+             ("03.md", "State moves through the loop in three shapes. Each "
+                       "shape has an owner and a retention rule.")]
+    assert ds.brief_echo_repetition(files) == []
+    print("  brief_echo_silent_on_one_occurrence: ok")
+
+
+def test_brief_echo_ignores_repeated_domain_vocabulary():
+    # Heavy shared vocabulary, no claim about the artifact. The trigger is the
+    # construction, not the words, so repetition alone must not fire.
+    files = [(f"{i}.md",
+              "The capability boundary is testable rather than notional. "
+              "Each capability consumes a defined input and emits a defined "
+              "output. The deployment topology follows from the capability "
+              "split, and the capability model is what implementations share.")
+             for i in range(4)]
+    assert ds.brief_echo_repetition(files) == []
+    print("  brief_echo_ignores_repeated_domain_vocabulary: ok")
+
+
+def test_brief_echo_is_cross_file_only():
+    # All three sentences in one file: not a finding. A single file cannot
+    # carry the evidence, because the tell is one occurrence per generation
+    # unit — and a per-file scan must not start reporting this.
+    merged = [("all.md", " ".join(t for _, t in BRIEF_ECHO_FILES))]
+    assert ds.brief_echo_repetition(merged) == []
+    print("  brief_echo_is_cross_file_only: ok")
+
+
 def main():
     test_filter_tells_paragraph_returns_shape()
     test_detect_paragraph_alias()
@@ -127,6 +196,10 @@ def main():
     test_dominant_opener_detected()
     test_para_index_in_issues()
     test_yaml_directory_and_file_input()
+    test_brief_echo_clusters_paraphrases_across_files()
+    test_brief_echo_silent_on_one_occurrence()
+    test_brief_echo_ignores_repeated_domain_vocabulary()
+    test_brief_echo_is_cross_file_only()
     print("test_detect_structural: all assertions passed")
 
 

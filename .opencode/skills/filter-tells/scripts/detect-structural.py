@@ -909,6 +909,103 @@ def detect_coinage(file_proses: list, min_count: int = 2) -> list:
     return out[:20]
 
 
+# Brief echo (GH-30, CoT Category 15). Each kind needs its own pattern: the
+# sub-forms share an origin, not a shape. A bare document-self-reference noun
+# would match most sentences in an architecture document, so every pattern here
+# pairs the noun with the construction that makes the sentence about the
+# artifact rather than about the subject.
+_DOC_NOUN = (r"(?:document|architecture|view|section|appendix|chapter|text|"
+             r"paper|guide|specification|spec|report|book|article)")
+_GENRE = (r"(?:roadmap|specification|spec|guide|reference|overview|primer|"
+          r"survey|tutorial|catalog|catalogue|manual)")
+_BRIEF_ECHO_KINDS = {
+    # The brief's constraint restated as a property of the artifact.
+    "scope-negation": re.compile(
+        r"\b(?:prescribes?|specifies|names?|mandates?|dictates?) no\b"
+        r"|\bdoes not (?:specify|prescribe|mandate|dictate|tell|cover|address)\b"
+        r"|\bsays nothing about\b"
+        r"|\bis not (?:a|an) " + _GENRE + r"\b"
+        r"|\b(?:instead of|not a) reprint", re.I),
+    # An authoring decision narrated: genre label plus intent adverb.
+    "genre-self-label": re.compile(
+        r"\b(?:this |the )?" + _DOC_NOUN +
+        r"\b[^.;:]{0,40}\bis (?:deliberately|intentionally|by design|on purpose)\b"
+        r"|\b(?:scope|treatment|selection|split|structure) is deliberately\b"
+        r"|\b(?:left out|omitted|included|split|specialized) "
+        r"(?:on purpose|by design|for readability)\b", re.I),
+    # A prose table of contents: the outline the model wrote for itself.
+    "navigation": re.compile(
+        r"\b(?:this |the )?" + _DOC_NOUN +
+        r"\b[^.;:]{0,30}\b(?:has|contains|is organized into|is divided into|"
+        r"comprises) (?:two|three|four|five|six|\d+) (?:main )?"
+        r"(?:sections?|parts?|chapters?|views?)\b", re.I),
+    # Style-guide entries for the author, addressed to the reader.
+    "notation-rule": re.compile(
+        r"\bwhere the " + _DOC_NOUN + r"\b"
+        r"|\bthe " + _DOC_NOUN + r" (?:marks|says|means|uses|calls|refers to)\b",
+        re.I),
+    # The rubric the draft was written against.
+    "reader-model": re.compile(
+        r"\ba reader who\b|\breaders? (?:who|should) (?:stops?|skims?|doubts?)\b",
+        re.I),
+}
+
+
+def brief_echo_repetition(file_proses: list, min_files: int = 3) -> list:
+    """Brief-echo sentences (CoT Category 15) recurring across a document's files.
+
+    file_proses: list of (filename, prose). Returns one entry per kind that
+    appears in at least min_files distinct files, with every occurrence.
+
+    Why kind-and-file-count rather than near-duplicate clustering: the
+    occurrences are paraphrases of one instruction, and the paraphrasing is the
+    tell — so they share almost no wording. Measured on the nine that motivated
+    GH-30, the highest pairwise content-word Jaccard was 0.30 and most pairs
+    were 0.0, which no overlap threshold can cluster. What they do share is the
+    construction, so the construction is what this matches. `max_overlap` is
+    reported as a hint for whoever reads the finding, never used to group.
+
+    One occurrence of any of these is legitimate scope-setting. The finding is
+    that the same KIND of claim about the artifact recurs file after file — a
+    model re-reading its brief per generation unit. Whether they are the same
+    claim, and which is canonical, is Prompt 12's call; this is advisory, like
+    its siblings.
+    """
+    hits = {}
+    for fname, prose in file_proses:
+        for sent in split_sentences(prose):
+            flat = " ".join(sent.split())
+            for kind, rx in _BRIEF_ECHO_KINDS.items():
+                if rx.search(flat):
+                    hits.setdefault(kind, []).append((fname, flat))
+                    break  # one kind per sentence
+
+    def content(s):
+        return {w for w in re.findall(r"[a-z][a-z'-]*", s.lower())
+                if w not in FUNCTION_WORDS}
+
+    out = []
+    for kind, occurrences in hits.items():
+        files = {f for f, _ in occurrences}
+        if len(files) < min_files:
+            continue
+        best = 0.0
+        for i in range(len(occurrences)):
+            for j in range(i + 1, len(occurrences)):
+                a, b = content(occurrences[i][1]), content(occurrences[j][1])
+                if a and b:
+                    best = max(best, len(a & b) / len(a | b))
+        out.append({
+            "kind": kind,
+            "files": len(files),
+            "count": len(occurrences),
+            "max_overlap": round(best, 2),
+            "occurrences": [{"file": f, "sentence": s[:160]}
+                            for f, s in occurrences[:12]],
+        })
+    return sorted(out, key=lambda d: (-d["files"], d["kind"]))
+
+
 def voice_distance(file_proses: list, profile_path: str) -> dict:
     """Compare the draft's rhythm metrics against a match-structure corpus profile.
 
@@ -1872,6 +1969,11 @@ def main():
     # --- Undefined coinage candidates (advisory; for the semantic pass) ---
     coinage = detect_coinage(file_proses)
 
+    # --- Brief-echo repetition (cross-file; advisory, seeds Prompt 12) ---
+    # Cross-file by construction: a single file cannot hold the evidence, since
+    # one scope sentence is legitimate and the tell is one per file.
+    brief_echo = brief_echo_repetition(file_proses)
+
     # --- Voice distance vs a match-structure corpus profile (optional) ---
     vdist = voice_distance(file_proses, voice_profile) if voice_profile else None
 
@@ -1885,11 +1987,13 @@ def main():
         if len(all_results) > 1:
             payload = {"files": all_results, "repeated_formulae": formulae,
                        "opener_duplication": opener_dup,
-                       "coinage_candidates": coinage}
+                       "coinage_candidates": coinage,
+                       "brief_echo_repetition": brief_echo}
         else:
             payload["repeated_formulae"] = formulae
             payload["opener_duplication"] = opener_dup
             payload["coinage_candidates"] = coinage
+            payload["brief_echo_repetition"] = brief_echo
         if vdist is not None:
             payload["voice_distance"] = vdist
         print(json.dumps(payload, indent=2))
@@ -1915,6 +2019,18 @@ def main():
                 print(f"  [{f['count']}x] \"{f['phrase']}\"  ({locs})")
             print("  Repeated insider phrases never defined. Confirm in Prompt 8/8b:")
             print("  does the sentence state a mechanism a cold reader could act on?")
+            print()
+        if brief_echo:
+            print("=== Brief-Echo Repetition (CoT Category 15, across files) ===")
+            for b in brief_echo:
+                print(f"  [{b['kind']}] {b['count']}x across {b['files']} files"
+                      f"  (max wording overlap {b['max_overlap']})")
+                for occ in b["occurrences"][:4]:
+                    print(f"    {Path(occ['file']).name}: \"{occ['sentence'][:96]}\"")
+                if b["count"] > 4:
+                    print(f"    ... and {b['count'] - 4} more")
+            print("  One is scope-setting; one per file is the brief being re-read.")
+            print("  Prompt 12 picks the canonical home and deletes the rest.")
             print()
         if vdist is not None:
             print("=== Voice Distance (vs corpus profile) ===")
