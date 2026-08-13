@@ -417,10 +417,34 @@ def _convert_orphan_md(pdf_abs, stem, db_dir):
     return os.path.relpath(md_abs, db_dir)
 
 
+def _would_replace(pdf_abs, new_abs, stem):
+    """True if adopting this orphan would overwrite a file already there.
+
+    The migration loop learned this in GH-28; these two paths did not, and the
+    same failure reached them (GH-32). A stray untracked copy of a paper
+    already in the database — what a re-download leaves in pdfs/ — derives the
+    stem its tracked twin is already using, and os.rename replaced the real
+    file with the stray one while reporting a successful import.
+
+    The orphan stays where it is. It is identified, not unregistered, so the
+    listing is the wrong place for it; what the curator needs is to be told the
+    file is a duplicate of something already held.
+    """
+    if os.path.abspath(new_abs) == os.path.abspath(pdf_abs):
+        return False
+    if not os.path.exists(new_abs):
+        return False
+    print(f"repair: pdfs/{os.path.basename(pdf_abs)} identifies as "
+          f"'{stem}', but that file already exists and belongs to another "
+          f"entry. Leaving it in place — it is most likely a duplicate copy "
+          f"of a paper already in the database.", file=sys.stderr)
+    return True
+
+
 def _reconcile_orphan(pdf_abs, entries, db_dir):
     """Import a PDF on disk that no db entry references.
 
-    Returns one of 'imported', 'needs_review', or 'unregistered'.
+    Returns one of 'imported', 'needs_review', 'unregistered', or 'collision'.
     """
     fn = os.path.basename(pdf_abs)
     arxiv_id, _ver = _arxiv_id_from_name(fn)
@@ -438,6 +462,11 @@ def _reconcile_orphan(pdf_abs, entries, db_dir):
                                       arxiv_id=meta["id"], version=meta["version"])
             new_rel = os.path.join("pdfs", f"{stem}.pdf")
             new_abs = os.path.join(db_dir, new_rel)
+            # Before the rename, and before any conversion: past this point
+            # new_abs would be the other paper's file, and converting it would
+            # write that paper's text over the tracked entry's markdown too.
+            if _would_replace(pdf_abs, new_abs, stem):
+                return "collision"
             if os.path.abspath(new_abs) != os.path.abspath(pdf_abs):
                 os.rename(pdf_abs, new_abs)
             md_rel = _convert_orphan_md(new_abs, stem, db_dir)
@@ -481,6 +510,8 @@ def _reconcile_orphan(pdf_abs, entries, db_dir):
         stem = _naming.paper_stem(fam, None, title, citation_id=cid)
         new_rel = os.path.join("pdfs", f"{stem}.pdf")
         new_abs = os.path.join(db_dir, new_rel)
+        if _would_replace(pdf_abs, new_abs, stem):
+            return "collision"
         if os.path.abspath(new_abs) != os.path.abspath(pdf_abs):
             os.rename(pdf_abs, new_abs)
         md_rel = _convert_orphan_md(new_abs, stem, db_dir)
@@ -613,6 +644,11 @@ def cmd_repair(args):
                 imported += 1
             elif result == "needs_review":
                 needs_review += 1
+            elif result == "collision":
+                # Identified, but its name is taken; _would_replace has already
+                # said so. Not unregistered — the listing is for PDFs nothing
+                # could identify, and this one needs the opposite advice.
+                collisions += 1
             else:
                 unregistered.append(fn)
     _write_unregistered(db_dir, unregistered)
