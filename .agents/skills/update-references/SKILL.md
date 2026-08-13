@@ -180,9 +180,12 @@ $RUN <skill>/scripts/arxiv.py --db <db-path> reconcile
   with year `nd`). Anything unrecoverable is listed in
   `<db-dir>/unregistered-pdfs.md` with a ready-to-run `ingest` command.
 
-It is idempotent and prints counts (`converted`, `renamed`, `imported`,
-`needs_review`, `unregistered`). To register an unidentified PDF by hand, give
-`ingest` the metadata and it creates the entry:
+It is idempotent and prints counts (`converted`, `renamed`, `collisions`,
+`imported`, `needs_review`, `unregistered`). A non-zero `collisions` means two
+entries resolved to the same filename — usually a duplicated citation id — so
+the rename was refused and those files were left on their old names rather than
+one overwriting the other. Fix the duplicate and re-run. To register an
+unidentified PDF by hand, give `ingest` the metadata and it creates the entry:
 
 ```bash
 $RUN <skill>/scripts/scholar.py --db <db-path> ingest --file pdfs/<file>.pdf \

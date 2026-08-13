@@ -556,7 +556,7 @@ def cmd_repair(args):
     # Migration: rename existing pdf/markdown/summary files to the
     # human-friendly stem and update the db path fields. Idempotent — a file
     # already at its target name is left alone. Citation ids are NOT rewritten.
-    renamed = 0
+    renamed = collisions = 0
     for entry in entries:
         stem = _entry_stem(entry)
         for field, subdir, default_ext in (("pdf_path", "pdfs", ".pdf"),
@@ -572,6 +572,21 @@ def cmd_repair(args):
             new_rel = os.path.join(subdir, f"{stem}{ext}")
             new_abs = os.path.join(db_dir, new_rel)
             if os.path.abspath(old_abs) == os.path.abspath(new_abs):
+                continue
+            # os.rename replaces its destination without a word. Two entries
+            # can resolve to one stem — a duplicated citation id in a
+            # hand-maintained bibliography is enough — and the loser's file was
+            # overwritten while both entries still pointed at something that
+            # existed, so the database looked consistent and a paper was gone
+            # (GH-28). Leave the file where it is and say so; a name that is
+            # merely unmigrated costs nothing, and the collision is the
+            # curator's to resolve.
+            if os.path.exists(new_abs):
+                print(f"repair: {rel} would replace {new_rel}; leaving it in "
+                      f"place. Two entries share the stem '{stem}' — check for "
+                      f"a duplicate citation id (this one is "
+                      f"'{entry.get('id')}').", file=sys.stderr)
+                collisions += 1
                 continue
             os.makedirs(os.path.dirname(new_abs), exist_ok=True)
             os.rename(old_abs, new_abs)
@@ -604,8 +619,8 @@ def cmd_repair(args):
 
     save_db(args.db, entries)
     print(json.dumps({"checked": checked, "converted": converted,
-                      "renamed": renamed, "imported": imported,
-                      "needs_review": needs_review,
+                      "renamed": renamed, "collisions": collisions,
+                      "imported": imported, "needs_review": needs_review,
                       "unregistered": len(unregistered), "skipped": skipped},
                      indent=2))
 
