@@ -970,6 +970,23 @@ def brief_echo_repetition(file_proses: list, min_files: int = 3) -> list:
     model re-reading its brief per generation unit. Whether they are the same
     claim, and which is canonical, is Prompt 12's call; this is advisory, like
     its siblings.
+
+    Coverage against the catalog's seven sub-forms is 5 kinds, not 7, and the
+    gap is deliberate:
+
+      1 negative-scope       -> scope-negation
+      2 genre self-label     -> genre-self-label
+      3 reader-model         -> reader-model
+      4 notation rules       -> notation-rule
+      5 prose table of contents -> navigation
+      6 anti-reprint         -> folded into scope-negation (same shape)
+      7 selection-rationale  -> NOT MATCHED
+
+    Sub-form 7 ("fault management is the right scenario to do it with",
+    "chosen to span the space") has no construction to key on — it is an
+    ordinary declarative sentence, and only the addressee test separates it
+    from a real claim about the subject. Prompt 4 owns it. A pattern here would
+    fire on every judgement a document makes.
     """
     hits = {}
     for fname, prose in file_proses:
