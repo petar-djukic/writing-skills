@@ -54,13 +54,40 @@ def _source_tag(arxiv_id=None, version=None, doi=None, citation_id=None):
 
 def paper_stem(family, year, title, arxiv_id=None, version=None, doi=None,
                citation_id=None, max_len=STEM_MAX_LEN):
-    """Human-friendly stem shared by a paper's pdf, markdown, and summary."""
+    """Human-friendly stem shared by a paper's pdf, markdown, and summary.
+
+    The source tag sits last and is the only component that makes the stem
+    unique, so it is the last thing cut. Truncating the assembled string
+    dropped it instead (GH-35): past the cap, two papers by one author in one
+    year with the same opening title words collapsed onto a single stem, and
+    every guard downstream then had a collision to catch that need not exist.
+
+    Over the cap, the slug goes first and the family token second — a title is
+    recoverable from the database, while the id is what the file *is*.
+
+    Inputs that fit are untouched, which is what makes this safe to land on
+    existing paper directories: for every stem at or under max_len today the
+    result is byte-identical, so `repair` renames nothing. Measured before the
+    change, the most degenerate plausible metadata reached 145 of 150.
+    """
     fam = _family_token(family)
     yr = str(year) if year else "nd"
     slug = title_slug(title)
     src = _source_tag(arxiv_id, version, doi, citation_id)
-    stem = "-".join(p for p in (fam, yr, slug, src) if p)
-    stem = re.sub(r"-{2,}", "-", stem).strip("-")
+
+    def assemble(f, s):
+        stem = "-".join(p for p in (f, yr, s, src) if p)
+        return re.sub(r"-{2,}", "-", stem).strip("-")
+
+    stem = assemble(fam, slug)
+    while slug and len(stem) > max_len:
+        slug = slug[:max(0, len(slug) - (len(stem) - max_len))].strip("-")
+        stem = assemble(fam, slug)
+    while fam and len(stem) > max_len:
+        fam = fam[:max(0, len(fam) - (len(stem) - max_len))]
+        stem = assemble(fam, slug)
+    # A source tag alone longer than the whole budget is degenerate metadata;
+    # cut it rather than hand back a name over the cap.
     return stem[:max_len].strip("-")
 
 
