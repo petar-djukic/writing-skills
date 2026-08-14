@@ -183,6 +183,15 @@ Types of CoT leakage:
 6. COMPLETION ARTIFACTS: References to the model's own prior output ("As mentioned earlier...")
 7. BRIDGE SENTENCES: Sentences at paragraph boundaries that exist only to steer the model from one topic to the next. They look like conclusions or implications but carry no information the reader needs — the paragraph already made the point. Common at ends of example paragraphs where the model needs to reconnect to the main argument.
 
+8. BRIEF ECHO: Sentences restating the AUTHORING INSTRUCTIONS as if they were findings — what the document was commissioned to be, rather than what it says. Unlike 1-7 there is no phrase to key on; it reads as confident subject-matter prose. Sub-forms: negative-scope restatement ("prescribes no implementation technology", "names no products"); genre self-labelling with an intent adverb ("the document is deliberately a research roadmap"); reader-model or acceptance criteria ("a reader who stops after the main sections should know..."); notation rules in the third person about the text ("where the text argues about conformance it says L5"); prose tables of contents ("this view has three main sections. The X section describes..."); anti-reprint notes ("not a reprint of every catalog field"); selection-rationale defences ("fault management is the right scenario to do it with", "chosen to span the space").
+
+BRIEF ECHO DETECTION PROCEDURE (the removal test does NOT work here):
+A brief echo usually carries a true fact — the document really is a research roadmap — so deleting it loses information and the removal test wrongly says keep. Use the addressee test instead:
+a) Ask who the sentence is addressed to.
+b) If it answers a question the COMMISSIONER of the work would ask — "did you keep it technology-neutral?", "did you cover both loops?", "is this a spec or a roadmap?" — it is a brief echo.
+c) If it answers a question the READER would ask about the SUBJECT, it is content. Keep it.
+d) Watch the intent adverbs — deliberately, on purpose, by design, for readability — but do not treat them as proof. "Change management moves deliberately slowly" describes the subject. The tell is the adverb attached to a choice about the DOCUMENT.
+
 BRIDGE SENTENCE DETECTION PROCEDURE:
 For the last sentence of every paragraph and the first sentence of the next paragraph, apply this test:
 a) Read the paragraph WITHOUT the candidate sentence.
@@ -196,10 +205,13 @@ Examples of bridge sentences:
 
 For each instance found, report:
 - Line/sentence location
-- Category (1-7 above)
+- Category (1-8 above)
 - The offending phrase
-- Classification: TRUE LEAK (delete) or COT-STYLE WORDING (reword)
+- Classification: TRUE LEAK (delete), COT-STYLE WORDING (reword), or RECAST (restate as a claim about the subject)
+- For a RECAST, give the proposed replacement sentence
 - Severity: SUBTLE (could be human), MODERATE (suspicious), OBVIOUS (definitely CoT leak)
+
+Category 8 is almost always RECAST, not TRUE LEAK: the fact is real and the reader should have it, addressed to them instead of to whoever set the task. Recommend deletion only when a second file already states the same thing — see the corpus-level pass (Prompt 12), which decides which occurrence is the canonical one.
 
 Then:
 TOTAL_LEAKS: <count>
@@ -660,6 +672,61 @@ must pass), re-run Prompt 10 on the rewrite (max 3 passes), and run the
 standard lexical/structural scans so the rewrite introduces no register
 regressions.
 
+## Prompt 12: Cross-File Brief Echo (corpus mode)
+
+Runs over every body file of a multi-file document at once, not over a section.
+It is the only pass that can see this class: a brief echo repeated across files
+is invisible in any one of them, because each occurrence is defensible on its
+own. Seed with `brief_echo_repetition` from detect-structural.py where a
+multi-file scan produced it, but do not stop at its groups. The script matches
+five fixed constructions and groups by construction, not by meaning: it will
+miss a claim restated in a shape it has no pattern for, and it cannot tell two
+different scope claims apart. Deciding whether the occurrences are one claim is
+this prompt's job, not the script's.
+
+```
+You are finding BRIEF ECHO REPETITION across the files of one document.
+
+A brief echo is a sentence restating the authoring instructions as if they were findings — what the document was commissioned to be, rather than what it says ("prescribes no implementation technology", "the document is deliberately a research roadmap", "this view has three main sections").
+
+One occurrence is defensible scope-setting. The signal is REPETITION: a model re-reads its brief at the start of every generation unit, so the same instruction surfaces once per file in a different phrasing each time. A writer who wanted to say this would say it once, in the front matter, and cross-reference. THE PARAPHRASING IS THE TELL — the occurrences will share almost no vocabulary, so match on MEANING, not wording.
+
+Look for repeated claims of these kinds:
+- SCOPE: what the document is or is not, what it does or does not cover
+- GENRE: what kind of artifact it is ("a roadmap, not a specification")
+- NOTATION: how the text uses a term, what a label means in these pages
+- NAVIGATION: what the sections are and what each one does
+- METHOD: why material was selected, ordered, or omitted
+
+For each cluster of two or more occurrences, report:
+
+CLAIM: <the shared claim in one line, in your own words>
+KIND: scope | genre | notation | navigation | method
+OCCURRENCES:
+  - <file>:<line> "<the sentence as written>"
+  - <file>:<line> "<the sentence as written>"
+CANONICAL HOME: <which file and section should carry it — usually the front matter, preface, or introduction; the earliest file a reader reaches>
+KEEP: <the one occurrence to keep, recast as a claim about the subject rather than about the document>
+DELETE: <every other occurrence, by file and line>
+
+A cluster of one is not a finding. Report it only if the single occurrence is itself a brief echo, and mark it SINGLE — that is Prompt 4's business, not this pass's.
+
+Then:
+CLUSTERS: <count>
+FILES AFFECTED: <count>
+LARGEST CLUSTER: <n occurrences of "<claim>">
+VERDICT: clean (0 clusters) / minor (2-occurrence clusters only) / moderate (a 3-4 cluster) / severe (a cluster spanning most files)
+
+---
+FILES:
+{files}
+```
+
+A three-occurrence cluster was unambiguous in the document this prompt was
+derived from; nine was the largest. Treat two as a prompt to look rather than a
+finding — a term genuinely defined twice, once in a preface and once in a
+glossary, is a real editorial choice.
+
 ## Usage Notes
 
 - Process text in sections of 500-1500 words for best results
@@ -672,5 +739,6 @@ regressions.
 - Prompt 8 runs on the document's opening material (abstract + section openers); mandatory for publication verdicts — cadence detectors cannot see undefined jargon or circular claims
 - Prompt 9 runs seeded with the structural script's paragraph_schema metrics; its Part B composes with Prompt 8 (circularity lives there)
 - Prompts 10-11 are abstract mode: 10 analyzes (always), 11 rebuilds (opt-in, only on a failing verdict), both seeded with abstract-check.py output
+- Prompt 12 is corpus mode: it takes every body file at once, so it cannot run in the per-section loop above. Run it once per document, after Prompt 4 has classified the single-file brief echoes; its canonical-home decision then tells you which of those to recast and which to delete outright
 - Prompt 5 is the integrator — runs last with all evidence, including Prompt 0 and Prompt 7
 - Cache results: if a section scores clean on all prompts, skip it in recursive passes
