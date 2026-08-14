@@ -173,7 +173,7 @@ A CoT leak is text that exists only to help the model generate subsequent text. 
 
 This is NOT about whether the text was written by AI. It's specifically about whether the text contains traces of the model's PLANNING, SELF-MONITORING, or REASONING SCAFFOLDING.
 
-Types of CoT leakage:
+Types of CoT leakage. These numbers are the CATEGORY NUMBERS from the catalog (references/cot-leakage-patterns.md) — report them as such. The catalog has 15 categories; the ones absent here are absent on purpose, either because a regex already catches them or because another prompt owns them, and the catalog says which at each entry.
 
 1. META-DISCOURSE: Text that narrates what the text is about to do ("In this section we will...")
 2. REASONING CONNECTIVES: Phrases that show the model connecting its own thoughts ("This means that...", "In other words...")
@@ -182,8 +182,10 @@ Types of CoT leakage:
 5. FALSE EMPHASIS: Adverbial importance markers ("Crucially,", "Notably,")
 6. COMPLETION ARTIFACTS: References to the model's own prior output ("As mentioned earlier...")
 7. BRIDGE SENTENCES: Sentences at paragraph boundaries that exist only to steer the model from one topic to the next. They look like conclusions or implications but carry no information the reader needs — the paragraph already made the point. Common at ends of example paragraphs where the model needs to reconnect to the main argument.
-
-8. BRIEF ECHO: Sentences restating the AUTHORING INSTRUCTIONS as if they were findings — what the document was commissioned to be, rather than what it says. Unlike 1-7 there is no phrase to key on; it reads as confident subject-matter prose. Sub-forms: negative-scope restatement ("prescribes no implementation technology", "names no products"); genre self-labelling with an intent adverb ("the document is deliberately a research roadmap"); reader-model or acceptance criteria ("a reader who stops after the main sections should know..."); notation rules in the third person about the text ("where the text argues about conformance it says L5"); prose tables of contents ("this view has three main sections. The X section describes..."); anti-reprint notes ("not a reprint of every catalog field"); selection-rationale defences ("fault management is the right scenario to do it with", "chosen to span the space").
+9. PROPERTY ANNOUNCEMENT: A short copula sentence labelling a thing ("The agent is dynamic.", "This is significant.") immediately followed by longer sentences that substantiate the label. The short sentence is the model's topic sentence to itself. A regex can see the copula but not what follows it, which is the whole tell — judge the PAIR, not the sentence.
+13. ENUMERATION ANNOUNCEMENT: A count stated before the items ("Two distinct operations define an agent's life", "Three failure modes recur"). Strongest when the following sentences enumerate exactly that many items, which is the model executing the plan it just announced. Check whether the count matches the list; a count that does NOT match is usually human.
+14. TRANSITIONAL STEERING: A short phrase at sentence start that changes direction without adding content ("The question then becomes...", "This brings us to...", "Which brings us to...", "And therein lies the problem."). Distinct from 7: bridge sentences sit at paragraph boundaries and restate, these sit anywhere and merely steer. Apply the removal test — if deleting the phrase costs no fact, it was the model's rudder.
+15. BRIEF ECHO: Sentences restating the AUTHORING INSTRUCTIONS as if they were findings — what the document was commissioned to be, rather than what it says. Unlike the others there is no phrase to key on; it reads as confident subject-matter prose. Sub-forms: negative-scope restatement ("prescribes no implementation technology", "names no products"); genre self-labelling with an intent adverb ("the document is deliberately a research roadmap"); reader-model or acceptance criteria ("a reader who stops after the main sections should know..."); notation rules in the third person about the text ("where the text argues about conformance it says L5"); prose tables of contents ("this view has three main sections. The X section describes..."); anti-reprint notes ("not a reprint of every catalog field"); selection-rationale defences ("fault management is the right scenario to do it with", "chosen to span the space").
 
 BRIEF ECHO DETECTION PROCEDURE (the removal test does NOT work here):
 A brief echo usually carries a true fact — the document really is a research roadmap — so deleting it loses information and the removal test wrongly says keep. Use the addressee test instead:
@@ -205,13 +207,13 @@ Examples of bridge sentences:
 
 For each instance found, report:
 - Line/sentence location
-- Category (1-8 above)
+- Category (the catalog number, from the list above)
 - The offending phrase
 - Classification: TRUE LEAK (delete), COT-STYLE WORDING (reword), or RECAST (restate as a claim about the subject)
 - For a RECAST, give the proposed replacement sentence
 - Severity: SUBTLE (could be human), MODERATE (suspicious), OBVIOUS (definitely CoT leak)
 
-Category 8 is almost always RECAST, not TRUE LEAK: the fact is real and the reader should have it, addressed to them instead of to whoever set the task. Recommend deletion only when a second file already states the same thing — see the corpus-level pass (Prompt 12), which decides which occurrence is the canonical one.
+Category 15 is almost always RECAST, not TRUE LEAK: the fact is real and the reader should have it, addressed to them instead of to whoever set the task. Recommend deletion only when a second file already states the same thing — see the corpus-level pass (Prompt 12), which decides which occurrence is the canonical one.
 
 Then:
 TOTAL_LEAKS: <count>

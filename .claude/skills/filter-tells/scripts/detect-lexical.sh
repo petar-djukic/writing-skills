@@ -650,6 +650,23 @@ COT_CANDIDATES=(
   '[Tt]here are [a-z]* [a-z]* that '
   '^[Ww]hile .*, '
   'whether .* or '
+  # Gaps found reconciling this list against the catalog (GH-40). Each of the
+  # three categories below stays out of the semantic pass precisely because it
+  # is lexical — which only holds if the list is actually complete.
+  #
+  # Category 10, inverted wh-cleft. 'What .* is' matches the canonical order
+  # only, so "Runtime generation IS WHAT separates a factory from a library"
+  # read clean. Same construction, same tell, reversed.
+  ' is what '
+  ' are what '
+  # Category 11, imperative example introduction. 'Consider' was the whole
+  # list; these are the rest of the closed set.
+  '[.!?] (Imagine|Picture|Suppose) '
+  '^(Imagine|Picture|Suppose) '
+  '[Tt]ake the case of'
+  # Category 12, correlative conjunctions. 'not only ... but' was listed and
+  # its twin was not.
+  'not just .* but'
 )
 
 # --- Category: Editorializing adjectives (compressed-conversation class, GH-117) ---
