@@ -391,7 +391,7 @@ def _strip_front_matter(text):
 
 def _shared_scripts():
     _shared = os.path.normpath(os.path.join(
-        os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", "scripts"))
+        os.path.dirname(os.path.realpath(__file__)), "..", "..", "..", "scripts"))
     if _shared not in sys.path:
         sys.path.insert(0, _shared)
 

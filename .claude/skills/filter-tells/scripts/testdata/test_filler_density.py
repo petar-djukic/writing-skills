@@ -21,7 +21,7 @@ import subprocess
 import sys
 import tempfile
 
-HERE = os.path.dirname(os.path.abspath(__file__))
+HERE = os.path.dirname(os.path.realpath(__file__))
 SCAN = os.path.normpath(os.path.join(HERE, "..", "detect-lexical.sh"))
 SHARED = os.path.normpath(os.path.join(HERE, "..", "..", "..", "..", "scripts"))
 sys.path.insert(0, SHARED)
