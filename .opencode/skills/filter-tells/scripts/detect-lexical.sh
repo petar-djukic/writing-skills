@@ -420,25 +420,25 @@ FALSE_EMPHASIS=(
 
 # --- Category: Mechanical transitions ---
 MECHANICAL_TRANSITIONS=(
-  "^first,"
-  "^second,"
-  "^third,"
-  "^finally,"
-  "^in addition,"
-  "^on one hand"
-  "^on the other hand"
-  "^while this is true"
-  "^having said that"
-  "^that being said"
-  "^with that in mind"
-  "^with this in place"
-  "^given this,"
-  "^that said,"
-  "^and so,"
-  "^moving on"
-  "^turning to"
-  "^building on"
-  "^to begin with"
+  "(^|[.!?] )first,"
+  "(^|[.!?] )second,"
+  "(^|[.!?] )third,"
+  "(^|[.!?] )finally,"
+  "(^|[.!?] )in addition,"
+  "(^|[.!?] )on one hand"
+  "(^|[.!?] )on the other hand"
+  "(^|[.!?] )while this is true"
+  "(^|[.!?] )having said that"
+  "(^|[.!?] )that being said"
+  "(^|[.!?] )with that in mind"
+  "(^|[.!?] )with this in place"
+  "(^|[.!?] )given this,"
+  "(^|[.!?] )that said,"
+  "(^|[.!?] )and so,"
+  "(^|[.!?] )moving on"
+  "(^|[.!?] )turning to"
+  "(^|[.!?] )building on"
+  "(^|[.!?] )to begin with"
 )
 
 # --- Category: Narrative pivot / stage-setting frames ---
@@ -572,7 +572,7 @@ ORNATE_REGISTER=(
   "the shape of"
   # rhetorical glue
   " merely "
-  "^nor "
+  "(^|[.!?] )nor "
   "to the digit"
   # borrowed-metaphor adjectives
   "load-bearing"
@@ -648,7 +648,7 @@ COT_CANDIDATES=(
   '[Tt]wo distinct '
   '[Tt]hree .* together '
   '[Tt]here are [a-z]* [a-z]* that '
-  '^[Ww]hile .*, '
+  '(^|[.!?] )[Ww]hile .*, '
   'whether .* or '
   # Gaps found reconciling this list against the catalog (GH-40). Each of the
   # three categories below stays out of the semantic pass precisely because it
@@ -661,8 +661,7 @@ COT_CANDIDATES=(
   ' are what '
   # Category 11, imperative example introduction. 'Consider' was the whole
   # list; these are the rest of the closed set.
-  '[.!?] (Imagine|Picture|Suppose) '
-  '^(Imagine|Picture|Suppose) '
+  '(^|[.!?] )(Imagine|Picture|Suppose) '
   '[Tt]ake the case of'
   # Category 12, correlative conjunctions. 'not only ... but' was listed and
   # its twin was not.
@@ -820,9 +819,20 @@ scan_patterns() {
   # empties BANNED_WORDS), and bash 3.2 under set -u crashes on expanding an
   # empty array — same guard as the RESULTS expansion below (GH-190).
   for pattern in ${patterns[@]+"${patterns[@]}"}; do
-    # Case-insensitive grep with line numbers
+    # Case-insensitive grep with line numbers. -E (ERE), matching
+    # scan_candidates: a gating pattern needs alternation to say "line start OR
+    # sentence boundary", and markdown paragraphs are single long lines, so
+    # without it a ^-anchored tell fires only on a paragraph's first sentence
+    # (GH-43).
+    #
+    # Safe across the gating arrays because they are literal strings: of 345
+    # patterns, 344 hold no ERE metacharacter and read identically under either
+    # dialect. The one that does — AI_PHRASES' 'there are [0-9]+ main' — was
+    # written as ERE and silently mismatched under BRE, where + is literal: it
+    # matched "there are 5+ main" and never "there are 3 main".
+    # test_scan_dialect.py holds both halves of that.
     local matches
-    matches=$(grep -in "$pattern" "$FILE" 2>/dev/null || true)
+    matches=$(grep -inE "$pattern" "$FILE" 2>/dev/null || true)
     if [[ -n "$matches" ]]; then
       ISSUES_FOUND=1
       while IFS= read -r line; do
