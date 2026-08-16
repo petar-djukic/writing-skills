@@ -60,7 +60,7 @@ save_db = _refdb.save_db
 def _resolve_key(service, explicit):
     """--api-key, else the env var, else .secrets/ in the working repo (GH-184)."""
     root = os.path.normpath(os.path.join(
-        os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", "scripts"))
+        os.path.dirname(os.path.realpath(__file__)), "..", "..", "..", "scripts"))
     if root not in sys.path:
         sys.path.insert(0, root)
     try:

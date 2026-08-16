@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# run-tests.sh — run every test under .claude/skills in the pixi environment.
+# run-tests.sh — run every test under .claude/ in the pixi environment.
 #
 # The tests are discovered, never listed. A hardcoded list is how .claude/
 # scripts lost credentials.py from all four surfaces for a month (GH-184), and
@@ -10,6 +10,11 @@
 # Each file is a standalone script that exits non-zero on failure; there is no
 # test framework and none is wanted. Two of them were stale for months because
 # nothing ran them (GH-26).
+#
+# Both roots are searched. Discovery covered .claude/skills only, so the six
+# test files beside the shared modules in .claude/scripts had never run once
+# (GH-45) — the same shape as GH-26, one directory over. A narrow root is a
+# hardcoded list wearing a find.
 #
 # Usage:
 #   scripts/run-tests.sh            run everything
@@ -36,7 +41,8 @@ tests=()
 while IFS= read -r t; do
   [[ -n "$PATTERN" && "$t" != *"$PATTERN"* ]] && continue
   tests+=("$t")
-done < <(find "$ROOT/.claude/skills" -name 'test_*.py' -not -path '*/__pycache__/*' | sort)
+done < <(find "$ROOT/.claude/skills" "$ROOT/.claude/scripts" \
+              -name 'test_*.py' -not -path '*/__pycache__/*' | sort)
 
 if [[ ${#tests[@]} -eq 0 ]]; then
   if [[ -n "$PATTERN" ]]; then

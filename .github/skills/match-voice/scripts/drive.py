@@ -28,7 +28,7 @@ Usage:
 import argparse, json, os, re, subprocess, sys, tempfile
 from collections import Counter
 
-SK = os.path.dirname(os.path.abspath(__file__))
+SK = os.path.dirname(os.path.realpath(__file__))
 DEAI = os.path.normpath(os.path.join(SK, "..", "..", "filter-tells", "scripts", "detect-lexical.sh"))
 SHARED = os.path.normpath(os.path.join(SK, "..", "..", "..", "scripts"))
 PANGRAM = os.path.join(SHARED, "pangram.py")

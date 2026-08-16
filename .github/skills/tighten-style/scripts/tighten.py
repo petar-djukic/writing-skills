@@ -31,7 +31,7 @@ import subprocess
 import sys
 import tempfile
 
-SK = os.path.dirname(os.path.abspath(__file__))
+SK = os.path.dirname(os.path.realpath(__file__))
 SHARED = os.path.normpath(os.path.join(SK, "..", "..", "..", "scripts"))
 MATCH_VOICE = os.path.normpath(os.path.join(SK, "..", "..", "match-voice", "scripts"))
 MATCH_STRUCTURE = os.path.normpath(os.path.join(SK, "..", "..", "match-structure", "scripts"))

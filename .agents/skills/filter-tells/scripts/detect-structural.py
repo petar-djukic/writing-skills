@@ -38,7 +38,7 @@ from pathlib import Path
 from collections import Counter
 
 _SHARED = __import__("os").path.normpath(__import__("os").path.join(
-    __import__("os").path.dirname(__import__("os").path.abspath(__file__)),
+    __import__("os").path.dirname(__import__("os").path.realpath(__file__)),
     "..", "..", "..", "scripts"))
 if _SHARED not in sys.path:
     sys.path.insert(0, _SHARED)

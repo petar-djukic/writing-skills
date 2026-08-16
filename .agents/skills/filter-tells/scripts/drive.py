@@ -25,7 +25,7 @@ import re
 import subprocess
 import sys
 
-_DIR = os.path.dirname(os.path.abspath(__file__))
+_DIR = os.path.dirname(os.path.realpath(__file__))
 _SKILL = os.path.normpath(os.path.join(_DIR, ".."))
 _PROMPTS_PATH = os.path.join(_SKILL, "references", "perplexity-prompts.md")
 _FM = re.compile(r"\A---\s*\n.*?\n(?:---|\.\.\.)\s*\n", re.DOTALL)

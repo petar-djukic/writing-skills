@@ -14,7 +14,7 @@ Run: python3 <skill>/scripts/testdata/test_contract_protection.py
 import os
 import sys
 
-HERE = os.path.dirname(os.path.abspath(__file__))
+HERE = os.path.dirname(os.path.realpath(__file__))
 SCRIPTS = os.path.dirname(HERE)
 SHARED = os.path.normpath(os.path.join(SCRIPTS, "..", "..", "..", "scripts"))
 sys.path.insert(0, SCRIPTS)

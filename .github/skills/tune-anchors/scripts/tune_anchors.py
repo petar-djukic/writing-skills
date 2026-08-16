@@ -26,7 +26,7 @@ import os
 import subprocess
 import sys
 
-HERE = os.path.dirname(os.path.abspath(__file__))
+HERE = os.path.dirname(os.path.realpath(__file__))
 MATCH_VOICE = os.path.normpath(os.path.join(HERE, "..", "..", "match-voice", "scripts"))
 TIGHTEN = os.path.normpath(os.path.join(HERE, "..", "..", "tighten-style", "scripts"))
 SHARED = os.path.normpath(os.path.join(HERE, "..", "..", "..", "scripts"))
