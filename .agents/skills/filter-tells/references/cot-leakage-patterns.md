@@ -160,6 +160,8 @@ The model states what something is NOT before stating what it IS. The negation s
 
 **Fix:** State what the thing *is* directly, dropping the negation. If the contrast carries genuine information, use "rather than" or fold into a subordinate clause. For standalone negation sentences, delete and let the affirmative speak for itself.
 
+**Detection ownership (GH-40):** not in Prompt 4, because **Prompt 6** already owns it — it enumerates every adjacent-sentence antithesis pair and rules each ANCHOR or REFLEX, which is this category's semantic half done properly. `detect_antithesis` in detect-structural.py and the `COT_STRUCTURAL` lexical list cover the fixed forms. Putting it in Prompt 4 as well would ask two prompts for a verdict on one sentence.
+
 ## Category 9: Property Announcement (Model Labeling Before Elaborating)
 
 The model declares an abstract property in a short sentence, then elaborates in the sentences that follow. The announcement adds nothing the elaboration does not convey.
@@ -197,6 +199,8 @@ The model uses "What X is/does/means is Y" to generate a topic before the predic
 
 **Fix:** State the claim directly. "What separates X from Y is Z" becomes "Z separates X from Y" or "X differs from Y in Z." If the wh-cleft genuinely adds rhetorical weight (rare), keep it, but only 1-2 per paper.
 
+**Detection ownership (GH-40):** not in Prompt 4 — the form is syntactic, so the `COT_CANDIDATES` regex catches it and the script reports the density this category is scored on. GH-40 did find a gap and closed it: `What .* is` matched only the canonical order, so *inverted* clefts ("Runtime generation **is what** separates a factory from a library") passed clean. `is what` is now matched too.
+
 ## Category 11: Imperative Example Introduction (Model Inviting the Reader)
 
 The model introduces examples with "Consider X" or "Imagine X" rather than presenting them directly.
@@ -215,6 +219,8 @@ The model introduces examples with "Consider X" or "Imagine X" rather than prese
 
 **Fix:** Replace with direct presentation. "Consider an anomaly detection system that X" becomes "An anomaly detection system that X" or reframe as a concrete scenario.
 
+**Detection ownership (GH-40):** not in Prompt 4 — a closed set of imperatives, which is what regex is for. The set was incomplete until GH-40: only `Consider` was listed, so `Imagine`, `Picture`, `Suppose` and `Take the case of` went unflagged.
+
 ## Category 12: Correlative Conjunctions (Model Balancing Claims)
 
 The model uses "not only X but (also) Y" to present a balanced pair of properties.
@@ -230,6 +236,8 @@ The model uses "not only X but (also) Y" to present a balanced pair of propertie
 **Detection cue:** "not only ... but (also)" or "not just ... but (also)".
 
 **Fix:** Use "and" ("artifacts and the metadata"), two sentences, or restructure to lead with the surprising element.
+
+**Detection ownership (GH-40):** not in Prompt 4 — two fixed correlative pairs, fully lexical. `not only ... but` was listed and `not just ... but` was not; GH-40 added it.
 
 ## Category 13: Enumeration Announcement (Model Counting Before Listing)
 
