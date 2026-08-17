@@ -179,7 +179,7 @@ BANNED_WORDS=(
   "concrete"
   "distinction"
   "cleanly" "neatly"
-  "sharp" "sharpen"
+  "sharp" "sharpen" "sharpens"
   "underpins" "underpinning"
   "dovetails"
   "illuminates" "illuminating"
