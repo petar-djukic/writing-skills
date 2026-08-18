@@ -120,6 +120,29 @@ def main():
               raises(_refdb.DatabaseFormatError, _refdb.save_db,
                      write(tmp, "unreadable.yaml", "bibliography:\n- id: x\n"), ENTRIES))
 
+        # --- the written file is already in yq's normal form ---------------
+        # yq is what the operator edits the database with, so yq decides the
+        # format. The disagreement is nested sequences, so the fixture needs
+        # one, and it needs a non-ASCII name: yq must not escape what PyYAML
+        # wrote as UTF-8.
+        yq = shutil.which("yq")
+        if yq:
+            path = os.path.join(tmp, "normal.yaml")
+            _refdb.save_db(path, [{"id": "martin2003", "type": "book",
+                                   "author": [{"family": "Mart\u00edn", "given": "R."}],
+                                   "title": "Agile Software Development"}])
+            written = open(path).read()
+            proc = subprocess.run([yq, ".", path], capture_output=True, text=True)
+            check("the written file is already in yq's normal form",
+                  proc.returncode == 0 and proc.stdout == written,
+                  "rc=%d, yq would rewrite it" % proc.returncode)
+            check("nested sequences are indented under their key",
+                  "\n    - family: Mart\u00edn" in written, repr(written[:200]))
+            check("normalizing left the entry readable",
+                  _refdb.load_db(path)[0]["author"][0]["family"] == "Mart\u00edn")
+        else:
+            print("  skip  yq normal form (yq not installed)")
+
         # --- end to end, the reported reproduction -------------------------
         arxiv = os.path.join(HERE, "arxiv.py")
         if os.path.exists(arxiv):
