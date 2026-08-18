@@ -36,6 +36,9 @@ reformat of someone's bibliography.
 """
 
 import os
+import shutil
+import subprocess
+import sys
 
 try:
     import yaml
@@ -133,3 +136,37 @@ def save_db(path, entries, force=False):
     os.makedirs(parent, exist_ok=True)
     with open(path, "w") as f:
         yaml.safe_dump(payload, f, sort_keys=False, allow_unicode=True, width=100)
+    normalize(path)
+
+
+def normalize(path):
+    """Rewrite path in yq's normal form.
+
+    PyYAML and yq disagree about sequence indentation: PyYAML writes a sequence
+    flush with its key, yq indents it. The difference is presentational — the
+    parsed data is identical either way — but a database written by one and
+    edited by the other reformats end to end, and on a thirty-thousand-line
+    bibliography that buries the real change under tens of thousands of lines
+    of noise.
+
+    So yq decides the format. Normalizing after the write, rather than teaching
+    PyYAML to match, keeps one definition of the format instead of a second
+    implementation that drifts the moment either tool changes a default.
+
+    Without yq the database is still written and still correct, only in the
+    other style. That is worth a warning rather than a failure: the file is
+    usable, but the next yq edit will reformat it.
+    """
+    if shutil.which("yq") is None:
+        print(
+            "update-references: yq not found, so %s is written in PyYAML's "
+            "style rather than yq's normal form. It is valid either way; the "
+            "next yq edit will reformat it whole." % path,
+            file=sys.stderr)
+        return
+    result = subprocess.run(["yq", "-i", ".", path], capture_output=True, text=True)
+    if result.returncode != 0:
+        # Re-running yq on the path it just wrote should not fail. If it does,
+        # say so rather than leaving the caller to discover a mangled file.
+        print("update-references: yq could not normalize %s: %s"
+              % (path, result.stderr.strip()), file=sys.stderr)

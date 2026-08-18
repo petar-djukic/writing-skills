@@ -85,6 +85,14 @@ you already maintain does not reformat it. Any other shape is refused rather
 than read as an empty database, and no command will write an empty database over
 a file that had entries.
 
+Every write goes out in `yq`'s normal form: the skill runs `yq -i '.'` over the
+file after serializing it. PyYAML and yq indent nested sequences differently,
+and on a bibliography of a few hundred entries that disagreement turns any
+hand-edit made with yq into a diff the length of the file. One tool decides the
+format, and it is the one the operator edits with. Without `yq` on PATH the
+database is still written and still valid, in PyYAML's style, and the skill says
+so on stderr — the next yq edit will reformat it whole.
+
 An entry looks like:
 
 ```yaml
@@ -312,6 +320,8 @@ The pixi environment (see "Running the scripts") supplies PyYAML (required),
 math), and `pypdf` (the plain-text fallback). It is provisioned by
 `ensure-env.sh`; no `pip install` is needed. If the conversion libraries were
 somehow absent, fetch still downloads the PDF and just skips the conversion.
+`yq` (the Go implementation, `brew install yq`) normalizes the database on
+write; it is optional, and its absence costs formatting, not correctness.
 Everything else is Python stdlib plus the arXiv public API — no key needed. Be
 a good citizen: the script already retries with backoff; don't hammer the API
 with huge `--max` values in a tight loop.
