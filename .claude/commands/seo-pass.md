@@ -95,10 +95,13 @@ For each gap, propose a specific, voice-safe edit. Show before/after for each. O
 
 ### 5b. Off-Page Audit (backlinks)
 
-On-page tuning has a measured ceiling. In the 2026-08-19 SerpAPI sweep, the one
-HN-submitted article ranked #5 for its topic query while a near-exact title match with
-no backlinks ranked nowhere in the top 9. Links are the ranking factor the page itself
-cannot supply, so audit them alongside the on-page levers:
+On-page tuning has a measured ceiling, and so do links alone. The 2026-08-19 sweeps:
+two articles carried identical 1-point HN backlinks, yet only the one whose title
+verbatim-matches an otherwise EMPTY phrase-space ranks (#4/#5); the other (vendor-owned
+head query, no matching problem phrase) ranks nowhere, even for ownerless queries.
+Read the evidence as: an uncontested, title-matched query does the ranking; links tip
+close calls and cost little, so audit them alongside the on-page levers — but a crowded
+query space is not fixable from this table:
 
 | Check | How |
 |---|---|
