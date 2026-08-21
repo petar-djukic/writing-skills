@@ -237,7 +237,20 @@ Field semantics for consumers:
 - **filter-tells** — builds a baseline profile from the samples (metrics reported as
   distances from it, not only against fixed thresholds) and injects
   topically-nearest exemplar passages into rewrite and overshoot prompts as
-  voice anchors.
+  voice anchors. With `idiolect.yaml` present, its structural pass calibrates
+  to the author baseline: native constructions flag only above the author
+  ceiling, never on sight.
+- **inject-vernacular** — the terminal, non-generative stage: applies
+  `idiolect.yaml`'s operator bank (substitution/restoration only, nothing
+  samples) at essay targets, keeps an edit log for marker-survival analysis,
+  and refuses to run without the bank. Accepts a voice-critic report's
+  unhedged-prediction flags to gate the i-think RESTORE direction.
+- **voice-critic** — cold, read-only gatekeeper whose rubric is
+  `voice-constitution.md` and whose marker rates come from `idiolect.yaml`:
+  five per-dimension verdicts with flagged spans (stance, ToM device,
+  disproportion via span locks, computed marker profile, the L0–L5 snark
+  audit), plus the unhedged-prediction work list inject-vernacular consumes.
+  Never edits.
 - **match-outline** — accepts the manifest as a curated exemplar source for
   whole-document structural rewriting, blueprint synthesis, and comparison.
 - **match-structure** — provides the quantitative metrics, corpus aggregation,

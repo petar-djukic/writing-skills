@@ -71,6 +71,21 @@ error, no silent fallback). Without a judge, judged dimensions report
 `UNJUDGED` with their screen evidence, and the author gate adjudicates —
 which is the normal offline mode, not a degraded one.
 
+## The unhedged-prediction work list (for inject-vernacular)
+
+Beside the five verdict dimensions, a judged report carries
+`unhedged_predictions`: sentences that state a claim about a mind —
+beliefs, motives, future behaviour — with no hedge and no receipt,
+identified by the judge and then receipt-filtered mechanically (a
+sentence carrying a number or citation is dropped; the bank never hedges
+a receipted claim). Each entry has the paragraph index, line range, and
+exact quote. It is a work list, not a verdict: feed the report to
+`inject_vernacular.py --critic-flags report.json` and its i-think
+RESTORE operator applies the hedge deterministically at those spans.
+Without a judge the list is empty — the offline mode. The read-only
+contract holds: the critic names the spans, the terminal stage does the
+writing.
+
 ## Scope boundary with filter-tells
 
 - **filter-tells**: machine tells — AI lexicon, structural patterns, CoT

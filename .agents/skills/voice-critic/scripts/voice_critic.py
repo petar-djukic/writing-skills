@@ -148,6 +148,17 @@ class OllamaJudge:
             "list [{\"quote\": exact text, \"level\": int, \"target\": "
             "category}]; [] if none.\n\nPARAGRAPH:\n" + paragraph)
 
+    def unhedged(self, paragraph):
+        """-> [{"quote": str}] — unhedged predictions for the i-think
+        RESTORE operator (GH-64)."""
+        return self._ask(
+            "Identify sentences in this paragraph that state a prediction "
+            "or claim about a mind — a person's or an agent's beliefs, "
+            "motives, or future behaviour — with no hedge (no 'I think', "
+            "'maybe', 'probably') and no evidence in the sentence. Return "
+            "a JSON list [{\"quote\": the exact sentence}]; [] if none."
+            "\n\nPARAGRAPH:\n" + paragraph)
+
 
 # --- the critic --------------------------------------------------------------
 
@@ -343,11 +354,38 @@ class Critic:
                 "marker-profile": self.dim_marker_profile(),
                 "snark-audit": self.dim_snark(),
             },
+            "unhedged_predictions": self.unhedged_predictions(),
         }
         report["verdict"] = (
             "FAIL" if any(d["verdict"] == "FAIL"
                           for d in report["dimensions"].values()) else "PASS")
         return report
+
+    # Bank rule: never hedge a claim carrying a number or citation, so a
+    # judge-identified prediction in such a sentence is filtered out here
+    # mechanically — narrower than _RECEIPT, which also accepts quoted
+    # material as snark evidence.
+    _HEDGE_RECEIPT = re.compile(r"\d|\[@")
+
+    def unhedged_predictions(self):
+        """Unhedged-prediction flags for inject-vernacular's i-think
+        RESTORE (GH-64): judge-identified sentences, receipt-filtered
+        mechanically. Not a verdict dimension — a work list for the
+        operator, empty without a judge (the offline mode)."""
+        judge_fn = getattr(self.judge, "unhedged", None) if self.judge else None
+        if judge_fn is None:
+            return []
+        out = []
+        for i, p in enumerate(self.paras):
+            for inst in judge_fn(p.text):
+                quote = inst.get("quote", "")
+                if not quote or quote not in p.text:
+                    continue
+                if self._HEDGE_RECEIPT.search(quote):
+                    continue
+                out.append({"paragraph": i, "start_line": p.start_line,
+                            "end_line": p.end_line, "quote": quote})
+        return out
 
 
 def render(report):
@@ -359,6 +397,13 @@ def render(report):
                    if "start_line" in s else "?")
             q = (s.get("quote") or "")[:60]
             lines.append(f"    {loc:<12} {q}  [{s.get('note', '')}]")
+    flags = report.get("unhedged_predictions", [])
+    if flags:
+        lines.append(f"  unhedged predictions ({len(flags)}) — feed to "
+                     "inject-vernacular --critic-flags:")
+        for s in flags:
+            lines.append(f"    L{s['start_line']}-{s['end_line']}   "
+                         f"{s['quote'][:60]}")
     return "\n".join(lines)
 
 

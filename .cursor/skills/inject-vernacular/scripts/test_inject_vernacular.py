@@ -330,6 +330,66 @@ def test_report_marks_retained_and_gate_read():
     print("  report_marks_retained_and_gate_read: ok")
 
 
+def test_i_think_restore_with_critic_flags():
+    text = (FILLER +
+            "The reviewer wants the section gone entirely. "
+            "Claude wants it kept as an aside. "
+            "The build passed 14 of 15 checks on the second try.\n")
+    flags = [
+        {"paragraph": 0, "quote": "The reviewer wants the section gone"},
+        {"paragraph": 0, "quote": "Claude wants it kept"},
+        {"paragraph": 0, "quote": "The build passed 14 of 15 checks"},
+    ]
+    with tempfile.TemporaryDirectory() as tmp:
+        path = make_repo(tmp, text)
+        doc, ed, _ = iv.run(path, critic_flags=flags)
+        out = doc.text()
+        assert "I think the reviewer wants the section gone entirely." in out
+        assert "I think Claude" not in out and "I think claude" not in out, \
+            "proper-noun first word must be skipped, not lowercased"
+        assert "Claude wants it kept as an aside." in out
+        assert "The build passed 14 of 15 checks" in out, \
+            "receipted claim never hedged"
+        assert "I think the build" not in out.lower() or \
+            "I think the build" not in out
+        restore = [e for e in ed.edits if e["operator"] == "i-think"]
+        assert len(restore) == 1 and "critic" in restore[0]["note"]
+        # Rerun on the output with the same flags: the flagged sentence now
+        # carries the hedge, so the guard skips it — no further edits.
+        doc.save()
+        doc2, ed2, _ = iv.run(path, critic_flags=flags)
+        assert not [e for e in ed2.edits if e["operator"] == "i-think"], \
+            "restore must be idempotent under the same flags"
+    print("  i_think_restore_with_critic_flags: ok")
+
+
+def test_i_think_restore_never_past_target():
+    text = (FILLER +
+            "The reviewer wants the section gone entirely. "
+            "The operators want the pipeline left alone tonight.\n")
+    flags = [
+        {"paragraph": 0, "quote": "The reviewer wants the section gone"},
+        {"paragraph": 0, "quote": "The operators want the pipeline"},
+    ]
+    with tempfile.TemporaryDirectory() as tmp:
+        # ~70 words at target 15/1000 -> budget rounds to 1: two valid
+        # flags, one application.
+        path = make_repo(tmp, text, i_think=15.0)
+        doc, ed, _ = iv.run(path, critic_flags=flags)
+        assert doc.text().count("I think") == 1, doc.text()
+    print("  i_think_restore_never_past_target: ok")
+
+
+def test_i_think_no_flags_unchanged():
+    text = FILLER + "The reviewer wants the section gone entirely.\n"
+    with tempfile.TemporaryDirectory() as tmp:
+        path = make_repo(tmp, text)
+        doc, ed, _ = iv.run(path)
+        assert "I think" not in doc.text(), \
+            "no critic flags -> RESTORE never fires"
+    print("  i_think_no_flags_unchanged: ok")
+
+
 def main():
     test_refuses_without_voice_dir()
     test_perhaps_becomes_maybe()
@@ -347,6 +407,9 @@ def main():
     test_edit_log_covers_diff()
     test_verifier_judges_never_writes()
     test_report_marks_retained_and_gate_read()
+    test_i_think_restore_with_critic_flags()
+    test_i_think_restore_never_past_target()
+    test_i_think_no_flags_unchanged()
     print("test_inject_vernacular: all assertions passed")
 
 
