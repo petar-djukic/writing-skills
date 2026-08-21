@@ -56,7 +56,9 @@ SHARED = os.path.normpath(os.path.join(SK, "..", "..", "..", "scripts"))
 if SHARED not in sys.path:
     sys.path.insert(0, SHARED)
 
-TOLERANCE = 0.30
+from idiolect import (TOLERANCE, compile_marker, discover_voice_dir,  # noqa: E402
+                      load_markers)
+
 DENSITY_CAPS = {"how-to": 1.0, "essay": 2.0, "polemic": 3.0}
 SAFE_TARGETS = {"artifact", "institution", "category", "dead", "past-self"}
 DEFAULT_ENDPOINT = os.environ.get("OLLAMA_ENDPOINT", "http://localhost:11434")
@@ -85,41 +87,7 @@ _TOM_PARTS = {
 _FIRST_PERSON = re.compile(r"\bI\b|\bmy\b", re.I)
 
 
-# --- discovery (same walk as inject-vernacular / voice_anchors) --------------
-
-def discover_voice_dir(start_path):
-    d = os.path.abspath(start_path)
-    if os.path.isfile(d):
-        d = os.path.dirname(d)
-    while True:
-        cand = os.path.join(d, "writing-voice")
-        if os.path.isdir(cand):
-            return cand
-        parent = os.path.dirname(d)
-        if parent == d:
-            return None
-        d = parent
-
-
-def load_markers(voice_dir):
-    import yaml
-    path = os.path.join(voice_dir, "idiolect.yaml")
-    if not os.path.exists(path):
-        return None
-    with open(path, encoding="utf-8") as f:
-        data = yaml.safe_load(f)
-    return {m["id"]: m for m in data.get("markers", [])}
-
-
-def compile_marker(marker):
-    spec = marker.get("regex", "")
-    base, _, note = spec.partition(" (")
-    flags = re.IGNORECASE if "case-insensitive" in note else 0
-    try:
-        return re.compile(base, flags)
-    except re.error:
-        return None
-
+# Discovery and bank access are shared (scripts/idiolect.py), imported above.
 
 # --- judges ------------------------------------------------------------------
 

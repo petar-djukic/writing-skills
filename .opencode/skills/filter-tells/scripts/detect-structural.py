@@ -102,61 +102,12 @@ THRESHOLDS = {
 # antithesis 15 -> 1 reduction: some of the 15 were the author, and a rewrite
 # pass steered by an uncalibrated flag eliminated instead of reducing toward
 # the target. Ceilings are target * (1 + tolerance); both numbers come from
-# the idiolect file, never hand-written here.
+# the idiolect file, never hand-written here. Discovery, bank parsing, and
+# the ceiling arithmetic are shared with the other voice skills
+# (scripts/idiolect.py, GH-63).
 
-CALIBRATION_TOLERANCE = 0.30  # idiolect essay_target_rule: +/-30%
-
-
-def discover_voice_dir(start_path):
-    """Walk up from a file (or dir) for writing-voice/. None if absent."""
-    os = __import__("os")
-    d = os.path.abspath(str(start_path))
-    if os.path.isfile(d):
-        d = os.path.dirname(d)
-    while True:
-        cand = os.path.join(d, "writing-voice")
-        if os.path.isdir(cand):
-            return cand
-        parent = os.path.dirname(d)
-        if parent == d:
-            return None
-        d = parent
-
-
-def load_calibration(voice_dir):
-    """Author ceilings from idiolect.yaml, or None.
-
-    Only markers present in the file contribute — the idiolect's marker
-    list drives the calibrated set. Mapping: colon-verdict -> colon
-    density, em-dash -> dash density, antithesis-not -> the antithesis
-    detector family. A missing or unparseable file means no calibration,
-    which is the unchanged flat-threshold behaviour, not an error.
-    """
-    os = __import__("os")
-    if not voice_dir:
-        return None
-    path = os.path.join(voice_dir, "idiolect.yaml")
-    if not os.path.exists(path):
-        return None
-    try:
-        import yaml
-        with open(path, encoding="utf-8") as f:
-            markers = {m["id"]: m for m in
-                       (yaml.safe_load(f) or {}).get("markers", [])}
-    except Exception:
-        return None
-    cal = {"source": path}
-    for mid, key in (("colon-verdict", "colon_max_per_500"),
-                     ("em-dash", "dash_max_per_500")):
-        t = markers.get(mid, {}).get("essay_target")
-        if isinstance(t, (int, float)):
-            # idiolect rates are per 1000 words; densities here are per 500.
-            cal[key] = t * (1 + CALIBRATION_TOLERANCE) / 2.0
-    t = markers.get("antithesis-not", {}).get("essay_target")
-    if isinstance(t, (int, float)):
-        cal["antithesis_target_per_1000"] = t
-        cal["antithesis_max_per_1000"] = t * (1 + CALIBRATION_TOLERANCE)
-    return cal if len(cal) > 1 else None
+from idiolect import (TOLERANCE as CALIBRATION_TOLERANCE,  # noqa: E402
+                      discover_voice_dir, load_calibration)
 
 
 # Issue types that indicate the overshoot direction (Goodharted, over-polished
