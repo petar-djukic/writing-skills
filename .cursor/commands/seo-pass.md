@@ -87,6 +87,45 @@ For each gap, propose a specific, voice-safe edit. Show before/after for each. O
 4. **Internal links** (free, compounds over time). Suggest 1-3 specific places to link to other published articles using descriptive anchor text. Verify the linked articles exist and have URLs.
 5. **Image alt text** (small but free). For any image without alt text, propose descriptive alt text that includes the article's main searchable terms.
 6. **Tag updates** (small). If the YAML `tags` field is generic, propose 2-3 more specific tags.
+7. **Query-shaped H2 or closing FAQ block** (when honest). If the article genuinely
+   answers 2-4 long-tail questions ("why does my coding agent forget context between
+   sessions"), propose either phrasing one H2 as the question or adding a short closing
+   FAQ — question as bold text or H3, answer in 2-3 sentences of the article's own
+   prose. This targets People-Also-Ask retrieval and LLM answer-engine citation; the
+   explainer-essay habit of glossing every term at first use is already the shape
+   answer engines quote, and this makes the match explicit. Only questions the article
+   actually answers: a question added for search that the body doesn't answer is a
+   doorway pattern and gets dropped at the voice check.
+
+### 5b. Off-Page Audit (backlinks)
+
+On-page tuning has a measured ceiling, and so do links alone. The 2026-08-19 sweeps:
+two articles carried identical 1-point HN backlinks, yet only the one whose title
+verbatim-matches an otherwise EMPTY phrase-space ranks (#4/#5); the other (vendor-owned
+head query, no matching problem phrase) ranks nowhere, even for ownerless queries.
+Read the evidence as: an uncontested, title-matched query does the ranking; links tip
+close calls and cost little, so audit them alongside the on-page levers — but a crowded
+query space is not fixable from this table:
+
+| Check | How |
+|---|---|
+| HN submitted? | `hn:` field in the article's promo-ledger entry |
+| Linked from controlled repos? | grep the article URL across writing-skills, coding-skills, sdd-hello-world, the book repos, and the GitHub profile README |
+| Anchor text | existing links should use descriptive anchors ("how to use GitHub as long-term memory"), not "my article" or a bare URL |
+
+Propose, where topically honest:
+
+- **HN submission** if the article is HN-worthy and unsubmitted. Clean URL, no
+  tracking params; route it through /promote, which owns HN cadence and conventions.
+- **README placements**: a repo whose tooling the article documents links to it with a
+  keyworded anchor (tagged `utm_source=github` per the promote Link tagging
+  convention). These are real links from crawled pages under our control — the
+  legitimate version of link building.
+
+Out of bounds, always: purchased links, link exchanges, comment or forum link drops,
+private blog networks. Placements happen only in venues we control or coverage we earn
+(HN, peer citations). A link scheme is the one SEO move Google still reliably
+punishes, and the penalty lands sitewide.
 
 ### 6. Voice Check
 
@@ -129,6 +168,24 @@ After applying, summarize:
 - Which queries the article is now positioned to rank for
 - What to monitor: check Substack post-level stats in 2-4 weeks for google.com referrals on this article
 
+### 9. Rank Measurement
+
+Edits without a scoreboard never get evaluated. Where the writing repository carries
+`metrics/serp-rank.py` (the substack repo does), register the article's 2-3 target
+queries and record a baseline at the pass:
+
+```bash
+python3 metrics/serp-rank.py add --article <slug> --query "<target query>" --query "<target query>"
+python3 metrics/serp-rank.py sweep --article <slug>
+python3 metrics/serp-rank.py report
+```
+
+Re-sweep at +30 days (any later pass, or the monthly metrics session, can run a full
+`sweep` — same-day duplicates are skipped automatically). The key comes from
+`SERPAPI_KEY` or `--api-key`; it lives with the job-search skill in the journal repo
+and is never copied into a writing repository. Quota is a shared 250 searches/month
+pool; a sweep costs one search per query, so register only queries worth tracking.
+
 ## What NOT to Do
 
 - **Do not rewrite the title.** Titles are voice-load-bearing. Petar's literary titles are intentional.
@@ -137,6 +194,7 @@ After applying, summarize:
 - **Do not propose changes for articles where the topic isn't search-friendly.** Some articles serve regulation, not readership — see [project_substack_growth.md](.memory/project_substack_growth.md) for the goal split. Macro/connection-making articles ("The Strategy That Arrived After the Layoffs," "The Squeeze") may not have search-friendly content. If the audit finds nothing search-relevant, say so and stop.
 - **Do not change article URLs.** Substack URLs are permanent after publication. Do not propose edits that depend on changing the slug.
 - **Do not violate the voice rules.** When in doubt, drop the edit.
+- **Do not build links anywhere you don't control or didn't earn.** No purchased links, exchanges, comment drops, or PBNs — see step 5b. If a proposed placement needs a justification longer than "this repo's tooling is what the article documents," drop it.
 
 ## Reference Files
 
@@ -154,6 +212,8 @@ A successful SEO pass:
 - [ ] No voice rules violated
 - [ ] User confirmed each applied edit
 - [ ] Report identifies target queries and monitoring plan
+- [ ] Off-page audit ran (HN status + controlled-repo links checked, step 5b)
+- [ ] Baseline positions recorded in metrics/search-rankings.yaml (step 9, where the repo carries the tracker)
 
 ## Example Workflow
 

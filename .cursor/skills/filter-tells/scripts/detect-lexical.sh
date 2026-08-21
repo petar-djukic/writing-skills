@@ -258,6 +258,18 @@ AI_PHRASES=(
   "unlock"
   "one might argue"
   "some might say"
+  # trend-narration family (autogenic-systems GH-442): announcing that
+  # agreement or momentum is forming instead of stating the fact that shows
+  # it. Fix: open on the concrete fact ("TM Forum places agents at every
+  # management layer"), not the weather report about the field.
+  "consensus is building"
+  "consensus is growing"
+  "consensus is emerging"
+  "an emerging consensus"
+  "growing consensus"
+  "a growing body of"
+  "gaining traction"
+  "gaining momentum"
   "the key takeaway"
   "there are [0-9]+ main"
   "there are several"

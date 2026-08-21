@@ -8,9 +8,11 @@ description: >-
   Parameterized blueprint and anchor-tag selection, inter-step Pangram
   measurement, consolidated five-category writing-quality report. Venue mode
   (--venue <name>) resolves every choice from a writing-voice/venues/
-  profile instead of asking. Triggers: humanize, humanize article, make it
-  human, full rewrite pipeline, rewrite for pangram, three-step rewrite,
-  humanize for venue.
+  profile instead of asking. Carries the pipeline's ordering contract:
+  locked spans respected by every stage, inject-vernacular terminal, and
+  after the terminal stage models read but never write. Triggers: humanize,
+  humanize article, make it human, full rewrite pipeline, rewrite for
+  pangram, three-step rewrite, humanize for venue.
 ---
 
 # Humanize (three-step pipeline)
@@ -36,6 +38,47 @@ Mixed (76.2% AI-assisted, mean window 0.576). The ablation rows that showed
 match-voice alone gate-rejected at distance 0.0 were measured against the
 broken gate (GH-318) and are unverified — see the calibration note at the
 end.
+
+## Stage order and the read-only-after-terminal invariant (GH-57)
+
+The full pipeline, in order:
+
+```
+draft (with declared/locked spans)
+  -> humanize stages, lock-respecting (structural step, filter-tells,
+     match-voice)
+  -> inject-vernacular (terminal — the last stage that writes)
+  -> read-only zone (Pangram, voice-critic, cold reads, author gate)
+```
+
+**After the terminal stage, models may read but never write.** The
+evidence behind the rule is the Strategy Theatre provenance logs: every
+generative pass regresses text toward the model's distribution center —
+match-voice injected bold lead-ins despite instructions, tighten-style
+invented a sentence, and a step-6 rerun rewrote hand-cleaned prose 8/8
+times until the entailment gate rejected all of it. So the ordering is a
+contract, not a preference. A defect found after the terminal stage is
+fixed by the author's hand, or by re-running from a pre-terminal
+checkpoint — never by an additional model repair on the final text, which
+would put a generative pass after the stage that exists to be last.
+
+Three rules the order encodes:
+
+1. **Locks travel the whole pipeline.** Spans marked `<!-- lock -->` …
+   `<!-- /lock -->` at drafting are excised by the shared drivers before
+   any model call and spliced back byte-identical after, in every stage —
+   protection is mechanical, enforced in `prose_document.py` /
+   `md_paragraphs.py`, never by prompts.
+2. **inject-vernacular is terminal because it is deterministic.** It
+   applies the idiolect.yaml operator bank by substitution and
+   restoration only; nothing samples, so it cannot regress the text
+   toward a model's center — which qualifies it to run after every stage
+   that can.
+3. **Snark and disproportion are born at drafting and locked.** The
+   terminal stage never inserts them: mechanical joke insertion is
+   prohibited by design. voice-critic audits them in the read-only zone
+   (L0–L5 scale, receipt-first, density caps) and flags to the author
+   gate; it never edits.
 
 ## Why no anchors for match-voice
 
@@ -160,6 +203,9 @@ tighten.py command line, or configure them in the venue profile.
 ### Phase 1: Structural step
 
 Run the step chosen in Phase 0. With `skip`, proceed directly to Phase 2.
+Locked spans pass through untouched — both tools extract paragraphs through
+the shared drivers, which excise `<!-- lock -->` spans before the model
+sees the text and splice them back byte-identical.
 
 **match-outline** — rewrite the whole article via `match_outline.py
 --rewrite` with the user's chosen blueprint and anchor-tags:
@@ -210,7 +256,13 @@ Record as the "after step 1" column.
 ### Phase 2: filter-tells semantic cleanup
 
 Run the lexical and structural scans on the step-1 output (or the original
-article when the structural step was skipped).
+article when the structural step was skipped). Block-locked regions never
+enter the scans' prose view, and semantic edits are applied through the
+lock-respecting drivers — a locked antithesis or authored snark span is
+not filter-tells' to collapse. With `writing-voice/idiolect.yaml`
+discoverable, the structural scan calibrates to the author baseline:
+native constructions flag only above the author ceiling, and calibrated
+flags say reduce toward the target, not to zero.
 
 ```bash
 bash <filter-tells>/scripts/detect-lexical.sh <step1-output.md>
@@ -258,7 +310,10 @@ Record as the "after-tells" column.
 
 ### Phase 3: match-voice --no-anchors
 
-Run the paragraph-level diction rewrite with no voice anchors.
+Run the paragraph-level diction rewrite with no voice anchors. Inline
+locks reach the rewriter as opaque `[[LOCK-n]]` anchor tokens; a rewrite
+that drops one is refused by the drivers and the original paragraph is
+kept — the locked bytes cannot be lost to this phase.
 
 ```bash
 $RUN <match-voice>/scripts/drive.py \
@@ -320,6 +375,30 @@ for i in 01 02 03 04; do
     --out pass$i.md
   PREV=pass$i.md   # read mean window from pass$i.generation.yaml; stop on upturn
 done
+```
+
+### Phase 3c: inject-vernacular (terminal)
+
+When the repository carries `writing-voice/idiolect.yaml`, run the
+terminal vernacular stage on the Phase 3 (or 3b floor-pass) output:
+
+```bash
+$RUN <inject-vernacular>/scripts/inject_vernacular.py <output.md>
+```
+
+Deterministic operators only — it restores the author's markers toward
+the bank's essay targets and writes an edit log for the survival
+analysis; nothing samples. This is the last stage that writes. Everything
+after this line — the Phase 4 report, any final Pangram scan, a
+voice-critic run, cold reads, the author gate — reads the text and never
+modifies it. A defect found from here on means the author's hand or a
+re-run from a pre-terminal checkpoint. No idiolect.yaml → skip this
+phase; the invariant then attaches to the end of Phase 3.
+
+For the gate checklist, run the read-only critic on the final text:
+
+```bash
+$RUN <voice-critic>/scripts/voice_critic.py <output.md> --form essay
 ```
 
 ### Phase 4: Consolidated report

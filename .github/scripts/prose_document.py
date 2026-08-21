@@ -15,6 +15,17 @@ Markdown backend uses md_paragraphs.py for extraction and line splicing
 for replacement. YAML backend uses ruamel.yaml for round-trip preservation
 of comments, key order, and scalar style.
 
+Span locks (GH-57): block locks (`<!-- lock -->` alone on a line) never
+become paragraphs at all — md_paragraphs classifies the region ``locked``
+and line splicing cannot touch it. Inline locks inside a paragraph or YAML
+prose scalar are excised on extraction: the ``text`` handed to callers
+carries an opaque ``[[LOCK-n]]`` anchor token, the locked bytes stay in a
+per-paragraph manifest, and replace() splices them back byte-identical.
+Replacement text that drops, duplicates, or invents an anchor raises
+span_locks.LockError — refused, not repaired. The aligned view is the
+file's own lines and may show locked text; the model-facing surface is
+``paragraphs``/``replace``, which never does.
+
 CLI:
   prose_document.py <file> [--json]        list paragraphs
   prose_document.py <file> --replace N     read new text from stdin, replace paragraph N
@@ -156,6 +167,12 @@ class ProseDocument:
         """
         raise NotImplementedError
 
+    def lock_report(self):
+        """Locked-span audit: {"block_ranges": [(start, end), ...],
+        "inline": [{paragraph, start_line, end_line, tokens}, ...]}.
+        """
+        raise NotImplementedError
+
 
 def prose_view_aligned(path):
     """Aligned prose view of any supported file, as a list of lines.
@@ -181,15 +198,22 @@ class MarkdownDocument(ProseDocument):
 
     def _parse(self):
         import md_paragraphs
+        import span_locks
         self._md_result = md_paragraphs.parse(self._content_from_lines())
         self._paras = []
+        self._manifests = []
+        next_token = 1
         for start, end, text in self._md_result.paragraphs:
+            clean, manifest = span_locks.excise(
+                text, start=next_token, base_line=start)
+            next_token += len(manifest)
             ctx = self._heading_before(start, self._md_result.coverage)
             self._paras.append(Paragraph(
-                index=len(self._paras), text=text,
+                index=len(self._paras), text=clean,
                 start_line=start, end_line=end,
                 context=ctx,
             ))
+            self._manifests.append(manifest)
 
     def _heading_before(self, line, coverage):
         for ln in range(line - 1, 0, -1):
@@ -205,12 +229,13 @@ class MarkdownDocument(ProseDocument):
         return list(self._paras)
 
     def replace(self, index, new_text):
+        import span_locks
+        manifest = self._manifests[index]
+        if manifest:
+            new_text = span_locks.splice(new_text, manifest)
         p = self._paras[index]
         new_lines = new_text.split("\n")
-        old_count = p.end_line - p.start_line + 1
-        new_count = len(new_lines)
         self._lines[p.start_line - 1:p.end_line] = new_lines
-        delta = new_count - old_count
         self._parse()
 
     def save(self):
@@ -233,6 +258,20 @@ class MarkdownDocument(ProseDocument):
 
     def aligned_lines(self):
         return list(self._lines)
+
+    def lock_report(self):
+        cov = self._md_result.coverage
+        ranges, cur = [], None
+        for ln in sorted(k for k, v in cov.items() if v == "locked"):
+            if cur is not None and ln == cur[1] + 1:
+                cur[1] = ln
+            else:
+                cur = [ln, ln]
+                ranges.append(cur)
+        inline = [{"paragraph": p.index, "start_line": p.start_line,
+                   "end_line": p.end_line, "tokens": len(m)}
+                  for p, m in zip(self._paras, self._manifests) if m]
+        return {"block_ranges": [tuple(r) for r in ranges], "inline": inline}
 
 
 # ---------------------------------------------------------------------------
@@ -310,7 +349,21 @@ class YamlDocument(ProseDocument):
     def _extract(self):
         self._paras = []
         self._refs = []
+        self._manifests = []
+        self._next_token = 1
         self._walk(self._data, [])
+
+    def _add_paragraph(self, text, start, end, ctx, key_path):
+        import span_locks
+        clean, manifest = span_locks.excise(
+            text, start=self._next_token, base_line=start)
+        self._next_token += len(manifest)
+        self._paras.append(Paragraph(
+            index=len(self._paras), text=clean,
+            start_line=start, end_line=end,
+            context=ctx, key_path=key_path,
+        ))
+        self._manifests.append(manifest)
 
     def _walk(self, node, path):
         if isinstance(node, dict):
@@ -319,13 +372,8 @@ class YamlDocument(ProseDocument):
                 val = node[key]
                 if _is_prose(val):
                     start, end = self._guess_lines(node, key)
-                    ctx = ".".join(child_path)
-                    text = val.rstrip("\n")
-                    self._paras.append(Paragraph(
-                        index=len(self._paras), text=text,
-                        start_line=start, end_line=end,
-                        context=ctx, key_path=child_path,
-                    ))
+                    self._add_paragraph(val.rstrip("\n"), start, end,
+                                        ".".join(child_path), child_path)
                     self._refs.append((node, key))
                 elif isinstance(val, (dict, list)):
                     self._walk(val, child_path)
@@ -334,13 +382,8 @@ class YamlDocument(ProseDocument):
                 child_path = path + [str(i)]
                 if _is_prose(item):
                     start, end = self._guess_lines_seq(node, i)
-                    ctx = ".".join(child_path)
-                    text = item.rstrip("\n")
-                    self._paras.append(Paragraph(
-                        index=len(self._paras), text=text,
-                        start_line=start, end_line=end,
-                        context=ctx, key_path=child_path,
-                    ))
+                    self._add_paragraph(item.rstrip("\n"), start, end,
+                                        ".".join(child_path), child_path)
                     self._refs.append((node, i))
                 elif isinstance(item, (dict, list)):
                     self._walk(item, child_path)
@@ -381,6 +424,10 @@ class YamlDocument(ProseDocument):
         return list(self._paras)
 
     def replace(self, index, new_text):
+        import span_locks
+        manifest = self._manifests[index]
+        if manifest:
+            new_text = span_locks.splice(new_text, manifest)
         node, key = self._refs[index]
         old_val = node[key]
         if isinstance(old_val, str) and old_val.endswith("\n"):
@@ -424,6 +471,12 @@ class YamlDocument(ProseDocument):
     @property
     def raw(self):
         return self._raw
+
+    def lock_report(self):
+        inline = [{"paragraph": p.index, "start_line": p.start_line,
+                   "end_line": p.end_line, "tokens": len(m)}
+                  for p, m in zip(self._paras, self._manifests) if m]
+        return {"block_ranges": [], "inline": inline}
 
     # Block-scalar header: optional "- " item marker, optional "key:", then
     # a literal/folded indicator. The prose lives on the following lines.
