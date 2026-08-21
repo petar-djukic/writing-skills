@@ -10,7 +10,7 @@ surface with `scripts/sync-mirrors.sh`; verify with `--check`.
 
 Codex discovers both from `.agents/skills/`.
 
-Reusable skills (13): audit-references, filter-tells, humanize, inject-vernacular, match-outline, match-structure, match-voice, patent-disclosure, pattern-language, review-chapter, tighten-style, tune-anchors, update-references.
+Reusable skills (14): audit-references, filter-tells, humanize, inject-vernacular, match-outline, match-structure, match-voice, patent-disclosure, pattern-language, review-chapter, tighten-style, tune-anchors, update-references, voice-critic.
 
 Command workflows (3), each carrying its full workflow inline: brainstorm-article, seo-pass, write-article.
 
