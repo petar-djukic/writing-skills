@@ -49,7 +49,7 @@ no edits.
 | right-tag | STRIP the ", right?" tag, keep the sentence. |
 | so-initial | CAP: delete sentence-initial "So" above target; never injected. |
 | ai-connectives | Sentence-initial "However," → "But"; "Moreover,/Furthermore,/Additionally," → "And". |
-| i-think | REDUCE receipts-first (paragraphs carrying a number or citation lose their hedge first). RESTORE needs the voice-critic's unhedged-prediction flags and is not attempted mechanically. |
+| i-think | REDUCE receipts-first (paragraphs carrying a number or citation lose their hedge first). RESTORE below target only at voice-critic unhedged-prediction flags (`--critic-flags report.json`): the flagged sentence gets an "I think" prefix, never past target, never on a sentence carrying a number or citation, and only when the first word is safely lowercasable (a determiner or pronoun — a possible proper noun skips the flag rather than risking "I think claude"). Which claims are unhedged predictions is the critic's judgment; the application stays deterministic over its spans. |
 | maybe | "perhaps" → "maybe" always; excess capped. |
 | sentence-length | SPLIT any sentence over 30 words at the semicolon or the top-level ", and/, but". MERGE is manual and never performed. |
 | probably, be-able-to | RETAIN: structurally no-ops — never injected, never deleted. Listed in the report as intentionally untouched. |

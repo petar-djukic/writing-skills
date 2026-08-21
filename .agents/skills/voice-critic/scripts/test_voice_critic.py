@@ -66,11 +66,14 @@ FILLER = ("The reviewers walked through every section of the build report "
 class StubJudge:
     """Deterministic judge: canned answers, records calls."""
 
-    def __init__(self, stance=None, tom=None, snark_by_para=None):
+    def __init__(self, stance=None, tom=None, snark_by_para=None,
+                 unhedged_by_para=None):
         self._stance = stance or {"verdict": "PASS", "note": "", "quotes": []}
         self._tom = tom or {"verdict": "PASS", "note": "", "quotes": []}
         self._snark = snark_by_para or {}
+        self._unhedged = unhedged_by_para or {}
         self.snark_calls = 0
+        self.unhedged_calls = 0
 
     def stance(self, text):
         return self._stance
@@ -82,6 +85,11 @@ class StubJudge:
         i = self.snark_calls
         self.snark_calls += 1
         return self._snark.get(i, [])
+
+    def unhedged(self, paragraph):
+        i = self.unhedged_calls
+        self.unhedged_calls += 1
+        return self._unhedged.get(i, [])
 
 
 def test_refuses_without_rubric():
@@ -271,6 +279,33 @@ def test_stance_judge_spans_located():
     print("  stance_judge_spans_located: ok")
 
 
+def test_unhedged_predictions():
+    text = (FILLER + "\n\n" +
+            "The reviewer wants the section gone because he hates asides. "
+            "The build passed 14 of 15 checks on the second try.\n")
+    judge = StubJudge(unhedged_by_para={
+        1: [{"quote": "The reviewer wants the section gone because he "
+                      "hates asides."},
+            {"quote": "The build passed 14 of 15 checks on the second try."},
+            {"quote": "A sentence that is not in the paragraph at all."}],
+    })
+    with tempfile.TemporaryDirectory() as tmp:
+        path = make_repo(tmp, text)
+        rep = vc.Critic(path, judge=judge).run()
+        flags = rep["unhedged_predictions"]
+        assert len(flags) == 1, flags
+        assert flags[0]["paragraph"] == 1
+        assert flags[0]["quote"].startswith("The reviewer wants")
+        assert flags[0]["start_line"] > 1
+        # The receipted sentence (14 of 15) and the absent quote are
+        # filtered mechanically; the bank never hedges a receipted claim.
+    with tempfile.TemporaryDirectory() as tmp:
+        path = make_repo(tmp, text)
+        rep = vc.Critic(path).run()
+        assert rep["unhedged_predictions"] == [], "no judge -> empty list"
+    print("  unhedged_predictions: ok")
+
+
 def test_all_five_reported_and_cli():
     text = FILLER + "\nThe verdict is simple: the gate held.\n"
     with tempfile.TemporaryDirectory() as tmp:
@@ -305,6 +340,7 @@ def main():
     test_snark_hard_rules()
     test_snark_density_cap()
     test_stance_judge_spans_located()
+    test_unhedged_predictions()
     test_all_five_reported_and_cli()
     print("test_voice_critic: all assertions passed")
 

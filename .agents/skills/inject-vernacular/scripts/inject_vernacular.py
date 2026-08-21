@@ -114,9 +114,10 @@ class Editor:
     whole diff. The optional judge sees each edit and may DROP it; a
     dropped edit reverts and the engine moves to the next candidate."""
 
-    def __init__(self, texts, judge=None):
+    def __init__(self, texts, judge=None, critic_flags=None):
         self.texts = texts
         self.judge = judge
+        self.critic_flags = critic_flags or []
         self.edits = []
 
     def apply(self, operator, idx, new_text, note=""):
@@ -301,13 +302,65 @@ def op_ai_connectives(ed, marker, rx, words):
 _I_THINK = re.compile(r"\bI think(?: that)?[, ]\s*")
 _RECEIPT = re.compile(r"\d|\[@")
 
+# First words a hedge prefix may safely lowercase. RESTORE turns "The
+# reviewer wants X." into "I think the reviewer wants X.", which needs
+# the original first letter dropped to lowercase — safe for determiners
+# and pronouns, wrong for a proper noun. No POS tagger here, so anything
+# outside this set is skipped rather than risked; a skipped flag is a
+# smaller failure than "I think claude wants X".
+_HEDGEABLE_FIRST_WORDS = {
+    "the", "this", "that", "these", "those", "it", "he", "she", "they",
+    "we", "you", "a", "an", "his", "her", "their", "its", "most", "some",
+    "every", "no", "any", "each", "one", "people", "everyone", "nobody",
+    "there", "what", "when", "if", "once", "nothing", "someone",
+}
+
+
+def _sentence_bounds(text, pos):
+    """Start and end offsets of the sentence containing pos."""
+    start = 0
+    for m in re.finditer(r"[.!?]\s+", text[:pos]):
+        start = m.end()
+    m = re.search(r"[.!?]", text[pos:])
+    end = pos + m.end() if m else len(text)
+    return start, end
+
 
 def op_i_think(ed, marker, rx, words):
-    # RESTORE needs the voice-critic's unhedged-prediction flags — a
-    # judgment call, out of scope for a mechanical stage. REDUCE is
-    # mechanical: hedges on receipted claims (a number or citation in the
-    # same paragraph) go first, per the bank.
+    # RESTORE below target, only at the voice-critic's unhedged-prediction
+    # flags (the bank: prefix "I think" to model-statements the critic
+    # marks; never hedge a claim carrying a number or citation). The
+    # judgment of WHICH claims are unhedged predictions is the critic's;
+    # the application here stays deterministic over its flagged spans.
     count = marker_count(ed.texts, rx)
+    b = _budget(count, words, marker["essay_target"], +1)
+    if b and ed.critic_flags:
+        applied = 0
+        for flag in ed.critic_flags:
+            if applied >= b:
+                break
+            idx, quote = flag.get("paragraph"), flag.get("quote", "")
+            if not isinstance(idx, int) or not 0 <= idx < len(ed.texts):
+                continue
+            text = ed.texts[idx]
+            pos = text.find(quote) if quote else -1
+            if pos < 0:
+                continue
+            start, end = _sentence_bounds(text, pos)
+            sentence = text[start:end]
+            if _I_THINK.search(sentence) or _RECEIPT.search(sentence):
+                continue
+            first = sentence.split()[0] if sentence.split() else ""
+            if first.lower() not in _HEDGEABLE_FIRST_WORDS:
+                continue
+            new = (text[:start] + "I think " + sentence[0].lower()
+                   + sentence[1:] + text[end:])
+            if ed.apply("i-think", idx, new,
+                        note="restore at voice-critic unhedged-prediction flag"):
+                applied += 1
+        return
+    # REDUCE is mechanical: hedges on receipted claims (a number or
+    # citation in the same paragraph) go first, per the bank.
     b = _budget(count, words, marker["essay_target"], -1)
     if not b:
         return
@@ -429,9 +482,11 @@ def ollama_judge(endpoint, model):
 
 # --- driver ------------------------------------------------------------------
 
-def run(path, voice_dir=None, judge=None):
+def run(path, voice_dir=None, judge=None, critic_flags=None):
     """Apply the bank to `path`'s paragraphs. Returns (doc, editor, report).
-    Caller decides whether to save."""
+    Caller decides whether to save. critic_flags: unhedged-prediction
+    entries from a voice-critic report ({paragraph, quote}); they gate the
+    i-think RESTORE direction and nothing else."""
     import prose_document
     voice_dir = voice_dir or discover_voice_dir(path)
     if not voice_dir:
@@ -441,7 +496,7 @@ def run(path, voice_dir=None, judge=None):
     markers = load_bank(voice_dir)
     doc = prose_document.ProseDocument.open(path)
     texts = [p.text for p in doc.paragraphs]
-    ed = Editor(texts, judge=judge)
+    ed = Editor(texts, judge=judge, critic_flags=critic_flags)
     words = word_count(texts)
 
     report = {"file": path, "words": words, "markers": {}}
@@ -489,12 +544,23 @@ def main():
     ap.add_argument("--verify", action="store_true",
                     help="judge each edit with an Ollama model (KEEP/DROP); "
                     "the model never writes")
+    ap.add_argument("--critic-flags", metavar="REPORT_JSON",
+                    help="voice-critic report (or bare list) whose "
+                    "unhedged_predictions gate the i-think RESTORE")
     ap.add_argument("--model", default=DEFAULT_MODEL)
     ap.add_argument("--endpoint", default=DEFAULT_ENDPOINT)
     a = ap.parse_args()
 
+    critic_flags = None
+    if a.critic_flags:
+        with open(a.critic_flags, encoding="utf-8") as f:
+            data = json.load(f)
+        critic_flags = (data if isinstance(data, list)
+                        else data.get("unhedged_predictions", []))
+
     judge = ollama_judge(a.endpoint, a.model) if a.verify else None
-    doc, ed, report = run(a.file, voice_dir=a.voice_dir, judge=judge)
+    doc, ed, report = run(a.file, voice_dir=a.voice_dir, judge=judge,
+                          critic_flags=critic_flags)
 
     log_path = a.edit_log or a.file + ".vernacular.json"
     with open(log_path, "w", encoding="utf-8") as f:
