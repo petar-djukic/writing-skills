@@ -52,55 +52,28 @@ SHARED = os.path.normpath(os.path.join(SK, "..", "..", "..", "scripts"))
 if SHARED not in sys.path:
     sys.path.insert(0, SHARED)
 
-TOLERANCE = 0.30  # essay_target_rule: "+/-30% before an operator fires"
+from idiolect import TOLERANCE, compile_marker, discover_voice_dir  # noqa: E402
+import idiolect  # noqa: E402
+
 SPLIT_WORDS = 30  # sentence-length operator: split threshold from the bank
 DEFAULT_ENDPOINT = os.environ.get("OLLAMA_ENDPOINT", "http://localhost:11434")
 DEFAULT_MODEL = "gemma4:12b"
 
 
 # --- idiolect bank -----------------------------------------------------------
-
-def discover_voice_dir(start_path):
-    """Walk up from the target file for writing-voice/ (same rule as
-    match-structure's voice_anchors.discover)."""
-    d = os.path.abspath(start_path)
-    if os.path.isfile(d):
-        d = os.path.dirname(d)
-    while True:
-        cand = os.path.join(d, "writing-voice")
-        if os.path.isdir(cand):
-            return cand
-        parent = os.path.dirname(d)
-        if parent == d:
-            return None
-        d = parent
-
+# Bank access is shared (scripts/idiolect.py); the refusal policy is this
+# stage's own — no bank, no defaults, no run.
 
 def load_bank(voice_dir):
-    import yaml
-    path = os.path.join(voice_dir, "idiolect.yaml")
-    if not os.path.exists(path):
+    markers = idiolect.load_markers(voice_dir)
+    if markers is None:
         sys.exit(f"inject-vernacular: no idiolect.yaml in {voice_dir} — "
                  "this stage has no defaults; the operator bank is the "
                  "configuration. Run the Phase-1 extraction first.")
-    with open(path, encoding="utf-8") as f:
-        data = yaml.safe_load(f)
-    markers = {m["id"]: m for m in data.get("markers", [])}
     if not markers:
-        sys.exit(f"inject-vernacular: {path} carries no markers list.")
+        sys.exit(f"inject-vernacular: {os.path.join(voice_dir, 'idiolect.yaml')} "
+                 "carries no markers list.")
     return markers
-
-
-def compile_marker(marker):
-    """The bank's regex field, annotations stripped. None when the field is
-    a prose description rather than a pattern (sentence-length)."""
-    spec = marker.get("regex", "")
-    base, _, note = spec.partition(" (")
-    flags = re.IGNORECASE if "case-insensitive" in note else 0
-    try:
-        return re.compile(base, flags)
-    except re.error:
-        return None
 
 
 # --- measurement -------------------------------------------------------------
