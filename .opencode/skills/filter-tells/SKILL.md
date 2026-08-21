@@ -257,6 +257,34 @@ Pass the same anchors into Prompt 7. Drift toward heavier polish is an
 overshoot signal even when every surface check passes: the anchors make "too
 sleek" measurable against something concrete.
 
+## Author-baseline calibration (idiolect.yaml)
+
+Some constructions the structural pass treats as AI tells are, at the right
+rate, this author's voice: the colon-verdict, the em-dash aside, the "X, not
+Y" antithesis. When `writing-voice/idiolect.yaml` is discoverable from the
+file under review (auto-discovery walks up from the first input;
+`--voice-dir=` overrides, `--no-voice-calibration` opts out), those
+constructions flag only **above the author-calibrated ceiling** — the
+marker's essay target plus the bank's ±30% tolerance — instead of on sight.
+The idiolect file's marker list drives the calibrated set; the generic flat
+thresholds stay in force for every other check and for every repository
+without an idiolect file, where behaviour is exactly as before.
+
+Calibrated flags are distinguishable in the output: the issue carries
+`"calibration": "author-ceiling"` and its detail says *reduce toward the
+target, not to zero* with the allowed count for the document — so a rewrite
+pass steered by the flag trims the excess instead of eliminating the
+construction. A ceiling below the flat threshold never tightens the check;
+the flat threshold is the floor.
+
+**Migration note.** The motivating counter-example is the Strategy Theatre
+antithesis 15→1 reduction: an uncalibrated antithesis flag steered a rewrite
+that cut fifteen instances down to one, and some of the fifteen were the
+author (the idiolect measures "X, not Y" at 2.29/1000 in the journal against
+0.24 native — the construction is the voice, the *excess* is the tell).
+Ceilings come from `idiolect.yaml`, never hand-written here: re-measure the
+corpus upstream and this pass follows.
+
 ## Paragraph extraction (shared)
 
 `scripts/md_paragraphs.py` is the canonical markdown paragraph extractor for

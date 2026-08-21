@@ -94,6 +94,71 @@ THRESHOLDS = {
     },
 }
 
+# --- Author-baseline calibration (GH-57) -------------------------------------
+# Constructions native to the author flag only ABOVE the author-calibrated
+# ceiling from writing-voice/idiolect.yaml, not on sight. The flat thresholds
+# above stay in force for everything else and for repositories without an
+# idiolect file. The motivating counter-example is the Strategy Theatre
+# antithesis 15 -> 1 reduction: some of the 15 were the author, and a rewrite
+# pass steered by an uncalibrated flag eliminated instead of reducing toward
+# the target. Ceilings are target * (1 + tolerance); both numbers come from
+# the idiolect file, never hand-written here.
+
+CALIBRATION_TOLERANCE = 0.30  # idiolect essay_target_rule: +/-30%
+
+
+def discover_voice_dir(start_path):
+    """Walk up from a file (or dir) for writing-voice/. None if absent."""
+    os = __import__("os")
+    d = os.path.abspath(str(start_path))
+    if os.path.isfile(d):
+        d = os.path.dirname(d)
+    while True:
+        cand = os.path.join(d, "writing-voice")
+        if os.path.isdir(cand):
+            return cand
+        parent = os.path.dirname(d)
+        if parent == d:
+            return None
+        d = parent
+
+
+def load_calibration(voice_dir):
+    """Author ceilings from idiolect.yaml, or None.
+
+    Only markers present in the file contribute — the idiolect's marker
+    list drives the calibrated set. Mapping: colon-verdict -> colon
+    density, em-dash -> dash density, antithesis-not -> the antithesis
+    detector family. A missing or unparseable file means no calibration,
+    which is the unchanged flat-threshold behaviour, not an error.
+    """
+    os = __import__("os")
+    if not voice_dir:
+        return None
+    path = os.path.join(voice_dir, "idiolect.yaml")
+    if not os.path.exists(path):
+        return None
+    try:
+        import yaml
+        with open(path, encoding="utf-8") as f:
+            markers = {m["id"]: m for m in
+                       (yaml.safe_load(f) or {}).get("markers", [])}
+    except Exception:
+        return None
+    cal = {"source": path}
+    for mid, key in (("colon-verdict", "colon_max_per_500"),
+                     ("em-dash", "dash_max_per_500")):
+        t = markers.get(mid, {}).get("essay_target")
+        if isinstance(t, (int, float)):
+            # idiolect rates are per 1000 words; densities here are per 500.
+            cal[key] = t * (1 + CALIBRATION_TOLERANCE) / 2.0
+    t = markers.get("antithesis-not", {}).get("essay_target")
+    if isinstance(t, (int, float)):
+        cal["antithesis_target_per_1000"] = t
+        cal["antithesis_max_per_1000"] = t * (1 + CALIBRATION_TOLERANCE)
+    return cal if len(cal) > 1 else None
+
+
 # Issue types that indicate the overshoot direction (Goodharted, over-polished
 # prose) rather than the bland-AI direction.
 OVERSHOOT_TYPES = {
@@ -1366,8 +1431,16 @@ def filter_tells_paragraph(para_text: str, threshold_name: str = "medium",
 detect_paragraph = filter_tells_paragraph
 
 
-def analyze(text: str, threshold_name: str = "medium") -> dict:
-    """Run all structural checks. Return issues dict."""
+def analyze(text: str, threshold_name: str = "medium",
+            calibration: dict = None) -> dict:
+    """Run all structural checks. Return issues dict.
+
+    calibration (load_calibration): author ceilings for native
+    constructions — colon and dash density, and the antithesis gate. A
+    calibrated ceiling only ever raises a flat threshold, never lowers
+    it, and calibrated flags are marked "author-ceiling" so a rewrite
+    pass reduces toward the target instead of eliminating.
+    """
     thresholds = THRESHOLDS[threshold_name]
     prose = extract_prose(text)
     issues = []
@@ -1468,7 +1541,31 @@ def analyze(text: str, threshold_name: str = "medium") -> dict:
     # tolerance" made five scattered pairs in a long paper read as likely-ai
     # on volume alone. The pairs still land in metrics either way; they become
     # issues when their density matches what one pair in ~500 words means.
-    if len(antithesis_issues) >= length_scaled_min(word_count, 2.0, 1):
+    antithesis_gate = length_scaled_min(word_count, 2.0, 1)
+    antithesis_allowed = None
+    if calibration and "antithesis_max_per_1000" in calibration:
+        # Above the author ceiling only — and never stricter than flat.
+        antithesis_allowed = (calibration["antithesis_max_per_1000"]
+                              * word_count / 1000.0)
+        antithesis_gate = max(antithesis_gate,
+                              int(antithesis_allowed) + 1)
+    if len(antithesis_issues) >= antithesis_gate:
+        if antithesis_allowed is not None:
+            tgt = calibration["antithesis_target_per_1000"]
+            keep = max(1, int(round(tgt * word_count / 1000.0)))
+            for a in antithesis_issues:
+                a["calibration"] = "author-ceiling"
+            issues.append({
+                "type": "antithesis-over-ceiling",
+                "detail": (
+                    f"{len(antithesis_issues)} antithesis pairs against an "
+                    f"author target of ~{keep} in {word_count} words "
+                    f"(idiolect antithesis-not {tgt}/1000). Reduce toward "
+                    f"{keep}, not to zero — some of these are the voice."),
+                "severity": "low",
+                "metric": len(antithesis_issues),
+                "calibration": "author-ceiling",
+            })
         issues.extend(antithesis_issues)
 
     # --- Opening diversity ---
@@ -1542,26 +1639,52 @@ def analyze(text: str, threshold_name: str = "medium") -> dict:
     colon_density = (colon_count / word_count) * 500 if word_count > 0 else 0
     metrics["colon_density_per_500w"] = round(colon_density, 1)
 
-    if colon_density > thresholds["colon_density_max"]:
-        issues.append({
+    colon_max = thresholds["colon_density_max"]
+    colon_calibrated = bool(calibration and "colon_max_per_500" in calibration
+                            and calibration["colon_max_per_500"] > colon_max)
+    if colon_calibrated:
+        colon_max = calibration["colon_max_per_500"]
+    if colon_density > colon_max:
+        issue = {
             "type": "colon-heavy",
-            "detail": f"{colon_density:.1f} colons per 500 words (threshold: <{thresholds['colon_density_max']}). AI over-uses colons as introducers.",
+            "detail": f"{colon_density:.1f} colons per 500 words (threshold: <{colon_max:.1f}). AI over-uses colons as introducers.",
             "severity": "low",
             "metric": colon_density,
-        })
+        }
+        if colon_calibrated:
+            issue["calibration"] = "author-ceiling"
+            issue["detail"] = (
+                f"{colon_density:.1f} colons per 500 words, above the "
+                f"author-calibrated ceiling {colon_max:.1f} (idiolect "
+                f"colon-verdict target + tolerance). Reduce toward the "
+                f"target, not to zero — the colon-verdict is the voice.")
+        issues.append(issue)
 
     # --- Dash density ---
     dash_count = len(re.findall(r"[—–]", prose))
     dash_density = (dash_count / word_count) * 500 if word_count > 0 else 0
     metrics["dash_density_per_500w"] = round(dash_density, 1)
 
-    if dash_density > thresholds["dash_density_max"]:
-        issues.append({
+    dash_max = thresholds["dash_density_max"]
+    dash_calibrated = bool(calibration and "dash_max_per_500" in calibration
+                           and calibration["dash_max_per_500"] > dash_max)
+    if dash_calibrated:
+        dash_max = calibration["dash_max_per_500"]
+    if dash_density > dash_max:
+        issue = {
             "type": "dash-heavy",
-            "detail": f"{dash_density:.1f} dashes per 500 words (threshold: <{thresholds['dash_density_max']}). AI favors em-dashes.",
+            "detail": f"{dash_density:.1f} dashes per 500 words (threshold: <{dash_max:.1f}). AI favors em-dashes.",
             "severity": "low",
             "metric": dash_density,
-        })
+        }
+        if dash_calibrated:
+            issue["calibration"] = "author-ceiling"
+            issue["detail"] = (
+                f"{dash_density:.1f} dashes per 500 words, above the "
+                f"author-calibrated ceiling {dash_max:.1f} (idiolect "
+                f"em-dash target + tolerance). Reduce toward the target, "
+                f"not to zero — the em-dash aside is the voice.")
+        issues.append(issue)
 
     # --- Tricolon density ---
     # AI gravitates toward groups of three. The habit is phrase-level, not
@@ -1885,6 +2008,8 @@ def main():
     json_mode = "--json" in sys.argv
     threshold = "strict"
     voice_profile = None
+    voice_dir = None
+    no_calibration = False
 
     # Separate flags from paths
     paths = []
@@ -1896,6 +2021,10 @@ def main():
                 sys.exit(2)
         elif arg.startswith("--voice-profile="):
             voice_profile = arg.split("=", 1)[1]
+        elif arg.startswith("--voice-dir="):
+            voice_dir = arg.split("=", 1)[1]
+        elif arg == "--no-voice-calibration":
+            no_calibration = True
         elif arg == "--json":
             continue
         else:
@@ -1923,6 +2052,15 @@ def main():
               file=sys.stderr)
         sys.exit(2)
 
+    # Author-baseline calibration (GH-57): explicit --voice-dir wins, else
+    # discover writing-voice/ from the first input file. --no-voice-calibration
+    # forces the flat thresholds. No idiolect.yaml -> calibration is None and
+    # behaviour is exactly the pre-calibration flat-threshold behaviour.
+    calibration = None
+    if not no_calibration:
+        calibration = load_calibration(voice_dir or
+                                       discover_voice_dir(files[0]))
+
     any_issues = False
     all_results = []
     file_proses = []
@@ -1942,7 +2080,9 @@ def main():
         # numbers in findings refer to the real file.
         elif filepath.suffix in (".yaml", ".yml"):
             text = "\n".join(prose_document.prose_view_aligned(str(filepath)))
-        result = analyze(text, threshold)
+        result = analyze(text, threshold, calibration=calibration)
+        if calibration:
+            result["calibration"] = {"source": calibration["source"]}
         file_proses.append((str(filepath), extract_prose(text)))
         file_raws.append((str(filepath), text))
 
@@ -1954,6 +2094,8 @@ def main():
         else:
             print(f"=== Structural AI Detection: {filepath} ===")
             print(f"    Threshold: {threshold}")
+            if calibration:
+                print(f"    Calibration: author baseline from {calibration['source']}")
             print(f"    Verdict: {result['verdict'].upper()}")
             if result.get("note"):
                 print(f"    Note: {result['note']}")
