@@ -8,9 +8,18 @@ audits. Lifted out of match-voice's drive.py (GH-167) and kept here because
 filter-tells is the skill every other prose skill already imports from.
 
 Every body line is classified — prose, heading, figure, figure-caption, table,
-code, reference, blockquote, list, rule, blank. The classification tally is
-the audit consumers actually read: it answers "what did the parser decide to
-skip, and does that match the document" without reading the document.
+code, reference, blockquote, list, rule, blank, locked. The classification
+tally is the audit consumers actually read: it answers "what did the parser
+decide to skip, and does that match the document" without reading the document.
+
+Locked regions (GH-57): a `<!-- lock -->` marker alone on a line opens a
+block lock, `<!-- /lock -->` closes it, and every line between, markers
+included, is classified ``locked`` — opaque to paragraph extraction, so no
+model-facing consumer ever sees the text. The region is not interpreted:
+code fences inside a lock do not toggle code state. Markers inside a code
+fence are inert (example text). Nested opens, a close without an open, and
+an unclosed open raise span_locks.LockError with line numbers — a document
+whose protection markers are broken must not parse quietly.
 
 `unaccounted` is an invariant check, not a live detector. Unrecognised lines
 fall through to prose by design (raw HTML, definition lists), so on today's
@@ -32,9 +41,16 @@ CLI (coverage audit):
 
 import argparse
 import json
+import os
 import re
 import sys
 from collections import Counter, namedtuple
+
+_HERE = os.path.dirname(os.path.abspath(__file__))
+if _HERE not in sys.path:
+    sys.path.insert(0, _HERE)
+
+import span_locks
 
 Result = namedtuple("Result",
                     "lines fm_close paragraphs coverage unaccounted")
@@ -84,6 +100,7 @@ def parse(text: str) -> Result:
     fm_close = _front_matter_close(lines)
     paras, coverage = [], {}
     in_code = False
+    lock_open_ln = None
     buf, buf_start = [], None
 
     def flush():
@@ -96,6 +113,17 @@ def parse(text: str) -> Result:
 
     for idx in range(fm_close + 1, len(lines)):
         ln, s = idx + 1, lines[idx].strip()
+        # A locked region is opaque: nothing inside it is interpreted,
+        # including code fences, until the closing marker.
+        if lock_open_ln is not None:
+            coverage[ln] = "locked"
+            if span_locks.is_open_marker(s):
+                raise span_locks.LockError(
+                    f"nested lock: open at line {ln} inside the lock "
+                    f"opened at line {lock_open_ln}")
+            if span_locks.is_close_marker(s):
+                lock_open_ln = None
+            continue
         if s.startswith("```"):
             flush()
             in_code = not in_code
@@ -104,6 +132,16 @@ def parse(text: str) -> Result:
         if in_code:
             coverage[ln] = "code"
             continue
+        # Lock markers checked before the category tests — the comment
+        # category would otherwise swallow them.
+        if span_locks.is_open_marker(s):
+            flush()
+            coverage[ln] = "locked"
+            lock_open_ln = ln
+            continue
+        if span_locks.is_close_marker(s):
+            raise span_locks.LockError(
+                f"lock close without open at line {ln}")
         if s == "":
             flush()
             coverage[ln] = "blank"
@@ -118,6 +156,9 @@ def parse(text: str) -> Result:
         buf.append(lines[idx])
         coverage[ln] = "prose"
     flush()
+    if lock_open_ln is not None:
+        raise span_locks.LockError(
+            f"unclosed lock opened at line {lock_open_ln}")
 
     unaccounted = [i + 1 for i in range(fm_close + 1, len(lines))
                    if (i + 1) not in coverage]
