@@ -22,6 +22,13 @@ by the gate as a fatal loss — and the canonical-block registry
 (writing-voice/canonical-blocks.txt or --canonical-blocks), whose paragraphs
 never reach the model at all.
 
+Per paragraph the loop is two-pass (GH-77, critique.py): pass 1 rewrites,
+a critique judges the candidate against the original (mechanical fields plus
+a critic model), a 'repair' verdict sends it back once with the critique as
+explicit constraints, a 'reject' keeps the original, and the mechanical gate
+runs after whichever pass produced the candidate. results.json records both
+passes and the critique; the report prints pass-1 vs pass-2 acceptance.
+
 With --pangram the driver also measures whether the rewrite worked, scanning
 the article before it starts and the draft when it finishes (GH-212). The
 baseline has to be captured first because it cannot be reconstructed once the
@@ -34,6 +41,7 @@ Usage:
                    [--coverage-only] [--pangram]
                    [--protected-terms <file> | --no-protected-terms]
                    [--canonical-blocks <file>]
+                   [--critic-model MODEL | --no-critique]
 """
 import argparse, json, os, re, subprocess, sys, tempfile
 from collections import Counter
@@ -73,6 +81,20 @@ def _protected_terms_module():
         sys.path.insert(0, SK)
     import protected_terms
     return protected_terms
+
+
+def _critique_module():
+    if SK not in sys.path:
+        sys.path.insert(0, SK)
+    import critique
+    return critique
+
+
+def _rewrite_module():
+    if SK not in sys.path:
+        sys.path.insert(0, SK)
+    import rewrite
+    return rewrite
 
 
 def term_note(verify_json):
@@ -581,6 +603,15 @@ def write_manifest(path, a, voice_dir, results, pangram=None, guard=None):
     else:
         out.append("  protected_terms: null")
     out.append(f"  canonical_blocks: {_yaml_scalar(getattr(a, '_canonical_path', None))}")
+    crit = getattr(a, "_critique", None)
+    if crit:
+        out.append("  critique:")
+        out.append(f"    model: {_yaml_scalar(crit.get('model'))}")
+        for k in ("pass1_accepted", "pass2_accepted", "repaired",
+                  "rejected_critique", "critique_unparsed", "critiqued"):
+            out.append(f"    {k}: {crit.get(k, 0)}")
+    else:
+        out.append("  critique: null")
     if pangram:
         before, after = pangram
         out.append("  pangram:")
@@ -758,6 +789,13 @@ def main():
                     help="canonical-block registry (default: writing-voice/"
                          "canonical-blocks.txt found walking up from the article); "
                          "matching paragraphs never reach the model")
+    ap.add_argument("--critic-model",
+                    help="model that critiques each pass-1 candidate against its "
+                         "original (default: the rewrite model; a second family "
+                         "is the better choice when one is pulled)")
+    ap.add_argument("--no-critique", action="store_true",
+                    help="single-shot path: rewrite, gate, done — no critique, "
+                         "no repair pass")
     a = ap.parse_args()
 
     if a.no_anchors and any([a.role, a.anchor_tags, a.stratum, a.author]):
@@ -857,6 +895,34 @@ def main():
             print("external check: no baseline, so the comparison is skipped; "
                   "the rewrite runs unchanged", file=sys.stderr)
 
+    # The critic is checked before the first paragraph, like the rewrite
+    # model: requested and unreachable is a hard error, never a silent skip.
+    critic = None
+    critique_mod = _critique_module()
+    banned = critique_mod.load_banned()
+    critic_model = a.critic_model or a.model
+    if not a.no_critique:
+        rwm = _rewrite_module()
+        ok, msg = rwm.check_server(a.endpoint, critic_model)
+        if not ok and a.critic_model:
+            sys.exit(f"critic: {msg}")
+        if ok:
+            critic = lambda prompt: rwm.generate(prompt, endpoint=a.endpoint,  # noqa: E731
+                                                 model=critic_model, temperature=0.0)
+            print(f"critique: on, critic model {critic_model}"
+                  f"{'' if banned else ' (banned-word list unreadable; mechanical banned check off)'}")
+        else:
+            # The default critic IS the rewrite model, and its absence is
+            # reported per paragraph as rewrite-error — the run goes on so
+            # the forensics land in the manifest as they always have, with
+            # the mechanical critique alone (source.model: skipped).
+            print(f"critic: {msg}\ncritique: mechanical fields only — no critic "
+                  "model reachable", file=sys.stderr)
+    else:
+        print("critique: off (--no-critique); single-shot rewrite and gate")
+    protected_terms_list = (_protected_terms_module().read_terms(protected_path)
+                            if protected_path else [])
+
     results = []
     for n, (s, e, txt) in enumerate(paras, 1):
         rec = {"n": n, "lines": [s, e], "words": len(txt.split()), "orig": txt}
@@ -912,6 +978,31 @@ def main():
             cand_text = restore_full_bold(txt, rw.stdout.strip())
             import verify as _vmod
             cand_text = _vmod.normalize_ascii(cand_text)
+            # Pass 1 -> critique -> (repair | reject | accept). Only the
+            # first attempt is critiqued; gate retries after it keep the
+            # pass label of the candidate they are repairing.
+            if attempt == 0 and not a.no_critique:
+                rec["pass1"] = cand_text
+                crit = critique_mod.critique(txt, cand_text, protected_terms_list,
+                                             banned, critic)
+                rec["critique"] = {k: v for k, v in crit.items() if k != "raw"}
+                rec["pass"] = 1
+                if crit["verdict"] == "reject":
+                    rec["status"] = "rejected-critique"
+                    break
+                if crit["verdict"] == "repair":
+                    constraints = critique_mod.render_constraints(crit)
+                    cmd2 = [c for c in cmd if c not in ("--retry-note", sent_note)] \
+                        + ["--retry-note", compose_note(a.style_note, constraints)]
+                    rw2 = run(cmd2)
+                    if rw2.returncode == 0 and rw2.stdout.strip():
+                        cand_text = _vmod.normalize_ascii(
+                            restore_full_bold(txt, rw2.stdout.strip()))
+                        rec["pass2"] = cand_text
+                        rec["pass"] = 2
+                    else:
+                        rec["pass2"] = None
+                        rec["pass2_error"] = (rw2.stderr or "")[:200]
             cf = f"{work}/p{n:02d}.cand.txt"; open(cf, "w").write(cand_text)
             vcmd = ["python3", f"{SK}/verify.py", "--original", pf, "--rewrite", cf,
                     "--anchors-json", ajf, "--json"]
@@ -977,6 +1068,24 @@ def main():
         if r.get("warnings"):
             print(f"  advisory p{r['n']:02d} (L{r['lines'][0]}): "
                   f"{','.join(r['warnings'])}")
+    if not a.no_critique:
+        summary = critique_mod.summarize_passes(results)
+        summary["model"] = critic_model
+        a._critique = summary
+        print(f"critique: pass 1 accepted {summary['pass1_accepted']}, "
+              f"pass 2 accepted {summary['pass2_accepted']}, "
+              f"repaired {summary['repaired']}, "
+              f"rejected {summary['rejected_critique']}, "
+              f"unparsed {summary['critique_unparsed']} "
+              f"(of {summary['critiqued']} critiqued)")
+        for r in results:
+            if r["status"] == "rejected-critique":
+                c = r.get("critique", {})
+                why = "; ".join(c.get("meaning_deltas") or []) or ",".join(
+                    (c.get("source") or {}).get("mechanical") or []) or "?"
+                print(f"  rejected p{r['n']:02d} (L{r['lines'][0]}): {why[:120]}")
+    else:
+        a._critique = None
     gate_errors = [r for r in results if r["status"] == "gate-error"]
     if gate_errors:
         print(f"\nWARNING: the verification gate CRASHED on {len(gate_errors)} "

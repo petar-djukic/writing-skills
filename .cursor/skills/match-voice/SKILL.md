@@ -214,6 +214,9 @@ python3 <skill>/scripts/drive.py --article <path.md> --pangram         # + befor
   Run `--coverage-only` first when in doubt; the paragraph map is the answer.
 - Retries are failure-classified automatically (copy → anti-copy note,
   number/citation loss → preserve-numbers note, register → banned-vocab note).
+- Every pass-1 candidate is critiqued against its original before the gate
+  and repaired once on a `repair` verdict (step 2b below); the run report
+  prints pass-1 vs pass-2 acceptance.
 - The driver applies the MECHANICAL gate only. The emitted draft is a set of
   candidates: run the meaning-entailment review (references/prompts.md) on each
   accepted paragraph, and filter-tells over the assembled file, before treating the
@@ -253,6 +256,45 @@ sibling skill — built once, imported twice, so the two skills cannot drift.
 python3 <skill>/scripts/rewrite.py --text <paragraph-file> --anchors anchors.txt \
   [--model gemma4:12b] [--endpoint http://localhost:11434] [--temperature 0.7] [--timeout 300]
 ```
+
+**2b. Critique, then repair once (the driver's default; GH-77).** The
+single-shot loop accepted whatever cleared the mechanical gate, and on the
+Strategy Theatre run a cold review then threw away 56 of 71 rewrites — term
+swaps breaking a referent chain, register smoothed to generic, hypotheticals
+made definite, refrains reworded, staged contrasts and banned words. Every
+class is detectable against the ORIGINAL before acceptance, so the driver
+now critiques pass 1 before gating it:
+
+```bash
+python3 <skill>/scripts/critique.py --original <paragraph-file> --candidate <candidate> \
+  [--protected-terms draft.protected-terms.txt] [--model gemma4:12b]
+```
+
+The verdict is structured, never prose — `{meaning_deltas, term_swaps,
+register_drift, banned_words, new_antithesis, new_tricolon,
+quoted_span_changes, verdict: accept|repair|reject, source}`. The mechanical
+fields are regexes against the original (protected terms lost, filter-tells
+banned words introduced, antithesis or tricolon counts that rose, a quoted
+span that did not survive); the critic model supplies `meaning_deltas` and
+`register_drift`. `repair` sends the paragraph back **once** with the
+critique rendered as explicit constraints ("keep the word 'exposure'; do not
+replace it with 'justification'"; "the phrase in quotation marks must
+survive verbatim"); `reject` keeps the original (`rejected-critique`);
+`accept` and an unparseable critic answer both go straight to the gate —
+the harness never discards a rewrite silently. Pass 2 is gated, not
+critiqued again. `--critic-model` picks the judge (default: the rewrite
+model; a second family is better when pulled); `--no-critique` is the old
+single-shot path, and an A/B against it is the point of the report line:
+
+```
+critique: pass 1 accepted 31, pass 2 accepted 22, repaired 29, rejected 4, unparsed 1 (of 67 critiqued)
+```
+
+If pass 2 does not beat pass 1, that is a finding to record against the
+prompt ([critique-prompt.md](./references/critique-prompt.md)), not a number
+to hide. `results.json` keeps `pass1`, `critique`, `pass2`, and `pass` per
+paragraph so survival can be measured after a cold review, and the manifest
+records the counts under `critique:`.
 
 **3. Gate — all four checks, fail closed.**
 
@@ -340,6 +382,7 @@ stay verbatim in the draft, and are counted in the manifest.
 | Paragraph selection | `--paragraphs` | all rewritable paragraphs |
 | Protected terms | `--protected-terms` / `--no-protected-terms` | `<stem>.protected-terms.txt`, derived on first run |
 | Canonical blocks | `--canonical-blocks` | `writing-voice/canonical-blocks.txt` by walk-up |
+| Critic model | `--critic-model` / `--no-critique` | the rewrite model; critique on |
 | External check | `--pangram` | off (the flag is the consent) |
 
 `--style-note "active voice, plain diction"` sends a standing directive to

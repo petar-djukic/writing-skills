@@ -156,6 +156,8 @@ def test_multiple_tags_round_trip():
 
 
 # --- end to end through main(), with every subprocess stubbed ----------------
+# The critique (GH-77) is an in-process model call the stubs cannot reach, so
+# these runs pass --no-critique; the critique has its own offline tests.
 #
 # The driver's own convention (test_drive_pangram.py): replace drive.run so no
 # child process executes. Doing this with a real endpoint would load a 7.6 GB
@@ -207,7 +209,7 @@ def test_end_to_end_writes_the_manifest_beside_the_draft():
         stub = DispatchStub()
         orig_run, saved_argv = drive.run, sys.argv
         drive.run = stub
-        sys.argv = ["drive.py", "--article", art, "--retries", "0",
+        sys.argv = ["drive.py", "--article", art, "--retries", "0", "--no-critique",
                     "--role", "venue-voice", "--anchor-tags", "clipped"]
         try:
             drive.main()
@@ -251,7 +253,7 @@ def test_end_to_end_manifest_survives_a_run_that_rewrote_nothing():
         open(art, "w").write("# H\n\n" + T.DRAFT + "\n")
         orig_run, saved_argv = drive.run, sys.argv
         drive.run = Failing()
-        sys.argv = ["drive.py", "--article", art, "--retries", "0"]
+        sys.argv = ["drive.py", "--article", art, "--retries", "0", "--no-critique"]
         try:
             drive.main()
         finally:
