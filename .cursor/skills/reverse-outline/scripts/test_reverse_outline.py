@@ -23,6 +23,7 @@ for _d in (SHARED, SK):
 
 import md_paragraphs                                        # noqa: E402
 import prose_document                                       # noqa: E402
+import rank as rk                                           # noqa: E402
 import rst_markers as rm                                    # noqa: E402
 
 GOOD = """---
@@ -381,6 +382,138 @@ class MarkerSurvival(unittest.TestCase):
         after = md_paragraphs.parse(GOOD)
         joined = "\n".join(t for _s, _e, t in after.paragraphs)
         self.assertNotIn("rst:", joined)
+
+
+class Ranking(unittest.TestCase):
+    """Order is the product. It has to be reproducible and it has to put the
+    cheap cuts first, or the author reads the sheet once and stops."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.o = rm.parse(_write(self.tmp.name, "a.md", GOOD))
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def test_depth_dominates_then_cut_order(self):
+        got = [(c["position"], c["depth"], c["relation"])
+               for c in rk.candidates(self.o)]
+        self.assertEqual(got, [(3, 2, "elaboration"),      # deepest
+                               (4, 1, "restatement"),      # cut rank 2
+                               (2, 1, "evidence")])        # cut rank 8, last
+
+    def test_nucleus_is_never_a_candidate(self):
+        self.assertNotIn("nucleus",
+                         [c["relation"] for c in rk.candidates(self.o)])
+
+    def test_multinuclear_spans_are_not_candidates(self):
+        """Each span of a contrast/sequence/list carries its own content, so
+        none of them is a satellite to be cut."""
+        for relation in ("contrast", "sequence", "list"):
+            text = GOOD.replace("rst: restatement |", f"rst: {relation} |")
+            with tempfile.TemporaryDirectory() as tmp:
+                o = rm.parse(_write(tmp, "a.md", text))
+                self.assertNotIn(relation,
+                                 [c["relation"] for c in rk.candidates(o)])
+
+    def test_joint_sorts_first_even_when_shallow(self):
+        text = GOOD.replace("rst: restatement |", "rst: joint |")
+        with tempfile.TemporaryDirectory() as tmp:
+            o = rm.parse(_write(tmp, "a.md", text))
+            first = rk.candidates(o)[0]
+            self.assertEqual(first["relation"], "joint")
+            self.assertEqual(first["depth"], 1, "and it beat a depth-2 paragraph")
+
+    def test_ties_break_on_document_order_so_the_sheet_is_reproducible(self):
+        text = GOOD.replace("rst: restatement | says the three questions again",
+                            "rst: elaboration -> 2 | a second unpacking of the analogy")
+        with tempfile.TemporaryDirectory() as tmp:
+            o = rm.parse(_write(tmp, "a.md", text))
+            tied = [c for c in rk.candidates(o) if c["relation"] == "elaboration"]
+            self.assertEqual([c["position"] for c in tied], [3, 4])
+            self.assertEqual(rk.candidates(o), rk.candidates(o))
+
+    def test_a_broken_tree_sorts_to_the_top_rather_than_vanishing(self):
+        text = GOOD.replace("elaboration -> 2", "elaboration -> 9")
+        with tempfile.TemporaryDirectory() as tmp:
+            o = rm.parse(_write(tmp, "a.md", text))
+            first = rk.candidates(o)[0]
+            self.assertTrue(first["broken"])
+            self.assertEqual(first["position"], 3)
+
+    def test_sections_rank_against_the_thesis(self):
+        rows = rk.sections(self.o)
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["relation"], "evidence")
+        self.assertEqual(rows[0]["paragraphs"], 4)
+
+    def test_thesis_is_read_from_front_matter(self):
+        self.assertIn("cannot say what, for whom", rk.thesis_of(self.o))
+
+    def test_split_is_listed_as_a_rewrite_not_a_deletion(self):
+        text = GOOD.replace("rst: restatement | says the three questions again",
+                            "rst: split | argues two things at once")
+        with tempfile.TemporaryDirectory() as tmp:
+            o = rm.parse(_write(tmp, "a.md", text))
+            self.assertEqual([s["position"] for s in rk.splits(o)], [4])
+            self.assertNotIn("split", [c["relation"] for c in rk.candidates(o)])
+
+
+class Repetition(unittest.TestCase):
+    def _pairs(self, gloss_a, gloss_b):
+        text = GOOD.replace(
+            "rst: evidence | a bank's loan form enforces the same three blanks daily",
+            f"rst: evidence | {gloss_a}").replace(
+            "rst: restatement | says the three questions again",
+            f"rst: evidence | {gloss_b}")
+        with tempfile.TemporaryDirectory() as tmp:
+            return rk.repetitions(rm.parse(_write(tmp, "a.md", text)))
+
+    def test_near_duplicate_glosses_pair(self):
+        pairs = self._pairs("a bank's loan form enforces the three blanks",
+                            "a bank's loan form enforces those three blanks")
+        self.assertEqual(len(pairs), 1, pairs)
+        self.assertEqual((pairs[0]["a"], pairs[0]["b"]), (2, 4))
+
+    def test_same_relation_but_different_content_does_not_pair(self):
+        pairs = self._pairs("a bank's loan form enforces the three blanks",
+                            "the plumber walks out without the second truck")
+        self.assertEqual(pairs, [])
+
+    def test_different_targets_do_not_pair(self):
+        """Same words about different paragraphs is not repetition."""
+        text = GOOD.replace(
+            "rst: elaboration -> 2 | unpacks the loan-form analogy",
+            "rst: elaboration -> 2 | unpacks the analogy").replace(
+            "rst: restatement | says the three questions again",
+            "rst: elaboration -> 1 | unpacks the analogy")
+        with tempfile.TemporaryDirectory() as tmp:
+            self.assertEqual(rk.repetitions(rm.parse(_write(tmp, "a.md", text))), [])
+
+
+class Sheet(unittest.TestCase):
+    def test_render_has_the_four_sections_and_is_read_only(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            o = rm.parse(_write(tmp, "a.md", GOOD))
+            text = rk.render(rk.build(o))
+        for heading in ("## 1. The outline", "## 2. Deletion candidates",
+                        "## 3. Repetition pairs", "## 4. Paragraphs to split"):
+            self.assertIn(heading, text)
+        self.assertIn("Nothing here has been cut", text)
+
+    def test_ranking_does_not_modify_the_article(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = _write(tmp, "a.md", GOOD)
+            rk.render(rk.build(rm.parse(path)))
+            with open(path, encoding="utf-8") as f:
+                self.assertEqual(f.read(), GOOD)
+
+    def test_missing_thesis_is_said_out_loud(self):
+        no_thesis = GOOD.replace(
+            "thesis: a document that cannot say what, for whom, and for how much is not a strategy" + chr(10), "")
+        with tempfile.TemporaryDirectory() as tmp:
+            o = rm.parse(_write(tmp, "a.md", no_thesis))
+            self.assertIn("No `thesis:` line", rk.render(rk.build(o)))
 
 
 if __name__ == "__main__":

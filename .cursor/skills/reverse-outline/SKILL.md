@@ -150,9 +150,10 @@ Deterministic from the markers alone. No model call. Writes
 1. **The reverse outline** — the one-liners in document order. Read together
    they should tell the article's story; where they do not, the article does
    not either.
-2. **Deletion candidates** — paragraphs by depth descending, then by cut
-   order, `joint` first. Sections ranked the same way against the thesis.
-   Every row carries its paragraph number.
+2. **Deletion candidates** — `joint` first, since a paragraph the argument
+   never reaches beats a distant one that at least supports something; then
+   by depth descending, then by cut order. Sections ranked against the
+   thesis. Every row carries its paragraph number.
 3. **Repetition pairs** — same relation, same target, near-duplicate
    one-liners, by `difflib` as `converge.py` does it.
 4. **`split` paragraphs** — the monster-paragraph list. These are rewrite

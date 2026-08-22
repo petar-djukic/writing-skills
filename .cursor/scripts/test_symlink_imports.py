@@ -55,6 +55,8 @@ ENTRY_POINTS = [
     ("audit-references", "scripts/extract_citations.py", ["--help"]),
     ("match-structure", "scripts/style.py", ["--help"]),
     ("match-voice", "scripts/drive.py", ["--help"]),
+    ("reverse-outline", "scripts/rst_markers.py", ["--help"]),
+    ("reverse-outline", "scripts/rank.py", ["--help"]),
     ("tighten-style", "scripts/check_style.py", ["--help"]),
     ("tighten-style", "scripts/tighten.py", ["--help"]),
     ("tune-anchors", "scripts/tune_anchors.py", ["--help"]),

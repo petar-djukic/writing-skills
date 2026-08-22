@@ -110,9 +110,15 @@ the relation definitions above rather than measured.
 
 Within a depth, cut in this order:
 
+`joint` is ranked outside the depth ordering, ahead of it. Every other
+relation is a satellite supporting something, and depth measures how far that
+support sits from the point; `joint` says no relation holds at all. A
+paragraph the argument never reaches beats a distant one that at least
+supports something.
+
 | Rank | Relations | Why here |
 |---|---|---|
-| 1 | `joint` | No relation holds. The argument does not reach it. |
+| 1 | `joint` | No relation holds. Sorted ahead of depth, not within it. |
 | 2 | `restatement`, `summary` | Defined as adding nothing the nucleus lacks. Deleting one removes no content. |
 | 3 | `elaboration` | More detail. The nucleus stands without it; the reader knows less. |
 | 4 | `evaluation`, `interpretation` | The author's reading of a point already made. |
