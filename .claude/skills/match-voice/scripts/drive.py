@@ -68,9 +68,12 @@ DASH_NOTE = ("You added an em-dash the original did not have. Keep the original'
              "into one. Do not manufacture antithesis either — no \"X is not Y, "
              "it is Z\" unless the original already contrasted them.")
 MARKUP_NOTE = ("Reproduce the markdown formatting of the original exactly: every **bold** "
-               "span, *italic* span, and `code` span, in the same places. If the "
-               "paragraph opens with a bold sentence, your rewrite must open with a "
-               "bold sentence too — it is a lead-in, not ordinary prose.")
+               "span, *italic* span, `code` span, and [link](url), in the same places "
+               "and no others. Do not add bold or italic the original does not have, "
+               "and keep every link as a markdown link — never a bare URL in "
+               "parentheses. If the paragraph opens with a bold sentence, your "
+               "rewrite must open with a bold sentence too — it is a lead-in, not "
+               "ordinary prose.")
 TERM_NOTE = ("You dropped the protected term(s) {terms}. These words carry the "
              "article's referent chain across paragraphs; a synonym breaks it. "
              "Keep each one verbatim.")
