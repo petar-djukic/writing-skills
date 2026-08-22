@@ -46,6 +46,9 @@ MARKUP_NOTE = ("Preserve markdown markup: **bold**, *italic*, `code`, "
                "and [links](url) must appear in the output exactly as "
                "in the input.")
 DASH_NOTE = "Preserve em-dashes (—) and en-dashes (–); do not downgrade them."
+TERM_NOTE = ("You dropped a protected term. These words carry the article's "
+             "referent chain across paragraphs; a synonym breaks it. Keep "
+             "each one verbatim.")
 COPY_NOTE = "Stay closer to the original wording while matching the voice."
 
 DEAI = os.path.normpath(os.path.join(HERE, "..", "..", "filter-tells",
@@ -131,10 +134,15 @@ def match_voice_paragraph(text, voice_dir=None, article_path=None,
         de = subprocess.run(["bash", DEAI, cand_path],
                             capture_output=True, text=True)
 
+        # Both read off the findings (GH-84). The top-level "similarity" key
+        # is the measurement — a dict with violation: False whenever anchors
+        # were retrieved at all — so testing it flagged every anchored
+        # paragraph. verify() raises a similarity FINDING only on violation.
+        checks = verify_mod.checks_in(vr)
         warnings = []
         if de.returncode != 0:
             warnings.append("register")
-        if vr.get("similarity"):
+        if "similarity" in checks:
             warnings.append("similarity")
 
         if vr.get("clean", False):
@@ -145,13 +153,18 @@ def match_voice_paragraph(text, voice_dir=None, article_path=None,
 
         last_findings = vr.get("findings", [])
         notes = []
-        finding_types = {f.get("type", "") for f in last_findings}
-        if finding_types & {"numbers", "citations", "terms"}:
+        # Keyed "check", which is what verify() emits. This read "type",
+        # which no finding carries, so every set was {""} and every retry
+        # got the generic COPY_NOTE instead of the specific instruction
+        # (GH-84).
+        if checks & {"numbers", "citations", "terms"}:
             notes.append(NUM_NOTE)
-        if "markup" in finding_types:
+        if "markup" in checks:
             notes.append(MARKUP_NOTE)
-        if "dashes" in finding_types:
+        if "dashes" in checks:
             notes.append(DASH_NOTE)
+        if "protected-term" in checks:
+            notes.append(TERM_NOTE)
         note = " ".join(notes) or COPY_NOTE
 
     return {"accepted": False, "rewritten": None, "findings": last_findings,
