@@ -20,7 +20,7 @@ Usage:
   rewrite.py --text <file>|- --anchors <file>|-- [--model gemma4:12b]
              [--endpoint http://localhost:11434] [--temperature 0.7]
              [--timeout 300]
-             [--retry-note "..."] [--json]
+             [--retry-note "..."] [--protected-terms <file>] [--json]
 """
 
 import argparse
@@ -30,6 +30,11 @@ import socket
 import sys
 import urllib.error
 import urllib.request
+
+HERE = os.path.dirname(os.path.realpath(__file__))
+if HERE not in sys.path:
+    sys.path.insert(0, HERE)
+import protected_terms as _pt  # noqa: E402
 
 DEFAULT_ENDPOINT = os.environ.get("OLLAMA_ENDPOINT", "http://localhost:11434")
 # Defaults chosen by the GH-163 bake-off (10 models, one draft paragraph,
@@ -56,9 +61,26 @@ RULES:
 7. Do NOT add em-dashes, and do not convert commas or colons into them. Keep the punctuation the original used.
 8. Keep the sentence lengths uneven. If the original mixes a four-word sentence with a thirty-word one, the rewrite does too — do not even them out into a uniform middle length.
 9. Output ONLY the rewritten paragraph. No preamble, no explanation, no quotes around it.
-{retry_note}
+{protected}{retry_note}
 PARAGRAPH TO REWRITE:
 {paragraph}"""
+
+# The article's referent chain (GH-77): only the terms THIS paragraph carries
+# are listed, so the rule stays short and the model cannot be told to keep a
+# word that is not there.
+PROTECTED_RULE = ("10. Keep these words and phrases verbatim — they are terms of art "
+                  "the rest of the article refers back to, and a synonym breaks the "
+                  "chain: {terms}.\n")
+
+
+def build_prompt(paragraph, anchors, retry_note="", protected_terms=None):
+    """The exact prompt a rewrite sends. Factored out so the protected-term
+    rule and the retry note can be tested without a model."""
+    mine = _pt.terms_in(paragraph, protected_terms or [])
+    protected = PROTECTED_RULE.format(terms="; ".join(mine)) if mine else ""
+    return PROMPT.format(anchors=anchors, paragraph=paragraph, protected=protected,
+                         retry_note=(f"\nRETRY GUIDANCE: {retry_note}\n"
+                                     if retry_note else ""))
 
 
 def check_server(endpoint, model):
@@ -122,10 +144,9 @@ def generate(prompt, endpoint=DEFAULT_ENDPOINT, model=DEFAULT_MODEL,
 
 
 def rewrite(paragraph, anchors, endpoint=DEFAULT_ENDPOINT, model=DEFAULT_MODEL,
-            temperature=0.7, retry_note="", timeout=DEFAULT_TIMEOUT):
-    prompt = PROMPT.format(anchors=anchors, paragraph=paragraph,
-                           retry_note=(f"\nRETRY GUIDANCE: {retry_note}\n"
-                                       if retry_note else ""))
+            temperature=0.7, retry_note="", timeout=DEFAULT_TIMEOUT,
+            protected_terms=None):
+    prompt = build_prompt(paragraph, anchors, retry_note, protected_terms)
     try:
         return generate(prompt, endpoint=endpoint, model=model,
                         temperature=temperature, timeout=timeout)
@@ -147,6 +168,9 @@ def main():
                         "env MATCH_VOICE_TIMEOUT)")
     p.add_argument("--retry-note", default="",
                    help="guidance added on a retry after a failed gate")
+    p.add_argument("--protected-terms", metavar="FILE",
+                   help="protected-term list (protected_terms.py); the terms "
+                        "this paragraph carries are sent as a keep-verbatim rule")
     p.add_argument("--check", action="store_true", help="probe server/model and exit")
     p.add_argument("--json", action="store_true")
     args = p.parse_args()
@@ -161,8 +185,10 @@ def main():
 
     paragraph = sys.stdin.read() if args.text == "-" else open(args.text).read()
     anchors = open(args.anchors).read() if args.anchors else "(no anchors provided)"
+    terms = _pt.read_terms(args.protected_terms) if args.protected_terms else None
     out = rewrite(paragraph.strip(), anchors, args.endpoint, args.model,
-                  args.temperature, args.retry_note, timeout=args.timeout)
+                  args.temperature, args.retry_note, timeout=args.timeout,
+                  protected_terms=terms)
     if args.json:
         print(json.dumps({"model": args.model, "rewrite": out}, indent=2,
                          ensure_ascii=False))

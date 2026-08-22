@@ -292,6 +292,40 @@ model and do not assume success.
 gate failures by category. Rewrites are proposed as a diff for review by
 default; applying them directly is opt-in.
 
+## Protected terms and canonical blocks
+
+Two guards the per-paragraph gate cannot express on its own, because both
+are properties of the article (GH-77).
+
+**Protected terms** are the article's referent chain: words and phrases that
+recur in three or more paragraphs, plus any sentence repeated verbatim across
+paragraphs (a refrain). The largest failure class in the GH-189 measured run
+was a term-of-art swap — exposure → justification, decision plane →
+decision, detector → tool — that passed every per-paragraph check because
+the chain it broke ran across paragraphs. On the first run the driver derives
+the list to `<stem>.protected-terms.txt` beside the article and says so; on
+every later run it reads that file and never overwrites it, so it is yours to
+edit — one term per line, `#` comments. The rewrite model receives the terms
+the current paragraph carries as a keep-verbatim rule, `verify.py` rejects a
+candidate that loses one (`protected-term`, fatal), and the retry note names
+the lost terms. `--protected-terms FILE` points at another list;
+`--no-protected-terms` turns the guard off. The manifest records the path,
+the count, and whether this run derived it.
+
+```bash
+python3 <skill>/scripts/protected_terms.py draft.md          # show what would be derived
+python3 <skill>/scripts/protected_terms.py draft.md --write  # write it if absent
+```
+
+**Canonical blocks** are pasted, not written — an AI-disclosure line, a
+subscribe line, a "Start Here" pointer — and are never sent to the model.
+They are not span-locked because they are inserted at paste time, so the
+registry lives beside the corpus at `writing-voice/canonical-blocks.txt`
+(found by walking up from the article) or is passed with
+`--canonical-blocks FILE`. One pattern per line: a plain case-insensitive
+substring, or `re:<regex>`. Matching paragraphs get status `canonical`,
+stay verbatim in the draft, and are counted in the manifest.
+
 ## Configuration
 
 | Setting | Flag | Default |
@@ -304,6 +338,8 @@ default; applying them directly is opt-in.
 | Max copied run (words) | `--max-shared-run` | 8 |
 | Standing style directive | `--style-note` | off |
 | Paragraph selection | `--paragraphs` | all rewritable paragraphs |
+| Protected terms | `--protected-terms` / `--no-protected-terms` | `<stem>.protected-terms.txt`, derived on first run |
+| Canonical blocks | `--canonical-blocks` | `writing-voice/canonical-blocks.txt` by walk-up |
 | External check | `--pangram` | off (the flag is the consent) |
 
 `--style-note "active voice, plain diction"` sends a standing directive to

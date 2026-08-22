@@ -14,6 +14,14 @@ on file extension: markdown files use md_paragraphs.py internally, YAML files
 use ruamel.yaml. The to_parse_result() adapter preserves the tuple shape the
 driver expects.
 
+Two article-level guards run before the loop (GH-77, protected_terms.py):
+the protected-term list — the article's referent chain, derived once to
+<stem>.protected-terms.txt beside the article (hand-editable, never
+overwritten), sent to the rewrite model as a keep-verbatim rule and checked
+by the gate as a fatal loss — and the canonical-block registry
+(writing-voice/canonical-blocks.txt or --canonical-blocks), whose paragraphs
+never reach the model at all.
+
 With --pangram the driver also measures whether the rewrite worked, scanning
 the article before it starts and the draft when it finishes (GH-212). The
 baseline has to be captured first because it cannot be reconstructed once the
@@ -24,6 +32,8 @@ Usage:
   python3 drive.py --article <path.md|path.yaml> [--model gemma4:12b] [--out <path>]
                    [--retries 2] [--min-words 12] [--temperature 0.7]
                    [--coverage-only] [--pangram]
+                   [--protected-terms <file> | --no-protected-terms]
+                   [--canonical-blocks <file>]
 """
 import argparse, json, os, re, subprocess, sys, tempfile
 from collections import Counter
@@ -53,6 +63,27 @@ MARKUP_NOTE = ("Reproduce the markdown formatting of the original exactly: every
                "span, *italic* span, and `code` span, in the same places. If the "
                "paragraph opens with a bold sentence, your rewrite must open with a "
                "bold sentence too — it is a lead-in, not ordinary prose.")
+TERM_NOTE = ("You dropped the protected term(s) {terms}. These words carry the "
+             "article's referent chain across paragraphs; a synonym breaks it. "
+             "Keep each one verbatim.")
+
+
+def _protected_terms_module():
+    if SK not in sys.path:
+        sys.path.insert(0, SK)
+    import protected_terms
+    return protected_terms
+
+
+def term_note(verify_json):
+    """The retry note for protected-term losses, naming the terms, or None."""
+    try:
+        data = json.loads(verify_json)
+    except (json.JSONDecodeError, TypeError):
+        return None
+    lost = [f["detail"].split(":", 1)[1].strip()
+            for f in data.get("findings", []) if f.get("check") == "protected-term"]
+    return TERM_NOTE.format(terms=", ".join(lost)) if lost else None
 
 
 def run(cmd, **kw):
@@ -532,14 +563,24 @@ def write_manifest(path, a, voice_dir, results, pangram=None, guard=None):
     out += [f"    - {_yaml_scalar(f)}" for f in anchor_files] or ["    []"]
     out.append("  result: {accepted: %d, kept_original: %d, skipped_short: %d, "
                "rewrite_error: %d, gate_error: %d, unselected: %d, "
-               "excluded_key: %d}"
+               "excluded_key: %d, canonical: %d}"
                % (counts.get("accepted-mechanical", 0),
                   counts.get("kept-original", 0),
                   counts.get("skipped-short", 0),
                   counts.get("rewrite-error", 0),
                   counts.get("gate-error", 0),
                   counts.get("unselected", 0),
-                  counts.get("excluded-key", 0)))
+                  counts.get("excluded-key", 0),
+                  counts.get("canonical", 0)))
+    pt = getattr(a, "_protected", None)
+    if pt:
+        out.append("  protected_terms:")
+        out.append(f"    path: {_yaml_scalar(pt['path'])}")
+        out.append(f"    count: {pt['count']}")
+        out.append(f"    derived: {str(pt['derived']).lower()}")
+    else:
+        out.append("  protected_terms: null")
+    out.append(f"  canonical_blocks: {_yaml_scalar(getattr(a, '_canonical_path', None))}")
     if pangram:
         before, after = pangram
         out.append("  pangram:")
@@ -707,6 +748,16 @@ def main():
     ap.add_argument("--must-preserve", nargs="*", default=None,
                     help="exact phrases that must survive rewriting; verify.py "
                          "rejects candidates that lose any of them")
+    ap.add_argument("--protected-terms", metavar="FILE",
+                    help="protected-term list (default: <stem>.protected-terms.txt "
+                         "beside the article, derived on first run and never "
+                         "overwritten)")
+    ap.add_argument("--no-protected-terms", action="store_true",
+                    help="run without the referent-chain guard")
+    ap.add_argument("--canonical-blocks", metavar="FILE",
+                    help="canonical-block registry (default: writing-voice/"
+                         "canonical-blocks.txt found walking up from the article); "
+                         "matching paragraphs never reach the model")
     a = ap.parse_args()
 
     if a.no_anchors and any([a.role, a.anchor_tags, a.stratum, a.author]):
@@ -730,6 +781,22 @@ def main():
             if exclude:
                 print(f"exclude-keys: skipping {len(exclude)} contract-field "
                       f"paragraph(s): {sorted(exclude)}")
+
+    pt = _protected_terms_module()
+    texts = [p[2] for p in paras]
+    canonical_patterns, canonical_path = pt.load_canonical(a.canonical_blocks, art)
+    a._canonical_path = canonical_path
+    canonical = pt.canonical_indices(texts, canonical_patterns) if canonical_patterns else set()
+    if canonical_path:
+        print(f"canonical blocks: {len(canonical)} paragraph(s) match "
+              f"{canonical_path}: {sorted(canonical)}")
+    protected_path = None
+    a._protected = None
+    if not a.no_protected_terms:
+        terms, protected_path, derived = pt.load_or_derive(art, texts, a.protected_terms)
+        a._protected = {"path": protected_path, "count": len(terms), "derived": derived}
+        print(f"protected terms: {len(terms)} "
+              f"({'derived, written to' if derived else 'loaded from'} {protected_path})")
 
     # Validated before any scan or model call: an invalid selection must cost
     # nothing.
@@ -793,6 +860,8 @@ def main():
     results = []
     for n, (s, e, txt) in enumerate(paras, 1):
         rec = {"n": n, "lines": [s, e], "words": len(txt.split()), "orig": txt}
+        if n in canonical:
+            rec["status"] = "canonical"; results.append(rec); continue
         if rec["words"] < a.min_words:
             rec["status"] = "skipped-short"; results.append(rec); continue
         if selection is not None and n not in selection:
@@ -830,6 +899,8 @@ def main():
             sent_note = compose_note(a.style_note, note)
             if sent_note:
                 cmd += ["--retry-note", sent_note]
+            if protected_path:
+                cmd += ["--protected-terms", protected_path]
             rw = run(cmd)
             if rw.returncode != 0 or not rw.stdout.strip():
                 rec["status"] = "rewrite-error"; rec["err"] = (rw.stderr or "")[:200]
@@ -846,6 +917,8 @@ def main():
                     "--anchors-json", ajf, "--json"]
             if a.must_preserve:
                 vcmd += ["--must-preserve"] + a.must_preserve
+            if protected_path:
+                vcmd += ["--protected-terms", protected_path]
             vf = run(vcmd)
             crash = classify_gate_crash(vf.returncode, vf.stdout, vf.stderr)
             if crash:
@@ -873,6 +946,9 @@ def main():
                 notes.append(MARKUP_NOTE)
             if '"dashes"' in fj:
                 notes.append(DASH_NOTE)
+            tn = term_note(fj)
+            if tn:
+                notes.append(tn)
             note = " ".join(notes) or COPY_NOTE
             rec["status"] = "kept-original"
             rec["last_fail"] = {"verify": json.loads(fj) if fj != "{}" else vf.stdout[:150],

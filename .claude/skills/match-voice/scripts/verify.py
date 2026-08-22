@@ -25,6 +25,9 @@ Checks:
   must-preserve  exact phrases that must survive rewriting unchanged (GH-362);
              loss is fatal. For spec YAML: claims-integrity markers whose
              presence the repo's audit greps for.
+  protected-term  the article's referent chain (GH-77): a term from the
+             protected list present in the original and missing from the
+             rewrite is fatal. Whole-word, case-insensitive, plural-tolerant.
   ascii      typographic unicode (curly quotes, non-breaking hyphens/spaces) is
              normalized to ASCII before any check runs (GH-362), so the gate
              diffs like-for-like and a rewrite that reintroduces them is caught.
@@ -33,7 +36,8 @@ Exit: 0 clean, 1 violations (the loop retries or keeps the original), 2 usage.
 
 Usage:
   verify.py --original <file> --rewrite <file> [--anchors-json <file>]
-            [--max-shared-run 8] [--must-preserve <phrase>...] [--json]
+            [--max-shared-run 8] [--must-preserve <phrase>...]
+            [--protected-terms <file>] [--json]
 """
 
 import argparse
@@ -42,6 +46,11 @@ import os
 import re
 import sys
 from collections import Counter
+
+HERE = os.path.dirname(os.path.realpath(__file__))
+if HERE not in sys.path:
+    sys.path.insert(0, HERE)
+import protected_terms as _pt  # noqa: E402
 
 CITE_PANDOC = re.compile(r"\[@[^\]]+\]")
 CITE_KEY = re.compile(r"@([\w][\w:.#$%&+?<>~/-]*)")
@@ -183,9 +192,15 @@ def _similarity(rewrite_text, anchors_json, max_shared_run):
 
 
 def verify(original, rewritten, anchors_json=None, max_shared_run=8,
-           must_preserve=None):
+           must_preserve=None, protected_terms=None):
     rewritten = normalize_ascii(rewritten)
     findings = []
+
+    # The referent chain is an article property the per-paragraph checks
+    # below cannot see; the list carries it in (GH-77).
+    for term in _pt.lost(original, rewritten, protected_terms or []):
+        findings.append({"check": "protected-term", "severity": "fatal",
+                         "detail": f"protected term lost: {term!r}"})
 
     if must_preserve:
         for phrase in must_preserve:
@@ -288,12 +303,16 @@ def main():
                    help="longest verbatim run allowed against an anchor (words)")
     p.add_argument("--must-preserve", nargs="*", default=None,
                    help="exact phrases that must survive rewriting; loss is fatal")
+    p.add_argument("--protected-terms", metavar="FILE",
+                   help="protected-term list (protected_terms.py); a term "
+                        "present in the original and lost in the rewrite is fatal")
     p.add_argument("--json", action="store_true")
     args = p.parse_args()
 
+    terms = _pt.read_terms(args.protected_terms) if args.protected_terms else None
     result = verify(open(args.original).read(), open(args.rewrite).read(),
                     args.anchors_json, args.max_shared_run,
-                    must_preserve=args.must_preserve)
+                    must_preserve=args.must_preserve, protected_terms=terms)
     if args.json:
         print(json.dumps(result, indent=2, ensure_ascii=False))
     else:
