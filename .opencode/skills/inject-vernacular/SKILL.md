@@ -5,9 +5,10 @@ description: >-
   Terminal, non-generative vernacular stage: apply the deterministic
   idiolect operators from writing-voice/idiolect.yaml (colon-verdicts,
   em-dashes, antitheses, connective and hedge swaps, spoken-marker strips,
-  sentence splits) at per-register target rates. Substitution and
-  restoration only — nothing samples, so it may run after every generative
-  stage. Keeps a machine-readable edit log for marker-survival analysis; an
+  sentence splits) at per-register target rates, plus the substrate calque
+  catalog (zapravo, recimo, ne ide) at site-matched landing spots.
+  Substitution and restoration only — nothing samples, so it may run after
+  every generative stage. Keeps a machine-readable edit log for marker-survival analysis; an
   optional verifier model judges each edit keep/drop but never writes.
   Triggers: inject vernacular, terminal stage, idiolect operators, apply my
   idiolect, restore my markers, vernacular pass.
@@ -54,6 +55,46 @@ no edits.
 | sentence-length | SPLIT any sentence over 30 words at the semicolon or the top-level ", and/, but". MERGE is manual and never performed. |
 | probably, be-able-to | RETAIN: structurally no-ops — never injected, never deleted. Listed in the report as intentionally untouched. |
 | he-agent, article-density | Gate-read territory. The bank itself marks the referent/POS judgment not machine-checkable; this script never attempts them. |
+
+### Calque operators (substrate layer)
+
+The bank's `substrate.calques` catalog is applied by the same engine, as
+injection-only site substitutions. A site is a regex over English that
+marks where the Serbian form would land; the catalog records the Serbian
+key and the English gloss, and this script owns the sites. There is no
+REDUCE direction — an excess "actually" in its native sense is not the
+calque, and removing it would be a register edit, not a substrate one.
+
+| key | tier | site → substitution |
+|---|---|---|
+| zapravo | attested | a sentence-initial "But …" / "No, …" gets "actually" after its first copula or auxiliary ("But the gate is closed" → "is actually closed"); "you/we/they get/see/need/want" → "you actually get". |
+| recimo | attested | sentence-initial "Suppose / Imagine" before a clause subject, "Say" before a pronoun or "that", and "For example/instance, you/we/I" → "Let's say". |
+| ne ide | attested | "doesn't / does not / won't work" → "doesn't go", except before a phrasal particle (work out / on / with / …). |
+| konkretno | proposed | sentence-initial "Specifically," → "Concretely,". |
+| drzati predavanje | proposed | "give / gave a talk / lecture / presentation" → "hold / held a …". |
+| doneti odluku | proposed | "make / made a decision" → "bring / brought a decision". |
+| do petka | proposed | "by <weekday>" → "till <weekday>". |
+
+Every other catalog entry (nekako, sve u svemu, kontrolisati, …) is
+reported, not guessed at: `covered by marker kind-of` when the particle
+table already routes it to a marker operator, `no site operator
+(gate-read)` when no regex would land it without rewriting the native
+sense too. `--calques` picks the tiers: `attested` (default), `proposed`
+(both tiers), `none`.
+
+The cap per entry follows the bank's `essay_target_rule`: an explicit
+`essay_target` on the catalog entry wins, zero included; otherwise the
+particle table's journal rate for that key, damped to the midpoint toward
+the paper rate (zero for every calque), floored at the kind-of trace rate
+(0.3/1000) so an attested entry with no journal rate still lands at trace.
+The report names the source of each target. Budgets round to whole
+applications, so a short draft under a real-bank target reports `below
+target, budget rounds to zero` rather than pretending the target is met.
+
+Each application is one edit-log entry (`calque:<key>`, with the tier and
+site in its note), guarded by quoted speech and span locks like every
+other operator, judged by the verifier when `--verify` is on, and
+otherwise left to the author's gate read per `substrate.policy`.
 
 Deviations from the bank's letter, where the bank asks for judgment a
 mechanical stage cannot supply, are deliberate and visible in the report:
@@ -113,6 +154,9 @@ python3 scripts/inject_vernacular.py draft.md --dry-run --json
 
 # with the keep/drop verifier
 python3 scripts/inject_vernacular.py draft.md --verify --model gemma4:12b
+
+# proposed-tier calques too (default is attested only; --calques none disables)
+python3 scripts/inject_vernacular.py draft.md --calques proposed
 ```
 
 Tests: `scripts/test_inject_vernacular.py` (offline; synthetic bank, no

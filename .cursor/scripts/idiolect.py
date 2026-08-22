@@ -22,6 +22,10 @@ Library:
                              a description rather than a pattern
   load_calibration(voice_dir) author ceilings for filter-tells'
                              structural pass, or None
+  load_substrate(voice_dir)  idiolect.yaml's substrate block (particle
+                             table, calque catalog, policy) as a dict, {}
+                             when the bank carries none, None when the
+                             dir or file is absent
 
 Policy stays with the consumers: inject-vernacular refuses to run
 without a bank, voice-critic degrades that marker profile to a flag, and
@@ -69,6 +73,25 @@ def load_markers(voice_dir):
     with open(path, encoding="utf-8") as f:
         data = yaml.safe_load(f) or {}
     return {m["id"]: m for m in data.get("markers", [])}
+
+
+def load_substrate(voice_dir):
+    """idiolect.yaml's `substrate:` block, or None when the directory or
+    file is absent. A bank without the block returns {} (falsy), so a
+    consumer can tell "no bank" from "bank with no substrate layer" the
+    same way load_markers distinguishes an empty markers list. The block
+    carries the particle table (substrate.particles.table), the calque
+    catalog (substrate.calques.attested / .proposed), and the application
+    policy; inject-vernacular's calque operators read it."""
+    if not voice_dir:
+        return None
+    path = os.path.join(voice_dir, "idiolect.yaml")
+    if not os.path.exists(path):
+        return None
+    import yaml
+    with open(path, encoding="utf-8") as f:
+        data = yaml.safe_load(f) or {}
+    return data.get("substrate") or {}
 
 
 def compile_marker(marker):

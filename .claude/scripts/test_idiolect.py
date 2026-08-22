@@ -35,6 +35,16 @@ markers:
 - id: he-agent
   regex: '\\bhe\\b (case-insensitive; referent not machine-checkable)'
   essay_target: 1.5
+substrate:
+  policy: applied directly at target rates
+  particles:
+    table:
+    - {serbian: 'zapravo / upravo', english: actually, talk: 5.8, journal: 1.7, marker: null}
+  calques:
+    attested:
+    - {serbian: zapravo, english: 'actually (emphatic)'}
+    proposed:
+    - {serbian: konkretno, english: concretely}
 """
 
 
@@ -116,6 +126,23 @@ def test_load_calibration():
     print("  load_calibration: ok")
 
 
+def test_load_substrate():
+    with tempfile.TemporaryDirectory() as tmp:
+        sub = idiolect.load_substrate(make_voice(tmp))
+        assert sub["policy"].startswith("applied directly")
+        assert sub["particles"]["table"][0]["journal"] == 1.7
+        assert sub["calques"]["attested"][0]["serbian"] == "zapravo"
+        assert sub["calques"]["proposed"][0]["serbian"] == "konkretno"
+    assert idiolect.load_substrate(None) is None
+    with tempfile.TemporaryDirectory() as tmp:
+        assert idiolect.load_substrate(tmp) is None, "no idiolect.yaml -> None"
+    with tempfile.TemporaryDirectory() as tmp:
+        vd = make_voice(tmp, bank="purpose: x\nmarkers: []\n")
+        assert idiolect.load_substrate(vd) == {}, \
+            "bank without substrate -> {}, not None"
+    print("  load_substrate: ok")
+
+
 def _load(name, *rel):
     path = os.path.join(SKILLS, *rel)
     spec = importlib.util.spec_from_file_location(name, path)
@@ -128,7 +155,8 @@ def test_consumers_share_one_implementation():
     iv = _load("iv_gh63", "inject-vernacular", "scripts", "inject_vernacular.py")
     vc = _load("vc_gh63", "voice-critic", "scripts", "voice_critic.py")
     ds = _load("ds_gh63", "filter-tells", "scripts", "detect-structural.py")
-    for mod, names in ((iv, ["discover_voice_dir", "compile_marker"]),
+    for mod, names in ((iv, ["discover_voice_dir", "compile_marker",
+                             "load_substrate"]),
                        (vc, ["discover_voice_dir", "compile_marker",
                              "load_markers"]),
                        (ds, ["discover_voice_dir", "load_calibration"])):
@@ -145,6 +173,7 @@ def main():
     test_load_markers()
     test_compile_marker()
     test_load_calibration()
+    test_load_substrate()
     test_consumers_share_one_implementation()
     print("test_idiolect: all assertions passed")
 
