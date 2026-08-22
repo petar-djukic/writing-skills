@@ -10,15 +10,27 @@ sys.path.insert(0, HERE)
 
 
 def _make_verify_module():
-    """Stub verify module returning clean or dirty results."""
+    """Stub verify module returning clean or dirty results.
+
+    The finding is keyed "check" because that is what the real verify()
+    emits. It used to say "type", which matched the reader in match_voice.py
+    rather than the producer — so the stub agreed with the bug and the tests
+    passed while no retry note ever fired (GH-84). A stub that invents its
+    own shape tests nothing; checks_in comes from the real module for the
+    same reason.
+    """
+    import verify as real_verify
     mod = types.ModuleType("verify")
     mod._clean = True
 
     def verify(original, rewritten, anchors_json=None, max_shared_run=8):
         if mod._clean:
-            return {"clean": True, "findings": []}
-        return {"clean": False, "findings": [{"type": "numbers", "detail": "changed"}]}
+            return {"clean": True, "findings": [], "similarity": None}
+        return {"clean": False, "similarity": None,
+                "findings": [{"check": "numbers", "severity": "fatal",
+                              "detail": "number '12' lost or altered"}]}
     mod.verify = verify
+    mod.checks_in = real_verify.checks_in
     return mod
 
 

@@ -36,6 +36,12 @@ Checks:
              normalized to ASCII before any check runs (GH-362), so the gate
              diffs like-for-like and a rewrite that reintroduces them is caught.
 
+Findings are the verdict: each carries {"check", "severity", "detail"}, and
+a check name means "this failed" only there. The top-level "markup",
+"dashes", and "similarity" keys are measurements, present whether or not
+anything failed — callers classify with checks_in(), never by searching the
+JSON text (GH-84).
+
 Exit: 0 clean, 1 violations (the loop retries or keeps the original), 2 usage.
 
 Usage:
@@ -202,6 +208,37 @@ def _similarity(rewrite_text, anchors_json, max_shared_run):
     return {"longest_shared_run_words": longest,
             "threshold": max_shared_run,
             "violation": longest >= max_shared_run}
+
+
+def checks_in(verdict, severity=None):
+    """The set of check names a verdict's FINDINGS carry (GH-84).
+
+    Accepts the dict verify() returns or the JSON text the CLI prints; an
+    unparseable verdict yields an empty set, so a caller reading a crashed
+    gate classifies nothing rather than everything.
+
+    This exists because both drivers read the verdict by hand and both got
+    it wrong in opposite directions. match_voice.py keyed findings on
+    "type", which no finding has, so no specific retry note ever fired.
+    drive.py substring-matched the raw JSON for '"markup"' and '"dashes"',
+    which are TOP-LEVEL keys present in every verdict — so both notes fired
+    on every retry regardless of cause, diluting the one note that was
+    actually earned. Findings are the only place a check name means "this
+    failed"; read them through here, never off the blob.
+
+    severity=None counts every finding; pass "fatal" for the ones that
+    block acceptance, "warn" for the advisory ones.
+    """
+    if isinstance(verdict, (str, bytes)):
+        try:
+            verdict = json.loads(verdict)
+        except (json.JSONDecodeError, TypeError, ValueError):
+            return set()
+    if not isinstance(verdict, dict):
+        return set()
+    return {f.get("check", "") for f in verdict.get("findings", [])
+            if isinstance(f, dict)
+            and (severity is None or f.get("severity") == severity)} - {""}
 
 
 def verify(original, rewritten, anchors_json=None, max_shared_run=8,

@@ -104,6 +104,38 @@ def _rewrite_module():
     return rewrite
 
 
+def _verify_module():
+    if SK not in sys.path:
+        sys.path.insert(0, SK)
+    import verify
+    return verify
+
+
+def retry_notes(verify_json):
+    """The rewrite note a failed verdict earns: every note its FINDINGS
+    justify, or COPY_NOTE when they justify none.
+
+    A function rather than four lines in the loop because the loop is not
+    reachable from a test, and four lines in the loop is how GH-84 shipped:
+    the old classification searched the verdict text for '"markup"' and
+    '"dashes"', which are top-level measurement keys present in every
+    verdict, so both notes rode on every retry and the model was told to
+    fix markup and punctuation whatever had actually failed.
+    """
+    checks = _verify_module().checks_in(verify_json)
+    notes = []
+    if checks & {"numbers", "citations", "terms"}:
+        notes.append(NUM_NOTE)
+    if "markup" in checks:
+        notes.append(MARKUP_NOTE)
+    if "dashes" in checks:
+        notes.append(DASH_NOTE)
+    tn = term_note(verify_json)
+    if tn:
+        notes.append(tn)
+    return " ".join(notes) or COPY_NOTE
+
+
 def term_note(verify_json):
     """The retry note for protected-term losses, naming the terms, or None."""
     try:
@@ -1057,10 +1089,15 @@ def main():
                 break
             de = run(["bash", DEAI, cf])
             fj = vf.stdout if vf.stdout.strip().startswith("{") else "{}"
+            # Classified off the findings, not the JSON text: "similarity",
+            # "markup", and "dashes" are also TOP-LEVEL measurement keys, so
+            # substring tests on the blob fired on every verdict ever
+            # produced (GH-84).
+            checks = _vmod.checks_in(fj)
             warnings = []
             if de.returncode != 0:
                 warnings.append("register")
-            if '"similarity"' in fj:
+            if "similarity" in checks:
                 warnings.append("similarity")
             if vf.returncode == 0:
                 rec["status"] = "accepted-mechanical"
@@ -1070,17 +1107,7 @@ def main():
                     rec["warnings"] = warnings
                 break
             # classify for the retry note — only hard checks reach here
-            notes = []
-            if '"numbers"' in fj or '"citations"' in fj or '"terms"' in fj:
-                notes.append(NUM_NOTE)
-            if '"markup"' in fj:
-                notes.append(MARKUP_NOTE)
-            if '"dashes"' in fj:
-                notes.append(DASH_NOTE)
-            tn = term_note(fj)
-            if tn:
-                notes.append(tn)
-            note = " ".join(notes) or COPY_NOTE
+            note = retry_notes(fj)
             rec["status"] = "kept-original"
             rec["last_fail"] = {"verify": json.loads(fj) if fj != "{}" else vf.stdout[:150],
                                 "deai": de.returncode}
