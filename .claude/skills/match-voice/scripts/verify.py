@@ -12,11 +12,15 @@ Checks:
              pandoc key silently rewritten as natbib breaks the build
   numbers    every number (with its unit when attached) must survive
   terms      acronyms and technical tokens from the original must survive
-  markup     inline emphasis and code spans must survive, in the same count and
-             with a leading emphasis span still leading (GH-232). The model
-             reads "**The context stays clean.** An autonomous loop..." as
-             prose and returns a plain declarative sentence: every number and
-             citation survives, and the section's visual structure does not.
+  markup     inline emphasis, code spans, and markdown links must survive in
+             the same count, and a leading emphasis span must still lead
+             (GH-232). The model reads "**The context stays clean.** An
+             autonomous loop..." as prose and returns a plain declarative
+             sentence: every number and citation survives, and the section's
+             visual structure does not. Drift runs both ways (GH-83): of 34
+             paragraphs a cold review reverted, 7 were the model adding bold
+             or italic the original never had, and one turned "[text](url)"
+             into a bare parenthetical URL. Any count that moves is fatal.
   dashes     the rewrite may not add em-dashes the original lacked — the
              cheapest way for a model to fake punch (GH-243)
   similarity n-gram overlap against the anchor passages, so the model does not
@@ -98,15 +102,24 @@ ITALIC_USCORE = re.compile(r"(?<![\w_])_(?=\S)([^_\n]+)(?<=\S)_(?![\w_])")
 # loss GH-232 measured. Matched on the stripped paragraph, so leading
 # whitespace does not decide it.
 LEADING_EMPHASIS = re.compile(r"^\s*(\*\*|__)(?=\S)(.+?)(?<=\S)\1")
+# A markdown link, counted after code spans and before emphasis: the link is
+# replaced by its text so emphasis inside "[**x**](u)" still counts once, and
+# the URL's underscores and asterisks never read as italic. A pandoc citation
+# "[@key]" has no "(...)" after it and does not match.
+LINK = re.compile(r"\[([^\]\n]+)\]\(([^)\s]+)\)")
+
+MARKUP_KINDS = (("code", "inline code"), ("bold", "bold"),
+                ("italic", "italic"), ("link", "markdown link"))
 
 
 def _markup_spans(text):
-    """Counts of inline code, bold, and italic spans, counted once each."""
+    """Counts of inline code, link, bold, and italic spans, counted once each."""
     without_code, n_code = CODE_SPAN.subn(" ", text)
-    without_bold, n_bold = BOLD.subn(" ", without_code)
+    without_link, n_link = LINK.subn(r"\1", without_code)
+    without_bold, n_bold = BOLD.subn(" ", without_link)
     n_italic = (len(ITALIC_STAR.findall(without_bold))
                 + len(ITALIC_USCORE.findall(without_bold)))
-    return {"code": n_code, "bold": n_bold, "italic": n_italic}
+    return {"code": n_code, "bold": n_bold, "italic": n_italic, "link": n_link}
 
 
 # Em-dash and its spaced-hyphen equivalent. A dash the original did not have is
@@ -242,15 +255,18 @@ def verify(original, rewritten, anchors_json=None, max_shared_run=8,
                              "detail": f"number '{val}' invented by the rewrite"})
 
     # Markup is a contract like citation syntax: the content survives and the
-    # rendering does not, so nothing else here notices. Only a shortfall is
-    # fatal — a rewrite that adds emphasis is a style question for the reviewer,
-    # not a broken document.
+    # rendering does not, so nothing else here notices. Both directions are
+    # fatal. GH-240 let added emphasis through as a style question for the
+    # reviewer; the GH-77 harness then measured that reviewer reverting 7 of
+    # 34 paragraphs for exactly that, with nothing else wrong in several of
+    # them. A count that moves either way goes back to the model with
+    # MARKUP_NOTE instead of to a person.
     o_m, r_m = _markup_spans(original), _markup_spans(rewritten)
-    for kind, label in (("bold", "bold"), ("code", "inline code"),
-                        ("italic", "italic")):
-        if r_m[kind] < o_m[kind]:
+    for kind, label in MARKUP_KINDS:
+        if r_m[kind] != o_m[kind]:
+            verb = "lost" if r_m[kind] < o_m[kind] else "added"
             findings.append({"check": "markup", "severity": "fatal",
-                             "detail": f"{label} span(s) lost "
+                             "detail": f"{label} span(s) {verb} "
                                        f"({o_m[kind]} in original, {r_m[kind]} "
                                        f"in rewrite)"})
     if LEADING_EMPHASIS.match(original) and not LEADING_EMPHASIS.match(rewritten):
