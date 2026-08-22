@@ -374,6 +374,142 @@ def test_check_tokens():
     print("  check_tokens: ok")
 
 
+# ---------------------------------------------------------------------------
+# GH-86: comments are classified by content and state, not by line shape
+# ---------------------------------------------------------------------------
+
+LINE_INITIAL = """# Title
+
+A paragraph before, with enough words to be extracted as prose here.
+
+<!-- lock -->The other half of the deck was never in the machine.<!-- /lock --> and
+the sentence carries on across a second line before it ends.
+
+A paragraph after, also long enough to count as prose in the extractor.
+"""
+
+COMMENTED_OUT = """# Title
+
+Real prose that belongs to the document and should be extracted.
+
+<!--
+BRAINSTORM: text the author commented out and does not want rewritten.
+
+```python
+not_a_real_fence()
+```
+
+A second commented paragraph, equally not part of the document.
+-->
+
+Real prose after the block, which the fence inside it must not have hidden.
+"""
+
+
+def test_line_initial_lock_is_prose_not_comment():
+    """The reported bug: a prose line opening with an inline lock was called
+    a comment, so it never became prose and never reached excise."""
+    r = md_paragraphs.parse(LINE_INITIAL)
+    texts = [t for _s, _e, t in r.paragraphs]
+    assert len(texts) == 3, texts
+    assert "<!-- lock -->The other half" in texts[1], texts[1]
+    assert r.coverage[5] == "prose", r.coverage      # the lock line itself
+    print("  line_initial_lock_is_prose_not_comment: ok")
+
+
+def test_line_initial_lock_does_not_split_the_paragraph():
+    """The second half of the bug: flushing on the 'comment' line cut a
+    two-line paragraph into two."""
+    r = md_paragraphs.parse(LINE_INITIAL)
+    start, end, text = r.paragraphs[1]
+    assert (start, end) == (5, 6), (start, end)   # one paragraph, two lines
+    assert "carries on across a second line" in text, text
+    print("  line_initial_lock_does_not_split_the_paragraph: ok")
+
+
+def test_line_initial_lock_reaches_excise():
+    """End to end: the span the extractor used to skip is now excised to a
+    token, reported, and spliced back byte-identical."""
+    with tempfile.TemporaryDirectory() as tmp:
+        path = _write(tmp, "s.md", LINE_INITIAL)
+        doc = pd.ProseDocument.open(path)
+        para = next(p for p in doc.paragraphs if "[[LOCK-1]]" in p.text)
+        assert "The other half" not in para.text, para.text
+        assert doc.lock_report()["inline"][0]["tokens"] == 1
+        span = doc.locked_spans()[0]
+        doc.replace(para.index, "A rewrite [[LOCK-1]] that kept its anchor.")
+        doc.save()
+        with open(path, encoding="utf-8") as f:
+            content = f.read()
+        assert sl.verify_preserved([span], content) == []
+        assert "[[LOCK-" not in content
+    print("  line_initial_lock_reaches_excise: ok")
+
+
+def test_whole_line_comment_is_still_a_comment():
+    """The common case must not regress: a line that is only comments stays
+    a comment, and the escaped-bang spelling with it."""
+    for line in ("<!-- subscribe-block -->",
+                 "<!-- a --> <!-- b -->",
+                 "<\\!-- escaped bang -->"):
+        r = md_paragraphs.parse(f"Lead paragraph here.\n\n{line}\n\nTail here.\n")
+        assert r.coverage[3] == "comment", (line, r.coverage)
+        assert len(r.paragraphs) == 2, (line, r.paragraphs)
+    print("  whole_line_comment_is_still_a_comment: ok")
+
+
+def test_multiline_comment_body_is_not_prose():
+    """The mirror-image defect found while fixing GH-86: with no comment
+    state, the BODY of a multi-line comment matched no category and fell
+    through to prose. Measured at 27 paragraphs across 4 files of the live
+    corpora — text the author had commented out, offered to models."""
+    r = md_paragraphs.parse(COMMENTED_OUT)
+    joined = "\n".join(t for _s, _e, t in r.paragraphs)
+    assert "BRAINSTORM" not in joined, joined
+    assert "second commented paragraph" not in joined
+    assert "not_a_real_fence" not in joined
+    assert len(r.paragraphs) == 2, r.paragraphs
+    assert "Real prose that belongs" in r.paragraphs[0][2]
+    assert "Real prose after the block" in r.paragraphs[1][2]
+    print("  multiline_comment_body_is_not_prose: ok")
+
+
+def test_fence_inside_a_comment_does_not_toggle_code():
+    """The ordering that makes the above safe: a fence in a commented-out
+    block is commented-out text. Toggling on it would leave the parser in
+    code state and swallow the rest of the document."""
+    r = md_paragraphs.parse(COMMENTED_OUT)
+    assert "code" not in set(r.coverage.values()), sorted(set(r.coverage.values()))
+    assert r.unaccounted == [], r.unaccounted
+    print("  fence_inside_a_comment_does_not_toggle_code: ok")
+
+
+def test_comment_marker_inside_a_fence_stays_example_text():
+    """The other side of that ordering: a "<!--" inside a code fence is
+    example text and must not open a comment that eats the document."""
+    doc = ("Lead paragraph with enough words to be prose here.\n\n"
+           "```text\n<!-- an unclosed marker shown as an example\n```\n\n"
+           "Tail paragraph that must still be extracted as prose.\n")
+    r = md_paragraphs.parse(doc)
+    texts = [t for _s, _e, t in r.paragraphs]
+    assert len(texts) == 2, texts
+    assert "Tail paragraph" in texts[1], texts
+    print("  comment_marker_inside_a_fence_stays_example_text: ok")
+
+
+def test_comment_kind_classifies_the_measured_shapes():
+    """Every shape the live corpora actually contain."""
+    assert md_paragraphs._comment_kind("<!-- subscribe-block -->") == "whole"
+    assert md_paragraphs._comment_kind("<!--") == "opens"
+    # Malformed close (".>" not "-->"): 8 occurrences in the corpora. It
+    # opens a comment that never closes, which is what the file means.
+    assert md_paragraphs._comment_kind(
+        "<!-- Leave this section empty. pandoc fills it in.>") == "opens"
+    assert md_paragraphs._comment_kind("Ordinary prose.") is None
+    assert md_paragraphs._comment_kind("<!-- a --> prose between <!-- b -->") is None
+    print("  comment_kind_classifies_the_measured_shapes: ok")
+
+
 def main():
     test_excise_splice_round_trip()
     test_excise_no_locks_is_identity()
@@ -397,6 +533,14 @@ def main():
     test_inline_lock_with_adjacent_snark_comment()
     test_locked_spans_and_verify_preserved()
     test_check_tokens()
+    test_line_initial_lock_is_prose_not_comment()
+    test_line_initial_lock_does_not_split_the_paragraph()
+    test_line_initial_lock_reaches_excise()
+    test_whole_line_comment_is_still_a_comment()
+    test_multiline_comment_body_is_not_prose()
+    test_fence_inside_a_comment_does_not_toggle_code()
+    test_comment_marker_inside_a_fence_stays_example_text()
+    test_comment_kind_classifies_the_measured_shapes()
     print("test_span_locks: all assertions passed")
 
 

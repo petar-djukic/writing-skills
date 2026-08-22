@@ -59,8 +59,9 @@ Result = namedtuple("Result",
 # "**Figure" is a caption, not prose, but only after the code-fence and blank
 # checks have run.
 _CATEGORY_TESTS = (
-    # Both spellings: some files carry the bang escaped ("<\!--").
-    ("comment", lambda s: s.startswith(("<!--", "<\\!--"))),
+    # "comment" is not here: a line is a comment by what survives
+    # stripping its complete comments, not by how it starts (GH-86).
+    # See _comment_kind.
     ("heading", lambda s: s.startswith("#")),
     ("figure", lambda s: s.startswith("![")),
     ("table", lambda s: s.startswith("|")),
@@ -70,6 +71,38 @@ _CATEGORY_TESTS = (
     ("blockquote", lambda s: s.startswith(">")),
     ("list", lambda s: bool(re.match(r"^([-*+]\s|\d+\.\s)", s))),
 )
+
+
+# Both spellings: some files carry the bang escaped ("<\!--").
+_COMMENT_OPEN = ("<!--", "<\\!--")
+_COMMENT_COMPLETE = re.compile(r"<\\?!--.*?-->", re.DOTALL)
+_COMMENT_CLOSE = "-->"
+
+
+def _comment_kind(stripped):
+    """How a line relates to HTML comments: "whole", "opens", or None.
+
+    "whole"  every comment on the line is complete and nothing else remains,
+             so the document reads the same without the line.
+    "opens"  a comment starts here and does not close on this line, so the
+             lines that follow are its body until a "-->".
+    None     the line carries content outside its comments; it is classified
+             on that content, and any markers ride along in the paragraph
+             text the way an inline lock's already do.
+
+    A line-shape test cannot express either half of this, and the old
+    startswith("<!--") got both wrong. Forwards: a prose line opening with an
+    inline lock was called a comment, so it was never extracted, never
+    counted as locked, and a paragraph continuing on the next line split in
+    two (GH-86). Backwards, from having no state at all: the BODY of a
+    multi-line comment matched no category and fell through to prose, so text
+    the author had commented out was extracted, measured, and offered to
+    models — 27 paragraphs across 4 files of the live corpora.
+    """
+    rest = _COMMENT_COMPLETE.sub(" ", stripped)
+    if not rest.strip():
+        return "whole"
+    return "opens" if rest.lstrip().startswith(_COMMENT_OPEN) else None
 
 
 def _front_matter_close(lines):
@@ -100,6 +133,7 @@ def parse(text: str) -> Result:
     fm_close = _front_matter_close(lines)
     paras, coverage = [], {}
     in_code = False
+    in_comment_ln = None
     lock_open_ln = None
     buf, buf_start = [], None
 
@@ -124,6 +158,14 @@ def parse(text: str) -> Result:
             if span_locks.is_close_marker(s):
                 lock_open_ln = None
             continue
+        # Inside a multi-line comment, and before the fence test: a fence in
+        # a commented-out block is commented-out text, and toggling code
+        # state on it would misread the rest of the document.
+        if in_comment_ln is not None:
+            coverage[ln] = "comment"
+            if _COMMENT_CLOSE in s:
+                in_comment_ln = None
+            continue
         if s.startswith("```"):
             flush()
             in_code = not in_code
@@ -145,6 +187,16 @@ def parse(text: str) -> Result:
         if s == "":
             flush()
             coverage[ln] = "blank"
+            continue
+        # After the in_code guard, so a "<!--" inside a fence stays example
+        # text and cannot open a comment; after the lock markers, which have
+        # their own meaning and would otherwise read as whole-line comments.
+        kind = _comment_kind(s)
+        if kind:
+            flush()
+            coverage[ln] = "comment"
+            if kind == "opens":
+                in_comment_ln = ln
             continue
         cat = next((name for name, test in _CATEGORY_TESTS if test(s)), None)
         if cat:
