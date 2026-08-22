@@ -33,7 +33,16 @@ the block form's job and fails paragraph-level validation loudly.
 Library:
   excise(text, start=1, base_line=1) -> (clean_text, manifest)
   splice(text, manifest)             -> text with tokens re-expanded
+  tokens_in(text)                    -> the anchor tokens a text carries
+  check_tokens(original, candidate)  -> None, or the token fault to retry on
+  verify_preserved(spans, output)    -> locked spans the output lost
   is_open_marker(line) / is_close_marker(line)   whole-line predicates
+
+The last three exist because of GH-82: excise and splice both worked, and
+match-voice's markdown path called neither — it read the raw parse and
+spliced raw lines, so two inline locks reached the model and came back
+edited. check_tokens lets a driver retry before the splice; verify_preserved
+checks the bytes actually written, whichever path wrote them.
 
 CLI (audit):
   span_locks.py <file.md|file.yaml> [--json]
@@ -46,6 +55,7 @@ import json
 import os
 import re
 import sys
+from collections import Counter
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 if HERE not in sys.path:
@@ -136,6 +146,46 @@ def splice(text, manifest):
     for token, raw in manifest.items():
         text = text.replace(token, raw)
     return text
+
+
+def tokens_in(text):
+    """Anchor tokens in ``text``, in order of appearance."""
+    return [m.group(0) for m in _TOKEN_RE.finditer(text)]
+
+
+def check_tokens(original, candidate):
+    """None when ``candidate`` carries every token of ``original`` exactly
+    once and no other; otherwise one message naming each fault.
+
+    The rule splice() enforces, available before the splice: a driver can
+    send the fault back to the model as a retry note instead of discovering
+    at assembly time that the paragraph cannot be written.
+    """
+    want = tokens_in(original)
+    have = Counter(tokens_in(candidate))
+    faults = [f"{t} appears {have.get(t, 0)} times (expected exactly 1)"
+              for t in want if have.get(t, 0) != 1]
+    faults += [f"unknown token {t}" for t in have if t not in want]
+    return "; ".join(faults) or None
+
+
+def verify_preserved(spans, output):
+    """The locked spans missing from ``output``: each must appear verbatim,
+    markers included, as many times as it was locked. Empty when the
+    invariant holds.
+
+    A check on the bytes written, not on the path that wrote them. Every
+    test of excise and splice passed while the GH-82 path shipped, because
+    that path called neither.
+    """
+    missing, rest = [], output
+    for span in spans:
+        at = rest.find(span)
+        if at < 0:
+            missing.append(span)
+        else:
+            rest = rest[:at] + rest[at + len(span):]
+    return missing
 
 
 def main():

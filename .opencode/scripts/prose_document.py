@@ -24,7 +24,9 @@ per-paragraph manifest, and replace() splices them back byte-identical.
 Replacement text that drops, duplicates, or invents an anchor raises
 span_locks.LockError — refused, not repaired. The aligned view is the
 file's own lines and may show locked text; the model-facing surface is
-``paragraphs``/``replace``, which never does.
+``paragraphs``/``replace``, which never does. ``to_parse_result()`` hands
+drivers that same excised view (GH-82): for markdown it once re-parsed the
+raw source, and every driver on that adapter sent locked bytes to the model.
 
 CLI:
   prose_document.py <file> [--json]        list paragraphs
@@ -173,6 +175,13 @@ class ProseDocument:
         """
         raise NotImplementedError
 
+    def locked_spans(self):
+        """Raw bytes of every locked span, markers included, block and
+        inline alike, in document order. What span_locks.verify_preserved
+        checks a written draft against (GH-82).
+        """
+        raise NotImplementedError
+
 
 def prose_view_aligned(path):
     """Aligned prose view of any supported file, as a list of lines.
@@ -249,12 +258,26 @@ class MarkdownDocument(ProseDocument):
         return self._content_from_lines()
 
     def to_parse_result(self):
+        # The excised view, not a fresh raw parse. Until GH-82 this re-ran
+        # md_paragraphs.parse on the source, whose paragraph text still
+        # carried the inline lock bytes — so every driver on the adapter
+        # sent locked text to the model while doc.paragraphs, one call
+        # away, held the token form. Same Result shape, same line numbers.
         import md_paragraphs
-        return md_paragraphs.parse(self._content_from_lines())
+        r = self._md_result
+        paras = [[p.start_line, p.end_line, p.text] for p in self._paras]
+        return md_paragraphs.Result(r.lines, r.fm_close, paras,
+                                    r.coverage, r.unaccounted)
 
     @property
     def raw(self):
         return self._original
+
+    def locked_spans(self):
+        blocks = ["\n".join(self._lines[s - 1:e])
+                  for s, e in self.lock_report()["block_ranges"]]
+        inline = [raw for m in self._manifests for raw in m.values()]
+        return blocks + inline
 
     def aligned_lines(self):
         return list(self._lines)
@@ -477,6 +500,9 @@ class YamlDocument(ProseDocument):
                    "end_line": p.end_line, "tokens": len(m)}
                   for p, m in zip(self._paras, self._manifests) if m]
         return {"block_ranges": [], "inline": inline}
+
+    def locked_spans(self):
+        return [raw for m in self._manifests for raw in m.values()]
 
     # Block-scalar header: optional "- " item marker, optional "key:", then
     # a literal/folded indicator. The prose lives on the following lines.

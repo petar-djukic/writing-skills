@@ -77,6 +77,10 @@ MARKUP_NOTE = ("Reproduce the markdown formatting of the original exactly: every
 TERM_NOTE = ("You dropped the protected term(s) {terms}. These words carry the "
              "article's referent chain across paragraphs; a synonym breaks it. "
              "Keep each one verbatim.")
+LOCK_NOTE = ("The paragraph contains anchor tokens that look like [[LOCK-1]]. Each "
+             "one stands for hand-written text that must not change. Copy every "
+             "token exactly once, character for character, in the sentence where "
+             "it sits. Do not remove, reword, duplicate, or invent tokens.")
 
 
 def _protected_terms_module():
@@ -152,6 +156,13 @@ def _prose_document():
         return prose_document
     except ImportError as e:
         sys.exit(f"could not import prose_document.py from {sibling}: {e}")
+
+
+def _span_locks():
+    """Shared span_locks module, from the same directory as prose_document."""
+    _prose_document()
+    import span_locks
+    return span_locks
 
 
 def pangram_scan(path, work, tag):
@@ -681,35 +692,42 @@ def restore_full_bold(original, candidate):
 
 
 def assemble_draft(art, lines, accept, rng, out):
-    """Write accepted candidates into the draft at `out`.
+    """Write accepted candidates into the draft at `out`; return the 1-based
+    numbers of any paragraphs refused at splice time.
 
-    YAML goes back through the document model (GH-358): ruamel round-trip
-    keeps comments, key order, and structure — raw line splicing would drop
-    bare prose over keys and block markers. Markdown keeps bottom-up line
-    splicing. Descending order both ways, so a replacement that changes
-    later paragraph indices cannot shift earlier ones. `accept` maps the
-    1-based paragraph number to its candidate text; `rng` maps it to the
-    (start, end) line span the markdown splice uses.
+    Both formats go back through the document model. YAML because ruamel
+    round-trip keeps comments, key order, and structure — raw line splicing
+    dropped bare prose over keys and block markers (GH-358). Markdown
+    because replace() is where inline lock anchors are re-expanded into
+    their bytes (GH-82): raw line splicing wrote the candidate as the model
+    returned it, which is how two locked spans in strategy-theatre came
+    back edited. Descending order, so a replacement that changes later
+    paragraph indices cannot shift earlier ones. `accept` maps the 1-based
+    paragraph number to its candidate text; `lines` and `rng` are the
+    buffers the markdown line splice used and are no longer read.
+
+    A candidate whose anchor tokens do not match is refused by splice() and
+    the paragraph keeps its original. The loop checks tokens before the
+    gate, so a refusal here means the two disagreed — reported on stderr
+    and returned, never silently dropped.
     """
-    if art.lower().endswith((".yaml", ".yml")):
-        doc = _prose_document().ProseDocument.open(art)
-        if not accept:
-            # Nothing accepted: emit the untouched source rather than a
-            # ruamel re-emission, which normalizes wrapping and sequence
-            # offsets and turns a no-op run into a noisy diff (GH-360).
-            open(out, "w").write(doc.raw)
-            return
-        for n in sorted(accept, reverse=True):
-            doc.replace(n - 1, accept[n])
-        doc.save_as(out)
-        return
-    out_lines = list(lines)
+    doc = _prose_document().ProseDocument.open(art)
+    if not accept:
+        # Nothing accepted: emit the untouched source rather than a
+        # re-emission, which for YAML normalizes wrapping and sequence
+        # offsets and turns a no-op run into a noisy diff (GH-360).
+        open(out, "w").write(doc.raw)
+        return []
+    sl = _span_locks()
+    refused = []
     for n in sorted(accept, reverse=True):
-        s, e = rng[n]
-        # The wholly-bold repair happens before the gate now, so an accepted
-        # candidate already carries the markup it is going to carry.
-        out_lines[s - 1:e] = [accept[n]]
-    open(out, "w").write("\n".join(out_lines))
+        try:
+            doc.replace(n - 1, accept[n])
+        except sl.LockError as e:
+            print(f"  LOCK-REFUSED p{n:02d}: {e}", file=sys.stderr)
+            refused.append(n)
+    doc.save_as(out)
+    return refused
 
 
 def parse_paragraphs(path, min_words):
@@ -812,6 +830,7 @@ def main():
     lines, fm_close, paras, coverage, unaccounted, doc = parse_paragraphs(art, a.min_words)
 
     pd = _prose_document()
+    _sl = _span_locks()
     exclude = set()
     ext = os.path.splitext(art)[1].lower()
     if ext in (".yaml", ".yml"):
@@ -957,6 +976,11 @@ def main():
             except (json.JSONDecodeError, AttributeError, TypeError):
                 rec["anchors"] = []
             atf = f"{work}/p{n:02d}.anchors.txt"; open(atf, "w").write(at.stdout or "")
+        # A paragraph carrying lock anchors gets the token rule on every
+        # attempt, beside the user's style note: the model has no other way
+        # to know that [[LOCK-n]] is not prose (GH-82).
+        standing = (compose_note(a.style_note, LOCK_NOTE)
+                    if _sl.tokens_in(txt) else a.style_note)
         note = None
         for attempt in range(1 + a.retries):
             cmd = ["python3", f"{SK}/rewrite.py", "--text", pf, "--anchors", atf,
@@ -965,7 +989,7 @@ def main():
             # The standing style note rides on every attempt; a retry's
             # failure-classified note is appended after it, so neither
             # displaces the other.
-            sent_note = compose_note(a.style_note, note)
+            sent_note = compose_note(standing, note)
             if sent_note:
                 cmd += ["--retry-note", sent_note]
             if protected_path:
@@ -996,7 +1020,7 @@ def main():
                 if crit["verdict"] == "repair":
                     constraints = critique_mod.render_constraints(crit)
                     cmd2 = [c for c in cmd if c not in ("--retry-note", sent_note)] \
-                        + ["--retry-note", compose_note(a.style_note, constraints)]
+                        + ["--retry-note", compose_note(standing, constraints)]
                     rw2 = run(cmd2)
                     if rw2.returncode == 0 and rw2.stdout.strip():
                         cand_text = _vmod.normalize_ascii(
@@ -1006,6 +1030,19 @@ def main():
                     else:
                         rec["pass2"] = None
                         rec["pass2_error"] = (rw2.stderr or "")[:200]
+            # Anchor tokens are checked before the gate and before any
+            # splice: a candidate that dropped, duplicated, or invented a
+            # [[LOCK-n]] token can never carry the locked bytes back, so it
+            # retries with the specific fault instead of reaching assembly
+            # (GH-82).
+            lock_fault = _sl.check_tokens(txt, cand_text)
+            if lock_fault:
+                note = f"Your rewrite broke a lock anchor token: {lock_fault}. " + LOCK_NOTE
+                rec["status"] = "kept-original"
+                rec["last_fail"] = {"verify": {"clean": False, "findings": [
+                    {"check": "lock", "severity": "fatal", "detail": lock_fault}]},
+                    "deai": None}
+                continue
             cf = f"{work}/p{n:02d}.cand.txt"; open(cf, "w").write(cand_text)
             vcmd = ["python3", f"{SK}/verify.py", "--original", pf, "--rewrite", cf,
                     "--anchors-json", ajf, "--json"]
@@ -1052,8 +1089,25 @@ def main():
     # assemble
     accept = {r["n"]: r["cand"] for r in results if r.get("cand")}
     rng = {r["n"]: tuple(r["lines"]) for r in results}
-    assemble_draft(art, lines, accept, rng, out)
+    refused = set(assemble_draft(art, lines, accept, rng, out))
+    for r in results:
+        if r["n"] in refused:
+            r["status"] = "lock-refused"
+            r.pop("cand", None)
+    # The GH-57 invariant, checked on the bytes written rather than on the
+    # path that wrote them: every locked span in the article appears
+    # verbatim in the draft. A miss is a driver bug, and the run fails on it
+    # — after results.json is saved, so the model calls are not lost.
+    missing = _sl.verify_preserved(doc.locked_spans(),
+                                   open(out, encoding="utf-8").read())
     json.dump(results, open(f"{work}/results.json", "w"), indent=2)
+    if missing:
+        print(f"\nLOCK VIOLATION: {len(missing)} locked span(s) from {art} are "
+              f"not byte-identical in {out}:", file=sys.stderr)
+        for span in missing:
+            print(f"  {span[:100]!r}", file=sys.stderr)
+        print(f"results: {work}/results.json", file=sys.stderr)
+        sys.exit(3)
 
     from collections import Counter as C
     print(f"\ndraft: {out}\nwork:  {work}/results.json")

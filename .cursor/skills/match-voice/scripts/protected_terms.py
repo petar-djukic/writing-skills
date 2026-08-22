@@ -80,8 +80,13 @@ _WORD = re.compile(r"[A-Za-z][A-Za-z'-]*[A-Za-z]|[A-Za-z]")
 _SENTENCE = re.compile(r"[^.!?]+[.!?]+")
 
 
+_LOCK_TOKEN = re.compile(r"\[\[LOCK-\d+\]\]")
+
+
 def _tokens(text):
-    text = _URL.sub(" ", text.replace("\u2019", "'"))
+    # Inline lock anchors reach derive() as [[LOCK-n]] (GH-82); "lock" in
+    # three such paragraphs is not a term of art.
+    text = _URL.sub(" ", _LOCK_TOKEN.sub(" ", text.replace("\u2019", "'")))
     out = []
     for w in _WORD.findall(text):
         w = w.lower().strip("'-")
