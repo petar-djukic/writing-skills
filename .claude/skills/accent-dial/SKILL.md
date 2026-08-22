@@ -90,14 +90,46 @@ repair the final text. Then re-measure: paper-stash
 `--pangram`-style scan only at the gate (scans cost credits; the dial
 curve above is the planning surface).
 
+## Generalization (three pre-pipeline essays, 2026-08-21)
+
+Dial 0.4 on essays that predate the voice program, all baseline 1.000 AI
+(prose-only payloads):
+
+| essay | dial 0.4 | dial 1.0 |
+|---|---:|---:|
+| your-ai-project-failed (2025-11) | 0.567 | — |
+| hidden-cost-junior (2026-02) | 1.000 | 1.000 |
+| block-layoffs (2026-04) | 1.000 | 0.872 |
+
+The split has a measured mechanism: **round-trip launders diction, not
+discourse structure.** The translation preserves — and sometimes
+amplifies — the structural tells (junior antithesis 8→18 through the
+round-trip, failed 9→14; tricolons, anaphoric lists, and opening
+monotony pass through nearly unchanged), so an essay saturated with
+structural signal scans 1.000 even fully translated. Strategy Theatre
+responded because its structure was already pipeline-cleaned.
+
+Consequences:
+- **accent-dial composes AFTER structural repair, never instead of it.**
+  Run the filter-tells structural pass first; dial the accent into
+  structurally clean text.
+- **gemma manufactures antithesis** (an AI tell inject-vernacular
+  targets), so a structural recheck of applied paragraphs is part of the
+  review gate.
+- **The calque list does not transfer across articles**: all three fresh
+  round-trips produced zero hits on the strategy-theatre-seeded list, so
+  ranking degenerated to restructuring depth. Until an
+  article-independent L2 signal exists, treat the ranking as
+  laundering-depth-first on new material.
+
 ## Known limits
 
 - The ranking's accent signal is the calque list mirrored from
-  l2-markers.yaml — sparse by design; grow the canonical bank first, then
-  mirror here.
-- Calibrated on one article. The saturation shape (accent by 0.25,
-  Pangram by 0.5) should be re-checked on the next article before the
-  defaults harden.
+  l2-markers.yaml — article-specific in practice (see Generalization);
+  grow the canonical bank first, then mirror here.
+- Saturation shape (accent by 0.25, Pangram by 0.5) measured on
+  strategy-theatre only, and only meaningful where the round-trip moves
+  the score at all — check the essay responds before choosing a dial.
 - Paragraph-level grain: a paragraph is swapped whole. Sentence-level
   grain is a follow-up if review-gate rejections cluster in otherwise
   good paragraphs.
