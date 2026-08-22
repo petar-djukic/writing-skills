@@ -70,7 +70,9 @@ Three additions, and each one is load-bearing.
 
 ## Marker grammar
 
-One comment line immediately above each paragraph and each heading:
+One comment line per unit: immediately **above** each paragraph, and
+immediately **below** each heading — a marker above a heading sits at the
+end of the previous section and reads as though it belongs there.
 
 ```
 <!-- rst: <relation>[ -> <n>] | <one line: what it does for its target> -->
@@ -87,8 +89,8 @@ One comment line immediately above each paragraph and each heading:
 - **`-> n`** — the 1-indexed paragraph *within the section* this satellite
   attaches to. Omitted means the section nucleus. Depth is the number of hops
   to that nucleus, computed rather than stored.
-- **On a heading** — the same grammar gives the section's relation to the
-  `thesis:` line in front matter.
+- **On a heading** — the same grammar, on the line below the heading, gives
+  the section's relation to the `thesis:` line in front matter.
 - **Exactly one `nucleus` per section.**
 
 ```markdown
