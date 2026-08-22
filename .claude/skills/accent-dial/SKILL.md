@@ -76,6 +76,36 @@ the other half of the article stays byte-identical to the author-gated
 text. Default working range: **0.3–0.5**. Above 0.5 you pay review
 surface for nothing measurable.
 
+## Sentence grain (default since GH-73)
+
+The GH-175 author gate rejected paragraph grain: dial 0.4 produced walls
+of fully-translated paragraphs beside untouched ones, and the whole read
+as ESL. Sentence grain dials the intensive margin instead — candidates
+are 1:1-aligned sentences (monotone DP alignment; split/merged sentences
+never pair, and the sentence-level length gate kills half-translations),
+globally ranked, applied under a per-paragraph cap (--max-per-para,
+default 2). The accent disperses: one lightly foreign sentence per
+paragraph, nothing fully foreign. A quote gate rejects any candidate
+whose double-quoted spans are not verbatim — mechanizing the failure
+class that cost 5 of 9 review reverts at paragraph grain.
+
+Calibration (strategy-theatre payload, cached gemma round-trip,
+baseline 0.708 AI / full round-trip 0.150):
+
+| grain, dial | Pangram AI | human | units swapped |
+|---|---:|---:|---:|
+| sentence 0.3 | 0.374 | 0.437 | 80/267 sentences |
+| sentence 0.6 | 0.399 | 0.525 | 138/267 sentences |
+| paragraph 0.25 | 0.464 | 0.475 | 19/75 paragraphs |
+| paragraph 0.5 | 0.154 | 0.692 | 38/75 paragraphs |
+
+The shapes differ: sentence grain beats paragraph grain at low dial
+(0.374 vs 0.464) and plateaus near 0.4 — dispersed swaps blend inside
+detector windows, so it never reaches the concentrated grain's floor.
+Choose by objective: register smoothness and author tolerance → sentence
+(start 0.3); maximum laundering on structurally clean text where the
+author accepts paragraph walls → paragraph.
+
 ## The review gate (mandatory)
 
 Mechanical gates pass what semantic review rejects — the 8/8 match-voice
