@@ -33,9 +33,23 @@ article-density need referent or part-of-speech judgment the bank itself
 calls not machine-checkable; they are gate-read territory and this script
 never attempts them.
 
+Calque operators (GH-67) read the bank's substrate.calques catalog and
+apply site-matching substitutions for the entries that have a mechanical
+landing site: zapravo (emphatic "actually" at corrective sites), recimo
+("Let's say" for an example-introducer), ne ide ("doesn't go" for
+"doesn't work"), and behind --calques proposed the proposed tier
+(konkretno, drzati predavanje, doneti odluku, do petka). Injection only,
+never reduction -- an excess "actually" in its native sense is not the
+calque -- rate-capped per entry (the entry's essay_target, else the
+particle table's journal rate damped toward the paper rate by the
+essay_target_rule, floored at the kind-of trace rate), one edit-log entry
+per application. The author's gate read is the filter, per
+substrate.policy: no proposal tags, no per-use approval.
+
 Usage:
   inject_vernacular.py <file.md|file.yaml> [--voice-dir DIR]
       [--edit-log PATH] [--dry-run] [--json]
+      [--calques attested|proposed|none]
       [--verify] [--model MODEL] [--endpoint URL]
 """
 
@@ -52,7 +66,8 @@ SHARED = os.path.normpath(os.path.join(SK, "..", "..", "..", "scripts"))
 if SHARED not in sys.path:
     sys.path.insert(0, SHARED)
 
-from idiolect import TOLERANCE, compile_marker, discover_voice_dir  # noqa: E402
+from idiolect import (TOLERANCE, compile_marker, discover_voice_dir,  # noqa: E402
+                      load_substrate)
 import idiolect  # noqa: E402
 
 SPLIT_WORDS = 30  # sentence-length operator: split threshold from the bank
@@ -158,7 +173,7 @@ class Editor:
                 if quotes_guard and not _outside_quotes(self.texts[idx], m.start()):
                     continue
                 text = self.texts[idx]
-                expanded = m.expand(repl)
+                expanded = repl(m) if callable(repl) else m.expand(repl)
                 new = text[:m.start()] + expanded + text[m.end():]
                 new = _recap_sentence_start(new, m.start() + len(expanded))
                 if self.apply(operator, idx, new, note):
@@ -452,6 +467,200 @@ RETAIN = {"probably", "be-able-to"}
 NOT_MACHINE_CHECKABLE = {"he-agent", "article-density"}
 
 
+# --- calques (substrate.calques) ---------------------------------------------
+# The catalog lives in the bank; the landing sites live here, because a
+# site is a regex over English and the bank records Serbian keys with
+# English glosses and evidence. An entry with no site below is reported,
+# not guessed at: "kontrolisati -> control for check" has no mechanical
+# site that would not also rewrite control theory.
+
+CALQUE_TRACE_TARGET = 0.3  # per 1000 words: the kind-of trace rate
+_WEEKDAYS = r"(Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)"
+_COPULA = r"(is|are|was|were|does|do|did)"
+
+
+def _inflect(m, table):
+    """Replace the verb in group 1 by its counterpart in `table`, keeping
+    the rest of the match (group 2) verbatim."""
+    return table[m.group(1).lower()] + " " + m.group(2)
+
+
+# Attested tier: landing sites per Serbian key. count: the English form
+# whose rate the cap measures. sites: (pattern, replacement, note), applied
+# in document order until the budget runs out. Every replacement leaves
+# text its own pattern no longer matches, which is what makes a rerun a
+# no-op.
+CALQUE_SITES = {
+    "zapravo": {
+        "count": re.compile(r"\bactually\b", re.I),
+        "sites": [
+            # corrective: a But/No sentence gets the emphatic particle
+            # after its first copula or auxiliary.
+            (re.compile(r"(^|[.!?]\s+)(But|No,)\s+([^.!?;]{0,60}?)\b" + _COPULA
+                        + r"\b(?!\s+(?:not\s+)?actually\b)"),
+             r"\1\2 \3\4 actually", "emphatic-corrective site"),
+            # assertive: "you actually get the agent" (talk evidence).
+            (re.compile(r"\b(you|we|they)\s+(get|see|need|want)\b", re.I),
+             r"\1 actually \2", "emphatic-assertive site"),
+        ],
+    },
+    "recimo": {
+        "count": re.compile(r"\blet'?s say\b", re.I),
+        "sites": [
+            (re.compile(r"(^|[.!?]\s+)(?:Suppose|Imagine),?\s+"
+                        r"(?=(?:that|you|we|I|the|a|an)\b)"),
+             r"\1Let's say ", "example-introducer site"),
+            # bare "Say" only before a clause subject: "Say the word" is
+            # an imperative, not an example-introducer.
+            (re.compile(r"(^|[.!?]\s+)Say,?\s+(?=(?:that|you|we|I)\b)"),
+             r"\1Let's say ", "example-introducer site"),
+            (re.compile(r"(^|[.!?]\s+)For (?:example|instance),\s+(?=(?:you|we|I)\b)"),
+             r"\1Let's say ", "example-introducer site"),
+        ],
+    },
+    "ne ide": {
+        "count": re.compile(r"\b(?:doesn't|does not|won't|will not|didn't|did not)\s+go\b", re.I),
+        "sites": [
+            # "doesn't work" in the non-literal sense; phrasal "work
+            # out/on/with/..." keeps its verb.
+            (re.compile(r"\b(doesn't|does not|won't|will not)\s+work\b"
+                        r"(?!\s+(?:out|on|with|in|at|through|off|around|up)\b)", re.I),
+             r"\1 go", "non-literal site"),
+        ],
+    },
+}
+
+# Proposed tier: no corpus attestation in the transferred sense, applied
+# only behind --calques proposed. Same shape; survival across the gate is
+# what promotes an entry to attested.
+CALQUE_SITES_PROPOSED = {
+    "konkretno": {
+        "count": re.compile(r"\bconcretely\b", re.I),
+        "sites": [
+            (re.compile(r"(^|[.!?]\s+)Specifically,\s+"), r"\1Concretely, ",
+             "specifier site"),
+        ],
+    },
+    "drzati predavanje": {
+        "count": re.compile(r"\b(?:hold|held|holding|holds)\s+a\s+(?:talk|lecture|presentation)\b", re.I),
+        "sites": [
+            (re.compile(r"\b(give|gave|giving|gives)\s+(a\s+(?:talk|lecture|presentation)\b)", re.I),
+             lambda m: _inflect(m, {"give": "hold", "gave": "held",
+                                    "giving": "holding", "gives": "holds"}),
+             "hold-a-lecture site"),
+        ],
+    },
+    "doneti odluku": {
+        "count": re.compile(r"\b(?:bring|brought|bringing|brings)\s+a\s+decision\b", re.I),
+        "sites": [
+            (re.compile(r"\b(make|made|making|makes)\s+(a\s+decision\b)", re.I),
+             lambda m: _inflect(m, {"make": "bring", "made": "brought",
+                                    "making": "bringing", "makes": "brings"}),
+             "bring-a-decision site"),
+        ],
+    },
+    "do petka": {
+        "count": re.compile(r"\btill\s+" + _WEEKDAYS + r"\b"),
+        "sites": [
+            (re.compile(r"\bby\s+" + _WEEKDAYS + r"\b"), r"till \1",
+             "deadline-till site"),
+        ],
+    },
+}
+
+CALQUE_TIERS = ("attested", "proposed")
+
+
+def calque_key(entry):
+    """The Serbian key of a catalog entry, normalized: lowercase, the
+    first alternative ('zapravo / upravo' -> 'zapravo'), annotation
+    dropped ('na (locative)' -> 'na')."""
+    key = str(entry.get("serbian", "")).lower()
+    key = key.split(" /")[0].split(" (")[0]
+    return key.strip()
+
+
+def calque_target(entry, particles):
+    """Per-1000-word target for one catalog entry. An explicit
+    essay_target on the entry wins, zero included -- that is the
+    curator's call. Otherwise the particle table's journal rate for the
+    same key, damped toward the paper rate (zero for every calque) per the
+    essay_target_rule, floored at the trace rate so an attested entry with
+    no journal rate still lands at trace rather than never. The floor is
+    not a second guess at the bank: a key the curator wants silent gets an
+    explicit 0."""
+    t = entry.get("essay_target")
+    if isinstance(t, (int, float)):
+        return float(t), "essay_target"
+    row = particles.get(calque_key(entry))
+    journal = row.get("journal") if row else None
+    if isinstance(journal, (int, float)):
+        return max(journal / 2.0, CALQUE_TRACE_TARGET), "particle journal rate / 2"
+    return CALQUE_TRACE_TARGET, "trace default"
+
+
+def _particle_rows(substrate):
+    rows = {}
+    for row in (substrate.get("particles") or {}).get("table") or []:
+        if isinstance(row, dict):
+            rows[calque_key(row)] = row
+    return rows
+
+
+def apply_calques(ed, substrate, words, tiers=("attested",)):
+    """Apply the calque catalog at target rates. Returns the report
+    section: per entry, tier, target and its source, rate before/after,
+    status. Injection only -- there is no REDUCE direction."""
+    report = {}
+    if not substrate:
+        return report
+    particles = _particle_rows(substrate)
+    catalog = substrate.get("calques") or {}
+    tables = {"attested": CALQUE_SITES, "proposed": CALQUE_SITES_PROPOSED}
+    for tier in CALQUE_TIERS:
+        for entry in catalog.get(tier) or []:
+            if not isinstance(entry, dict):
+                continue
+            key = calque_key(entry)
+            target, source = calque_target(entry, particles)
+            row = particles.get(key) or {}
+            spec = tables[tier].get(key)
+            rate_before = (round(rate(marker_count(ed.texts, spec["count"]), words), 2)
+                           if spec else None)
+            item = {"tier": tier, "english": entry.get("english"),
+                    "target": target, "target_source": source,
+                    "rate_before": rate_before, "rate_after": rate_before}
+            if row.get("marker"):
+                item["status"] = f"covered by marker {row['marker']}"
+            elif spec is None:
+                item["status"] = "no site operator (gate-read)"
+            elif tier not in tiers:
+                item["status"] = f"tier not enabled (--calques {tier})"
+            else:
+                count = marker_count(ed.texts, spec["count"])
+                budget = _budget(count, words, target, +1)
+                applied = 0
+                for pattern, repl, note in spec["sites"]:
+                    if applied >= budget:
+                        break
+                    applied += ed.sub_counted(
+                        f"calque:{key}", pattern, repl, budget - applied,
+                        quotes_guard=True,
+                        note=f"{tier} calque {key} -> {entry.get('english')}; {note}")
+                item["rate_after"] = round(
+                    rate(marker_count(ed.texts, spec["count"]), words), 2)
+                if applied:
+                    item["status"] = "applied"
+                elif count >= target * words / 1000.0 * (1 - TOLERANCE):
+                    item["status"] = "within tolerance"
+                elif budget == 0:
+                    item["status"] = "below target, budget rounds to zero"
+                else:
+                    item["status"] = "below target, no site found"
+            report[key] = item
+    return report
+
+
 # --- verifier ----------------------------------------------------------------
 
 def ollama_judge(endpoint, model):
@@ -482,11 +691,14 @@ def ollama_judge(endpoint, model):
 
 # --- driver ------------------------------------------------------------------
 
-def run(path, voice_dir=None, judge=None, critic_flags=None):
+def run(path, voice_dir=None, judge=None, critic_flags=None,
+        calque_tiers=("attested",)):
     """Apply the bank to `path`'s paragraphs. Returns (doc, editor, report).
     Caller decides whether to save. critic_flags: unhedged-prediction
     entries from a voice-critic report ({paragraph, quote}); they gate the
-    i-think RESTORE direction and nothing else."""
+    i-think RESTORE direction and nothing else. calque_tiers: which
+    substrate.calques tiers may fire; the catalog is still reported in
+    full, with disabled tiers marked."""
     import prose_document
     voice_dir = voice_dir or discover_voice_dir(path)
     if not voice_dir:
@@ -494,6 +706,7 @@ def run(path, voice_dir=None, judge=None, critic_flags=None):
                  f"walking up from {path}. This stage refuses to run "
                  "without the operator bank (idiolect.yaml).")
     markers = load_bank(voice_dir)
+    substrate = load_substrate(voice_dir) or {}
     doc = prose_document.ProseDocument.open(path)
     texts = [p.text for p in doc.paragraphs]
     ed = Editor(texts, judge=judge, critic_flags=critic_flags)
@@ -519,6 +732,11 @@ def run(path, voice_dir=None, judge=None, critic_flags=None):
             "rate_after": round(after_rate, 2) if after_rate is not None else None,
             "status": status,
         }
+
+    # Calques run after the marker operators so marker rates are settled
+    # before the substrate layer lands on top of them.
+    report["calque_tiers"] = list(calque_tiers)
+    report["calques"] = apply_calques(ed, substrate, words, tiers=calque_tiers)
 
     kept = [e for e in ed.edits if e["kept"]]
     for i, p in enumerate(doc.paragraphs):
@@ -547,6 +765,10 @@ def main():
     ap.add_argument("--critic-flags", metavar="REPORT_JSON",
                     help="voice-critic report (or bare list) whose "
                     "unhedged_predictions gate the i-think RESTORE")
+    ap.add_argument("--calques", choices=("attested", "proposed", "none"),
+                    default="attested",
+                    help="substrate.calques tiers to apply: attested "
+                    "(default), proposed (attested + proposed), none")
     ap.add_argument("--model", default=DEFAULT_MODEL)
     ap.add_argument("--endpoint", default=DEFAULT_ENDPOINT)
     a = ap.parse_args()
@@ -558,9 +780,11 @@ def main():
         critic_flags = (data if isinstance(data, list)
                         else data.get("unhedged_predictions", []))
 
+    tiers = {"attested": ("attested",), "proposed": CALQUE_TIERS,
+             "none": ()}[a.calques]
     judge = ollama_judge(a.endpoint, a.model) if a.verify else None
     doc, ed, report = run(a.file, voice_dir=a.voice_dir, judge=judge,
-                          critic_flags=critic_flags)
+                          critic_flags=critic_flags, calque_tiers=tiers)
 
     log_path = a.edit_log or a.file + ".vernacular.json"
     with open(log_path, "w", encoding="utf-8") as f:
@@ -581,6 +805,13 @@ def main():
             rb = "-" if m["rate_before"] is None else m["rate_before"]
             ra = "-" if m["rate_after"] is None else m["rate_after"]
             print(f"  {mid:<18} target {tgt!s:>5}  {rb!s:>6} -> {ra!s:>6}  {m['status']}")
+        if report["calques"]:
+            print(f"  calques ({', '.join(report['calque_tiers']) or 'none'}):")
+        for key, c in report["calques"].items():
+            rb = "-" if c["rate_before"] is None else c["rate_before"]
+            ra = "-" if c["rate_after"] is None else c["rate_after"]
+            print(f"    {key:<18} target {c['target']!s:>5}  {rb!s:>6} -> {ra!s:>6}"
+                  f"  [{c['tier']}] {c['status']}")
 
 
 if __name__ == "__main__":

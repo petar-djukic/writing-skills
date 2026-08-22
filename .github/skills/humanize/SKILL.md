@@ -48,7 +48,9 @@ draft (with declared/locked spans)
   -> humanize stages, lock-respecting (structural step, filter-tells,
      match-voice)
   -> inject-vernacular (terminal — the last stage that writes)
-  -> read-only zone (Pangram, voice-critic, cold reads, author gate)
+  -> read-only zone (Pangram, critic-panel, then voice-critic, cold
+     reads, author gate — critic-panel precedes voice-critic because its
+     author-accepted picks change what voice-critic audits)
 ```
 
 **After the terminal stage, models may read but never write.** The
