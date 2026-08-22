@@ -53,6 +53,10 @@ PARAGRAPH:
 {paragraph}
 """
 
+LOCK_RULE = ("- Tokens like [[LOCK-1]] stand for hand-written text that must not "
+             "change: copy each one exactly once, unchanged, in the sentence "
+             "where it sits. Never remove, reword, duplicate, or invent one.")
+
 
 def run(cmd, **kw):
     # errors="replace": a single non-UTF-8 byte from any child would
@@ -87,30 +91,52 @@ def write_draft(doc, ext, out_lines, tightened, out):
     """Write accepted candidates into the draft at `out`; return the lines
     the sentence-floor advisory should measure.
 
-    YAML goes back through the document model (GH-358): ruamel round-trip
-    keeps comments, key order, and structure — raw line splicing would drop
-    bare prose over keys and block markers. Markdown keeps bottom-up line
-    splicing. Descending order both ways, so a replacement that changes
-    later positions cannot shift earlier ones.
+    Both formats go back through the document model. YAML because ruamel
+    round-trip keeps comments, key order, and structure — raw line splicing
+    dropped bare prose over keys and block markers (GH-358). Markdown
+    because replace() is where inline lock anchors are re-expanded into
+    their bytes (GH-82): raw line splicing wrote the candidate as the model
+    returned it, so a `[[LOCK-n]]` token would have landed in the draft as
+    text. Descending order, so a replacement that changes later positions
+    cannot shift earlier ones. `out_lines` is the buffer the markdown line
+    splice used and is no longer read.
+
+    A candidate whose anchor tokens do not match is refused by splice();
+    its record is marked ``lock-refused`` and the paragraph keeps its
+    original.
     """
-    if ext in (".yaml", ".yml"):
-        if not tightened:
-            # Nothing accepted: emit the untouched source rather than a
-            # ruamel re-emission, which normalizes wrapping and sequence
-            # offsets and turns a no-op run into a noisy diff (GH-360).
-            with open(out, "w", encoding="utf-8") as f:
-                f.write(doc.raw)
-            return [p.text for p in doc.paragraphs]
-        for rec in sorted(tightened, key=lambda r: -r["n"]):
+    if not tightened:
+        # Nothing accepted: emit the untouched source rather than a
+        # re-emission, which for YAML normalizes wrapping and sequence
+        # offsets and turns a no-op run into a noisy diff (GH-360).
+        with open(out, "w", encoding="utf-8") as f:
+            f.write(doc.raw)
+        return _measure_lines(doc, ext)
+    span_locks = _span_locks()
+    for rec in sorted(tightened, key=lambda r: -r["n"]):
+        try:
             doc.replace(rec["n"] - 1, rec["cand"])
-        doc.save_as(out)
+        except span_locks.LockError as e:
+            print(f"  LOCK-REFUSED p{rec['n']:02d}: {e}", file=sys.stderr)
+            rec["status"] = "lock-refused"
+            rec.pop("cand", None)
+    doc.save_as(out)
+    return _measure_lines(doc, ext)
+
+
+def _measure_lines(doc, ext):
+    """What the sentence-floor advisory measures: prose scalars for YAML,
+    the file's own lines for markdown."""
+    if ext in (".yaml", ".yml"):
         return [p.text for p in doc.paragraphs]
-    for rec in sorted(tightened, key=lambda r: -r["lines"][0]):
-        s, e = rec["lines"]
-        out_lines[s - 1:e] = [rec["cand"]]
-    with open(out, "w", encoding="utf-8") as f:
-        f.write("\n".join(out_lines))
-    return out_lines
+    return doc.text().split("\n")
+
+
+def _span_locks():
+    if SHARED not in sys.path:
+        sys.path.insert(0, SHARED)
+    import span_locks
+    return span_locks
 
 
 def _doc_sentence_stats(lines):
@@ -164,6 +190,9 @@ def tighten_paragraph(text, fired_rules, model, endpoint, temperature, timeout):
     _, _, pairs_mod, _ = _mods()
     plist = pairs_mod.for_rules(sorted(fired_rules))
     prompt = PROMPT.format(pairs=pairs_mod.as_prompt(plist), paragraph=text)
+    if _span_locks().tokens_in(text):
+        # The model has no other way to know [[LOCK-n]] is not prose (GH-82).
+        prompt = prompt.replace("\nPARAGRAPH:\n", f"{LOCK_RULE}\n\nPARAGRAPH:\n")
     import rewrite as rw            # match-voice's Ollama client
     return rw.generate(prompt, endpoint=endpoint, model=model,
                        temperature=temperature, timeout=timeout)
@@ -317,6 +346,14 @@ def main():
                 break
             import verify as _vmod
             cand_clean = _vmod.normalize_ascii(cand.strip())
+            # A candidate that dropped, duplicated, or invented a lock
+            # anchor can never carry the locked bytes back (GH-82): retry
+            # rather than let the gate judge prose that cannot be written.
+            lock_fault = _span_locks().check_tokens(txt, cand_clean)
+            if lock_fault:
+                print(f"p{n:02d}: lock anchor fault, retrying: {lock_fault}",
+                      file=sys.stderr)
+                continue
             cf = os.path.join(work, f"p{n:02d}.cand.txt")
             with open(cf, "w") as f:
                 f.write(cand_clean)
@@ -335,7 +372,22 @@ def main():
             break
 
     tightened = [r for r in results if r.get("cand")]
+    locked = doc.locked_spans()      # read before write_draft mutates doc
     stats_lines = write_draft(doc, ext, out_lines, tightened, out)
+    # The GH-57 invariant, checked on the bytes written rather than on the
+    # path that wrote them (GH-82). Results are saved first so the model
+    # calls are not lost to a driver bug.
+    with open(out, encoding="utf-8") as f:
+        missing = _span_locks().verify_preserved(locked, f.read())
+    if missing:
+        with open(os.path.join(work, "results.json"), "w") as f:
+            json.dump(results, f, indent=2)
+        print(f"\nLOCK VIOLATION: {len(missing)} locked span(s) from {art} are "
+              f"not byte-identical in {out}:", file=sys.stderr)
+        for span in missing:
+            print(f"  {span[:100]!r}", file=sys.stderr)
+        print(f"results: {work}/results.json", file=sys.stderr)
+        sys.exit(3)
 
     # Post-hoc floor: advisory — log candidates that push sentence stats below
     # the human band, but do not revert them (GH-268).

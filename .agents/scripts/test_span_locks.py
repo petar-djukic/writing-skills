@@ -300,6 +300,80 @@ def test_cli_audit():
     print("  cli_audit: ok")
 
 
+# ---------------------------------------------------------------------------
+# GH-82: the adapter view, the snark-adjacent span, and the written-bytes check
+# ---------------------------------------------------------------------------
+
+def test_md_to_parse_result_is_the_excised_view():
+    """The surface the drivers read: tokens, not lock bytes. Until GH-82 this
+    re-parsed the raw source for markdown, so match-voice and tighten-style
+    sent inline-locked text to the model while doc.paragraphs held the
+    token form one call away."""
+    with tempfile.TemporaryDirectory() as tmp:
+        doc = pd.ProseDocument.open(_write(tmp, "s.md", MD_SAMPLE))
+        r = doc.to_parse_result()
+        texts = [t for _s, _e, t in r.paragraphs]
+        assert len(texts) == len(doc.paragraphs) == 3, texts
+        joined = "\n".join(texts)
+        assert "[[LOCK-1]]" in texts[1], texts[1]
+        assert "authored snark" not in joined
+        assert "hand-written and locked" not in joined
+        # Same Result shape, same line numbers and coverage as the raw parse.
+        raw = md_paragraphs.parse(MD_SAMPLE)
+        assert [(s, e) for s, e, _ in r.paragraphs] == \
+            [(s, e) for s, e, _ in raw.paragraphs]
+        assert r.coverage == raw.coverage and r.fm_close == raw.fm_close
+        assert r.lines == raw.lines and r.unaccounted == raw.unaccounted
+    print("  md_to_parse_result_is_the_excised_view: ok")
+
+
+def test_inline_lock_with_adjacent_snark_comment():
+    """The harness case: a snark tag immediately inside the opening marker,
+    an em-dash and a number inside the span. One token, bytes intact."""
+    span = ("<!-- lock --><!-- snark:L1-F2 -->That is the profession he is "
+            "imitating, run as an experiment — 758 of them.<!-- /lock -->")
+    text = f"Lead sentence. {span} Tail sentence."
+    clean, manifest = sl.excise(text)
+    assert clean == "Lead sentence. [[LOCK-1]] Tail sentence.", clean
+    assert manifest == {"[[LOCK-1]]": span}
+    assert sl.splice("New lead. [[LOCK-1]] New tail.", manifest) == \
+        f"New lead. {span} New tail."
+    print("  inline_lock_with_adjacent_snark_comment: ok")
+
+
+def test_locked_spans_and_verify_preserved():
+    """locked_spans lists block and inline spans in document order, and
+    verify_preserved sees exactly the span an edit touched."""
+    with tempfile.TemporaryDirectory() as tmp:
+        doc = pd.ProseDocument.open(_write(tmp, "s.md", MD_SAMPLE))
+        spans = doc.locked_spans()
+        assert len(spans) == 2, spans
+        assert spans[0].startswith("<!-- lock -->\nThis whole block")
+        assert spans[0].endswith("```\n<!-- /lock -->"), spans[0]
+        assert spans[1] == ("<!-- lock -->the authored snark\nstays exactly "
+                            "as written<!-- /lock -->")
+        assert sl.verify_preserved(spans, MD_SAMPLE) == []
+        bolded = MD_SAMPLE.replace("authored snark", "authored **snark**")
+        assert sl.verify_preserved(spans, bolded) == [spans[1]]
+        assert sl.verify_preserved(spans, "nothing survived") == spans
+        # Multiplicity: one copy does not satisfy two locks of the same text.
+        assert sl.verify_preserved(["<!-- lock -->x<!-- /lock -->"] * 2,
+                                   "<!-- lock -->x<!-- /lock -->") == \
+            ["<!-- lock -->x<!-- /lock -->"]
+    print("  locked_spans_and_verify_preserved: ok")
+
+
+def test_check_tokens():
+    orig = "Lead [[LOCK-2]] tail."
+    assert sl.check_tokens(orig, "Lead [[LOCK-2]] tail rewritten.") is None
+    assert sl.check_tokens("plain", "also plain") is None
+    assert "[[LOCK-2]] appears 0 times" in sl.check_tokens(orig, "Lead tail.")
+    assert "appears 2 times" in sl.check_tokens(orig, "[[LOCK-2]] [[LOCK-2]]")
+    assert "unknown token [[LOCK-7]]" in sl.check_tokens(orig, "[[LOCK-2]] [[LOCK-7]]")
+    assert sl.tokens_in("a [[LOCK-3]] b [[LOCK-1]]") == ["[[LOCK-3]]", "[[LOCK-1]]"]
+    print("  check_tokens: ok")
+
+
 def main():
     test_excise_splice_round_trip()
     test_excise_no_locks_is_identity()
@@ -319,6 +393,10 @@ def main():
     test_yaml_inline_lock_excised_and_spliced()
     test_yaml_replace_dropping_token_refused()
     test_cli_audit()
+    test_md_to_parse_result_is_the_excised_view()
+    test_inline_lock_with_adjacent_snark_comment()
+    test_locked_spans_and_verify_preserved()
+    test_check_tokens()
     print("test_span_locks: all assertions passed")
 
 

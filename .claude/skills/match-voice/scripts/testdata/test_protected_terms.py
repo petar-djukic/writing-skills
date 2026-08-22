@@ -198,8 +198,21 @@ def test_term_note():
     print("  term_note: ok")
 
 
+def test_derive_ignores_lock_tokens():
+    """Inline lock anchors reach derive() as [[LOCK-n]] (GH-82); four such
+    paragraphs must not make "lock" a protected term."""
+    assert pt._tokens("a [[LOCK-12]] b") == ["a", "b"]
+    paras = [f"Sentence number {i} keeps going with [[LOCK-{i}]] inside "
+             "the prose here." for i in range(1, 5)]
+    terms = pt.derive(paras)
+    assert "lock" not in terms, terms
+    assert "prose" in terms, terms
+    print("  derive_ignores_lock_tokens: ok")
+
+
 def main():
     test_derive_rules()
+    test_derive_ignores_lock_tokens()
     test_load_or_derive_never_overwrites()
     test_verify_protected_term_gate()
     test_verify_cli_flag()
