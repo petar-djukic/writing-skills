@@ -4,6 +4,14 @@
 **/.pixi/
 __pycache__/
 
+# Python test caches. pytest writes a `.gitignore` containing `*` inside its
+# own cache directory, so git reports a clean tree while the directory sits
+# there — and sync-mirrors.sh copies it into the generated surfaces and then
+# reports drift against the committed ones. The consistency check fails and
+# nothing in `git status` points at why.
+.pytest_cache/
+**/.pytest_cache/
+
 # Local credentials, symlinked in per-machine. Never committed — this repo is public.
 .secrets
 .secrets/
