@@ -16,9 +16,16 @@ def prepare(text):
         if len(parts) == 2:
             text = parts[1]
     text = text.split("\n## REFERENCES")[0]
+    # Locks first: once converted they carry no `<!--`, so the general strip
+    # below cannot reach them. Reordering these three lines deletes the locks.
     text = re.sub(r"<!--\s*lock\s*-->", "[[LOCKED: ", text)
     text = re.sub(r"<!--\s*/lock\s*-->", " :LOCKED]]", text)
-    text = re.sub(r"<!--[^>]*-->", "", text)
+    # Non-greedy and dot-all, not `[^>]*` (GH-96). A negated class stops at the
+    # first `>`, so a reverse-outline marker carrying `-> n` never matched at
+    # all and reached the critics whole — 19 of them on one 5,500-word article,
+    # read as if they were prose. Greedy `.*` would be worse than the bug: it
+    # would swallow every line between the first comment and the last.
+    text = re.sub(r"<!--.*?-->", "", text, flags=re.S)
     text = re.sub(r"!\[[^\]]*\]\([^)]*\)", "[figure]", text)
     return re.sub(r"\n{3,}", "\n\n", text).strip() + "\n"
 
