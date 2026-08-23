@@ -109,10 +109,10 @@ def group(items_or_reports):
 def order(reports, roster):
     """Reports in roster order; anything unnamed keeps file order, last.
 
-    Roster order is sheet order. review-chapter ran its six critics in
-    sequence to get clarity and honesty ahead of hook and story; ordering the
-    rendering buys the same reading without giving up the parallel fresh
-    contexts that make convergence mean anything.
+    Roster order is sheet order. The book roster's six critics were run in
+    sequence before GH-97, to get clarity and honesty ahead of hook and story;
+    ordering the rendering buys that reading without giving up the parallel
+    fresh contexts that make convergence mean anything.
     """
     if not roster:
         return list(reports)
