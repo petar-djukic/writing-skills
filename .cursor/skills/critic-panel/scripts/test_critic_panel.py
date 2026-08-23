@@ -96,6 +96,71 @@ class PrepareTest(unittest.TestCase):
         self.assertIn("And this one.", out)
 
 
+class FigureCollapseTest(unittest.TestCase):
+    """GH-102. Both halves of a markdown image nest, and a character class
+    cannot count. `[^)]*` truncated at the first `)`; `[^\\]]*` was worse —
+    it matched nothing at all, so alt text carrying a citation delivered the
+    whole construct, markdown and URL, to a critic as prose."""
+
+    def test_a_parenthesised_url_collapses_without_residue(self):
+        self.assertEqual(
+            prepare_copy.collapse_figures(
+                "![alt](figures/throughput-(baseline).png)"),
+            "[figure]", "the reported case: left '.png)' behind")
+
+    def test_bracketed_alt_text_collapses_at_all(self):
+        self.assertEqual(
+            prepare_copy.collapse_figures("![see [1] for detail](fig.png)"),
+            "[figure]", "previously not collapsed at all")
+
+    def test_nesting_on_both_sides_at_depth(self):
+        self.assertEqual(
+            prepare_copy.collapse_figures("![a [b [c]] d](x-(y-(z)).png)"),
+            "[figure]")
+
+    def test_two_figures_collapse_independently(self):
+        self.assertEqual(
+            prepare_copy.collapse_figures(
+                "![a](x.png) and ![b](y-(2).png) together"),
+            "[figure] and [figure] together")
+
+    def test_prose_around_a_figure_is_byte_intact(self):
+        self.assertEqual(
+            prepare_copy.collapse_figures("Before. ![x](a.png) After."),
+            "Before. [figure] After.")
+
+    def test_an_unterminated_construct_is_left_alone(self):
+        """The guard that matters. Consuming to end of document would delete
+        the article to tidy a caption — worse than the bug being fixed."""
+        for src in ("![alt](unterminated.png",
+                    "![alt unterminated](f.png",
+                    "![no bracket close (f.png)"):
+            self.assertEqual(prepare_copy.collapse_figures(src), src, src)
+
+    def test_an_unterminated_construct_does_not_hide_a_later_figure(self):
+        got = prepare_copy.collapse_figures(
+            "![broken](no-close and then ![good](a.png) after")
+        self.assertIn("[figure]", got, "the scan must recover")
+        self.assertIn("![broken]", got, "and leave the broken one as text")
+
+    def test_a_bare_link_is_not_a_figure(self):
+        self.assertEqual(
+            prepare_copy.collapse_figures("[link](url) is not a figure"),
+            "[link](url) is not a figure")
+
+    def test_empty_alt_text(self):
+        self.assertEqual(prepare_copy.collapse_figures("![](x.png)"), "[figure]")
+
+    def test_many_unclosed_openers_terminate(self):
+        src = "![" * 200 + " no closes at all"
+        self.assertEqual(prepare_copy.collapse_figures(src), src)
+
+    def test_collapse_runs_inside_prepare(self):
+        out = prepare_copy.prepare("Body ![alt](f-(1).png) end.\n")
+        self.assertIn("[figure]", out)
+        self.assertNotIn(".png", out)
+
+
 class ConvergeTest(unittest.TestCase):
     def test_convergence_grouping(self):
         with tempfile.TemporaryDirectory() as tmp:
