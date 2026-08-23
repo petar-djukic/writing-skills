@@ -191,6 +191,49 @@ def main():
         assert got and all(
             os.path.basename(a["file"]) == "yegge.md" for a in got), got
 
+        # 8b. Author inferred from the filename where the field is absent
+        #     (GH-98). The reference corpus carries 181 exemplars and zero
+        #     author fields, so a field-only match could never select anything
+        #     there whatever value was passed.
+        infd = corpus(os.path.join(tmp, "inf"), [
+            ("Krugman-1998-theorist.md", "venue-voice", ACADEMIC),
+            ("Dijkstra-EWD1036-cruelty.md", "venue-voice", ACADEMIC),
+            ("Handey-deep-thoughts.md", "venue-voice", PUNCHY),
+            ("2026-08-20-strategy-theatre.md", "venue-voice", PUNCHY),
+        ])
+        assert va.author_of({"file": "Krugman-1998-x.md"}) == ("Krugman", "inferred")
+        #     Not gated on a four-digit year: Dijkstra's essays carry EWD
+        #     numbers where a year would go, and a gate that drops the author
+        #     it was asked for is the bug it was meant to fix.
+        assert va.author_of({"file": "Dijkstra-EWD1036-y.md"}) == ("Dijkstra", "inferred")
+        assert va.author_of({"file": "Handey-deep-thoughts.md"}) == ("Handey", "inferred")
+        #     Letter-initial, so a date-stamped name yields no author at all
+        #     rather than one called "2026".
+        assert va.author_of({"file": "2026-08-20-strategy-theatre.md"}) == (None, None)
+        #     A declared field always wins; inference never overrides it, so
+        #     adding author: to a manifest is a refinement, never a change.
+        assert va.author_of(
+            {"file": "Krugman-1998-x.md", "author": "Someone Else"}) == (
+            "Someone Else", "declared")
+
+        sel = {os.path.basename(p) for p, _ in va.sample_paths(infd, author="Dijkstra")}
+        assert sel == {"Dijkstra-EWD1036-cruelty.md"}, sel
+        assert va.sample_paths(infd, author="2026") == [], "no phantom author"
+        assert va.sample_paths(infd, author="krugman"), "case-insensitive"
+
+        # 8c. author_index says what --author can select at all, and how it
+        #     knows. An empty index means the flag cannot work on this corpus,
+        #     which is a different failure from an unrecognised name.
+        idx = va.author_index(infd)
+        assert idx == {"Krugman": "inferred", "Dijkstra": "inferred",
+                       "Handey": "inferred"}, idx
+        assert va.author_index(authd) == {"Yegge": "declared",
+                                          "Krugman": "declared"}, "declared corpus"
+        nod = corpus(os.path.join(tmp, "noauth"), [
+            ("2026-08-20-a.md", "venue-voice", PUNCHY),
+        ])
+        assert va.author_index(nod) == {}, "corpus that cannot express an author"
+
         # 9. Nothing similar returns nothing rather than noise.
         assert va.anchors(d, "zzzz qqqq xxxx", k=3) == []
 

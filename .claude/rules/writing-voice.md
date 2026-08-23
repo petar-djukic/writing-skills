@@ -37,7 +37,7 @@ exemplars:
   - id: djukic-2007-icc-distributed-scheduling   # stable key
     file: Djukic-2007-distributed-link-scheduling-...md   # relative to writing-voice/
     role: author-voice                            # author-voice | venue-voice
-    author: Djukic                                # optional; used by --author
+    author: Djukic                                # optional; else the filename
     venue: IEEE ICC
     year: 2007
     source: papers/Djukic-2007-...md              # where the sample came from
@@ -47,7 +47,8 @@ exemplars:
 
 Required per exemplar: `id`, `file`, `role`. `venue`, `year`, `source`,
 `author`, and `notes` are recommended — `author` is the person who wrote the
-piece (used by `--author` to hard-pin retrieval to one writer's voice), and
+piece (used by `--author` to hard-pin retrieval to one writer's voice, and
+read off the filename when the field is absent), and
 `notes` is read by humans choosing exemplars and by the anchor-retrieval step
 when ranking ties.
 
@@ -144,9 +145,40 @@ and `--stratum pre-ai` further restricts to the ones safe for diction
 anchoring. The axes are independent — author picks WHO, stratum governs
 WHETHER their words are safe to copy.
 
+### Where the author comes from
+
+The `author:` field is authoritative, and where it is absent the **filename
+supplies one**: the first hyphen-separated segment, when it starts with a
+letter. `Krugman-1998-the-accidental-theorist.md` is Krugman whether or not
+the manifest says so, and a declared field always wins — adding `author:` to a
+manifest refines it, never changes what it already meant.
+
+Letter-initial is the whole gate. `2026-08-20-strategy-theatre.md` yields no
+author rather than one called `2026`. It deliberately does **not** require a
+four-digit year: on the reference corpus that stricter form missed 13 of 181
+exemplars, among them all ten Dijkstra essays, which carry EWD numbers where a
+year would go. A gate that drops the author it was asked for is the failure it
+exists to prevent.
+
+Inference is disclosed wherever it is used — the anchor pool line reads
+`author=Krugman (inferred from filenames)` — so a reader never mistakes it for
+something the manifest states. `voice_anchors.py tags` lists every author the
+corpus can express and marks each `declared` or `inferred`.
+
+### When `--author` selects nothing
+
 `--author` that matches nothing yields an empty pool, not a fallback to the
 full corpus. An author value that excludes nothing (every exemplar carries
 that author) is reported as inert.
+
+Two emptinesses, and they need opposite responses, so they are reported
+differently. A name the corpus does not hold is answered with the names it
+does. A corpus that can express no author at all — no `author:` field
+anywhere, no filename implying one — is answered by saying the flag cannot
+work here whatever is passed, and pointing at `--anchor-tags` instead.
+Collapsing the two costs a debugging detour: the corpus loads, the tag listing
+reports every exemplar, so a path problem is the natural first hypothesis and
+the manifest fields are the last thing anyone reads.
 
 ## Roles and precedence
 
