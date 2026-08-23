@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import os
+import re
 import sys
 import tempfile
 import unittest
@@ -240,6 +241,44 @@ class VerdictTest(unittest.TestCase):
                          ["cook", "fowler"])
         sheet = converge.render(converge.order(reports, ["cook", "fowler"]), converge.group(reports))
         self.assertLess(sheet.index("C diagnosis."), sheet.index("F diagnosis."))
+
+
+class ContractTest(unittest.TestCase):
+    """SKILL.md prints both report formats and the critics are told to follow
+    them. Nothing made the printed format and the parser agree — and a spec
+    the parser disagrees with is how converge.py came to emit a
+    zero-suggestion sheet from three real reports (GH-107). These feed the
+    documented blocks straight to parse()."""
+
+    def _block(self, marker):
+        with open(os.path.join(os.path.dirname(SK), "SKILL.md"),
+                  encoding="utf-8") as f:
+            skill = f.read()
+        after = skill[skill.index(marker):]
+        return after.split("```")[1]
+
+    def _parses_as(self, marker, kind, tmp):
+        # `<the exact sentence, verbatim>` stands in for real text.
+        body = re.sub(r"<([^>]+)>", r"sample \1", self._block(marker))
+        r = converge.parse(_write(tmp, "c.md", body))
+        self.assertEqual(r["kind"], kind)
+        self.assertTrue(r["items"], "the documented format parsed to nothing")
+        return r
+
+    def test_the_documented_suggest_format_parses(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            r = self._parses_as("**`suggest`**", "suggest", tmp)
+            self.assertIn("Replacement", r["items"][0])
+            self.assertEqual(r["items"][0]["quote"], r["items"][0]["Original"])
+            self.assertTrue(r["move"], "the paragraph move section")
+
+    def test_the_documented_verdict_format_parses(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            r = self._parses_as("**`verdict`**", "verdict", tmp)
+            self.assertIn("Finding", r["items"][0])
+            self.assertIn("Fix", r["items"][0])
+            self.assertEqual(r["items"][0]["quote"], r["items"][0]["Passage"])
+            self.assertTrue(r["verdict"], "the verdict section")
 
 
 class GoldenSheetTest(unittest.TestCase):
