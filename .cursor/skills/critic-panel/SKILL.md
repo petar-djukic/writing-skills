@@ -59,6 +59,16 @@ terminal stage (inject-vernacular)
    loop-workflow issue; apply them as an author-directed cycle, then
    rescan and run voice-critic on the result.
 
+With a verdict critic in the run the sheet ends in a Summary, and its
+**Most agreed** list ranks convergent passages by how many critics landed
+on them, then by roster order. That is the whole of the ranking, and the
+label says so: agreement is objective and `converge.py` computes it without
+a model call, which is what lets an author argue with the sheet. Which fix
+most changes the draft is a judgment, and the list does not make it — a
+passage two critics agreed on may matter more than one three agreed on, and
+the author ranks by consequence themselves. The old label, "Top fixes (in
+priority order)", claimed otherwise (GH-114).
+
 ### Rosters
 
 Personas and their kinds live in
@@ -228,14 +238,18 @@ chapter's own printed runtime contradicts.
 
 **Two things the run did not establish.** No critic passed, so `Pass` rendered
 empty and that branch of the Summary is still unexercised on real verdicts.
-And the Top 3 did not reproduce the baseline's first fix: the panel found it
-(Cook and Kreischer, on the unclosed opening loop) and ranked it eleventh of
-eleven, because Top fixes rank by how many critics agreed and those two sit
-last in the roster. review-chapter ranked by "what most changes the chapter,
-not by which critic spoke loudest"; a count is exactly the thing that rule
-forbade. Nothing was lost — every baseline fix is somewhere in the sheet — but
-what rises to the top is decided differently, and the difference is not
-cosmetic. Tracked as GH-114.
+And the Summary's top three did not reproduce the baseline's first fix: the
+panel found it (Cook and Kreischer, on the unclosed opening loop) and ranked
+it eleventh of eleven, because the list ranks by how many critics agreed and
+those two sit last in the roster. review-chapter ranked by "what most changes
+the chapter, not by which critic spoke loudest"; a count is exactly the thing
+that rule forbade. Nothing was lost — every baseline fix is somewhere in the
+sheet — but what rises to the top is decided differently, and the difference
+is not cosmetic. GH-114 settled it by naming the axis rather than changing
+it: the list is **Most agreed**, the sheet says agreement is not consequence,
+and ranking by consequence stays with the author. Weighting by critic kind,
+or letting a model rank the top three, would compose with that relabel and
+remain open.
 
 ## Calibration note on personas
 

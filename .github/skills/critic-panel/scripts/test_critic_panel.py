@@ -406,9 +406,48 @@ class VerdictTest(unittest.TestCase):
         conv = [g for g in groups if len({i["critic"] for i in g}) > 1]
         self.assertEqual(len(conv), 4, "four passages converged")
         sheet = converge.render(reports, groups)
-        self.assertIn("**Top 3 fixes**", sheet)
+        self.assertIn("**Most agreed** (3 of 4 convergent passages", sheet)
         for p in shared:
             self.assertIn(p, sheet, "every convergent passage is still in the sheet")
+
+    def test_most_agreed_names_its_axis_and_disclaims_priority(self):
+        """GH-114: the list ranks by agreement, and the sheet says so rather
+        than calling itself a priority list. review-chapter ranked by what
+        most changes the chapter; a count is what that rule ruled out."""
+        a = _verdict(self.t, "fowler", "d", [("p1", "f", "x")], "v")
+        b = _verdict(self.t, "yegge", "d", [("p1", "f", "x")], "v")
+        reports = [converge.parse(a), converge.parse(b)]
+        sheet = converge.render(reports, converge.group(reports))
+        self.assertIn("**Most agreed** (1 of 1 convergent passage, by number "
+                      "of critics, then roster order):", sheet)
+        self.assertIn("Agreement is not consequence.", sheet)
+        self.assertNotIn("Top 1 fix", sheet)
+        self.assertNotIn("priority", sheet)
+        self.assertIn("(2 critics: fowler, yegge)", sheet)
+
+    def test_most_agreed_ranks_by_count_then_roster_order(self):
+        """The 03-what-is-an-agent.md shape: the passage two last-roster
+        critics agreed on sorts below one three critics agreed on, whatever
+        its consequence; at equal count the earlier-roster group comes first.
+        The test pins the behaviour the label now names."""
+        loop = "Close the loop the opening sorts autocomplete into."
+        phrase = "A workflow change is a recompile of nothing."
+        late = "The listing prints a runtime the text then contradicts."
+        fowler = _verdict(self.t, "fowler", "d", [(phrase, "f", "x"), (late, "f", "x")], "v")
+        yegge = _verdict(self.t, "yegge", "d", [(phrase, "f", "x")], "v")
+        deitel = _verdict(self.t, "deitel", "d", [(phrase, "f", "x")], "v")
+        cook = _verdict(self.t, "cook", "d", [(loop, "f", "x")], "v")
+        kreischer = _verdict(self.t, "kreischer", "d", [(loop, "f", "x"), (late, "f", "x")], "v")
+        roster = ["fowler", "yegge", "deitel", "cook", "kreischer"]
+        reports = converge.order([converge.parse(p) for p in
+                                  (kreischer, cook, deitel, yegge, fowler)], roster)
+        sheet = converge.render(reports, converge.group(reports))
+        block = sheet.split("**Most agreed**")[1]
+        self.assertLess(block.index(phrase), block.index(late))
+        self.assertLess(block.index(late), block.index(loop),
+                        "two critics last in the roster rank below two first in it")
+        self.assertIn("(3 critics: fowler, yegge, deitel)", block)
+        self.assertIn("(2 critics: cook, kreischer)", block)
 
     def test_roster_sets_sheet_order_and_file_order_is_the_default(self):
         a = _verdict(self.t, "fowler", "F diagnosis.", [("p1", "f", "x")], "v")

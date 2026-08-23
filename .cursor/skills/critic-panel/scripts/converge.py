@@ -192,23 +192,37 @@ def render(reports, groups):
     out += ["## Summary", "",
             "**Pass**: " + (", ".join(passed) or "none"), "",
             "**Needs work**: " + (", ".join(failed) or "none"), ""]
-    # Top fixes caps the rendered list, never the findings — everything above
-    # is still in the sheet. Ranked by how many critics landed on the passage,
-    # then by roster order, which `reports` already carries.
+    # Most agreed caps the rendered list, never the findings — everything
+    # above is still in the sheet. Ranked by how many critics landed on the
+    # passage, then by roster order, which `reports` already carries.
+    #
+    # The label names that axis, because agreement is not consequence (GH-114).
+    # review-chapter ranked its top three by what most changes the chapter,
+    # "not by which critic spoke loudest"; a count is exactly what that rule
+    # ruled out, and on 03-what-is-an-agent.md the baseline's first fix sorted
+    # eleventh of eleven here — two critics, both last in the roster. This
+    # script makes no model call and stays deterministic so an author can
+    # argue with it; ranking by consequence is a judgment, and the judgment is
+    # theirs. The sheet says so rather than calling the list a priority.
     rank = {r["critic"]: i for i, r in enumerate(reports)}
     top = sorted(conv, key=lambda g: (-len({s['critic'] for s in g}),
                                       min(rank.get(s["critic"], len(rank))
                                           for s in g)))
     if top:
         n = min(3, len(top))
-        out += [f"**Top {n} fix{'' if n == 1 else 'es'}** "
-                f"(in priority order):", ""]
+        out += [f"**Most agreed** ({n} of {len(top)} convergent "
+                f"{unit}{'' if len(top) == 1 else 's'}, by number of "
+                f"critics, then roster order):", ""]
         for i, g in enumerate(top[:3], 1):
-            who = ", ".join(sorted({s["critic"] for s in g}, key=lambda c: rank.get(c, 0)))
+            who = sorted({s["critic"] for s in g}, key=lambda c: rank.get(c, 0))
             spec = KINDS[g[0]["kind"]]
             out += [f"{i}. \"{g[0]['quote']}\" — {g[0].get(spec['why'], '')} "
-                    f"({who})"]
-        out += [""]
+                    f"({len(who)} critics: {', '.join(who)})"]
+        out += ["",
+                "Agreement is not consequence. This list says where critics "
+                "who could not see each other landed on the same passage; "
+                "which fix most changes the draft is the author's call, and "
+                "a two-critic finding may outrank a three-critic one.", ""]
     return "\n".join(out)
 
 
