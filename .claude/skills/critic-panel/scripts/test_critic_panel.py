@@ -161,6 +161,120 @@ class FigureCollapseTest(unittest.TestCase):
         self.assertNotIn(".png", out)
 
 
+# The heading structure of the panel's first real run, verbatim; the prose
+# under them is not what failed and is not reproduced. levine and didion wrote
+# "Ten line-level suggestions", hemingway "Line-level suggestions" — none of
+# them the `## Suggestions` the parser is specified to read.
+FIRST_RUN = """## Diagnosis
+Three sentences about why it reads as only fine.
+
+## {heading}
+
+1. **Original (intro, paragraph 3 closer):** "A sentence from the draft."
+   **Replacement:** "A better sentence."
+   **Buys:** what it buys.
+
+## {move}
+A paragraph-level move, described.
+"""
+
+
+class RefusalTest(unittest.TestCase):
+    """GH-107. converge.py wrote a sheet from three reports it had parsed to
+    nothing — `3 critics, 0 suggestions` — and said nothing was wrong. The
+    sheet a human used from that run was written by hand."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.t = self.tmp.name
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def _first_run(self, name, heading, move):
+        return _write(self.t, f"{name}.md",
+                      FIRST_RUN.format(heading=heading, move=move))
+
+    def test_a_verdict_critic_with_no_findings_is_not_a_fault(self):
+        """The case a count-based check would break. `Pass` in the Summary is
+        precisely a verdict critic with zero findings."""
+        p = _write(self.t, "cook.md",
+                   "## Diagnosis\nThe opening works.\n\n## Findings\n\n"
+                   "## Verdict\nThe hook is strong.\n")
+        r = converge.parse(p)
+        self.assertEqual(r["items"], [])
+        self.assertTrue(r["has_section"], "the heading is there, and empty")
+        self.assertIsNone(converge.unparseable(r), "zero findings is a result")
+
+    def test_a_missing_section_heading_is_refused(self):
+        r = converge.parse(self._first_run(
+            "levine", "Ten line-level suggestions", "One paragraph-level move"))
+        why = converge.unparseable(r)
+        self.assertIsNotNone(why)
+        self.assertIn("no `## Suggestions` or `## Findings`", why)
+        self.assertIn("ten line-level suggestions", why,
+                      "the refusal names what it actually found")
+
+    def test_the_hemingway_variant_is_also_refused(self):
+        """Same run, slightly different headings — the shape varies, which is
+        why the check is on the expected heading rather than on a denylist."""
+        why = converge.unparseable(converge.parse(self._first_run(
+            "hemingway", "Line-level suggestions", "Paragraph-level move")))
+        self.assertIsNotNone(why)
+        self.assertIn("line-level suggestions", why)
+
+    def test_right_heading_wrong_fields_is_refused_differently(self):
+        p = _write(self.t, "w.md",
+                   '## Suggestions\n### 1\nSentence: "a"\nNewText: "b"\n')
+        why = converge.unparseable(converge.parse(p))
+        self.assertIsNotNone(why)
+        self.assertIn("`### n` block(s) but no parseable entry", why)
+        self.assertIn("Original and Replacement", why, "names what is required")
+        self.assertNotIn("no `## Suggestions`", why, "a different failure")
+
+    def test_a_conforming_report_is_not_refused(self):
+        p = _write(self.t, "ok.md", REPORT.format(rep="R.", solo="S."))
+        self.assertIsNone(converge.unparseable(converge.parse(p)))
+
+    def test_refuse_names_every_bad_report_not_just_the_first(self):
+        reports = [converge.parse(self._first_run(n, "Ten line-level suggestions",
+                                                  "One paragraph-level move"))
+                   for n in ("levine", "didion")]
+        reports.append(converge.parse(
+            _write(self.t, "ok.md", REPORT.format(rep="R.", solo="S."))))
+        try:
+            converge.refuse(reports)
+            self.fail("should have exited")
+        except SystemExit as e:
+            msg = str(e)
+            self.assertIn("2 of 3 report(s) parsed to nothing", msg)
+            self.assertIn("levine.md", msg)
+            self.assertIn("didion.md", msg)
+            self.assertNotIn("ok.md", msg, "the good one is not blamed")
+
+    def test_no_sheet_is_written_on_refusal(self):
+        """A partial sheet is the silent wrong answer in another costume."""
+        out = os.path.join(self.t, "sheet.md")
+        bad = self._first_run("levine", "Ten line-level suggestions",
+                              "One paragraph-level move")
+        argv = sys.argv
+        sys.argv = ["converge.py", bad, "--out", out]
+        try:
+            converge.main()
+            self.fail("should have exited")
+        except SystemExit as e:
+            self.assertNotEqual(e.code, 0, "must exit non-zero")
+        finally:
+            sys.argv = argv
+        self.assertFalse(os.path.exists(out), "no sheet on refusal")
+
+    def test_the_golden_reports_are_not_refused(self):
+        td = os.path.join(SK, "testdata")
+        for n in ("levine", "didion", "hemingway"):
+            r = converge.parse(os.path.join(td, f"{n}.md"))
+            self.assertIsNone(converge.unparseable(r), n)
+
+
 class ConvergeTest(unittest.TestCase):
     def test_convergence_grouping(self):
         with tempfile.TemporaryDirectory() as tmp:
