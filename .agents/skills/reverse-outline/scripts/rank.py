@@ -174,8 +174,58 @@ def runs(outline):
                 "positions": positions, "paragraphs": len(members),
                 "line": members[0].line, "gloss": peers[0].gloss,
                 "label": _run_label(positions), "best": best,
+                "unattached": _bracketed_joints(paras, positions, children),
             })
     out.sort(key=lambda r: _sort_key(r["best"]))
+    return out
+
+
+def _bracketed_joints(paras, positions, children):
+    """`joint` paragraphs the run reaches past but could not claim (GH-99).
+
+    `annotate` writes `joint` when nothing attaches (references/prompts.md), so
+    a joint carries no `-> n` and the closure that builds a run cannot reach
+    it. The run then reports fewer paragraphs than the page shows, and extent
+    is what the row exists to report.
+
+    Two shapes, and the second is the expensive one:
+
+      p2 sequence, p3 -> 2, p4 joint, p5 -> 3     run 2,3,5   joint inside
+      p2 sequence, p3 -> 2, p4 joint, p5 -> 4     run 2-3     joint abuts
+
+    In the second the joint takes its dependents with it, so the run shrinks
+    and the joint lands one past the end rather than inside. Reporting only
+    what sits strictly inside would miss the case that loses the most, which
+    is why the position `hi + 1` counts too. Beyond that the markers say
+    nothing connecting the paragraph to the run, and neither does this.
+
+    `depends` counts what hangs off the joint — those paragraphs left the run
+    with it, and one unattached label costing four paragraphs is worth saying
+    out loud.
+
+    Membership is unchanged; this is reporting. Counting them would make
+    `paragraphs` disagree with `positions`, and a run's rank comes from its
+    members. Only `joint`: a targetless `elaboration` attaches to the section
+    nucleus, which is a real statement about where it belongs, and flattening
+    that into "unattached" would cost the distinction.
+    """
+    if not positions:
+        return []
+    lo, hi, held = min(positions), max(positions), set(positions)
+    out = []
+    for u in paras:
+        if u.relation != "joint" or u.position in held:
+            continue
+        if not lo < u.position <= hi + 1:
+            continue
+        subtree, queue = set(), [u.position]
+        while queue:                            # cycle-safe, as runs() is
+            for child in children.get(queue.pop(), []):
+                if child.position not in subtree and child.position not in held:
+                    subtree.add(child.position)
+                    queue.append(child.position)
+        out.append({"position": u.position, "line": u.line, "gloss": u.gloss,
+                    "depends": len(subtree)})
     return out
 
 
@@ -342,7 +392,17 @@ def render(sheet):
         for r in runs_:
             b = r["best"]
             d = "—" if b["broken"] else f"d{b['depth']}"
-            o.append(f"| {r['label']} | `{r['relation']}` | {r['paragraphs']} | "
+            # A bracketed `joint` is inside the passage on the page but not in
+            # the run, because nothing attaches it. Saying so beats a count the
+            # author would have to check against the draft (GH-99).
+            held = r.get("unattached") or []
+            brackets = ("" if not held else
+                        " · brackets " + ", ".join(
+                            f"p{u['position']} `joint`"
+                            + (f" +{u['depends']}" if u["depends"] else "")
+                            for u in held))
+            o.append(f"| {r['label']}{brackets} | `{r['relation']}` | "
+                     f"{r['paragraphs']} | "
                      f"{b['position']} `{b['relation']}` {d} | "
                      f"{r['section'] or '—'} | {r['gloss']} |")
 

@@ -601,6 +601,77 @@ class Runs(unittest.TestCase):
         held = {c["position"]: c["run"] for c in sheet["candidates"]}
         self.assertIn(";", held[5], "p5 is in the sequence run and the list run")
 
+    def test_a_bracketed_joint_is_named_on_the_run_row(self):
+        """GH-99. `annotate` writes `joint` when nothing attaches, so a joint
+        paragraph carries no `-> n` and the closure cannot reach it. The run
+        then reports fewer paragraphs than the page shows, and extent is what
+        the row exists to report."""
+        o = self._variant("rst: joint -> 2 | the leave case",
+                          "rst: joint | the leave case")
+        row = rk.runs(o)[0]
+        # p5 targets p4, so detaching p4 takes p5 out of the run too: the run
+        # shrinks to 2-3 and the joint lands one past the end rather than
+        # inside it. That is the shape that loses the most paragraphs.
+        self.assertEqual(row["label"], "2\u20133")
+        self.assertEqual(row["paragraphs"], 2, "membership is unchanged")
+        self.assertEqual([u["position"] for u in row["unattached"]], [4])
+        self.assertEqual(row["unattached"][0]["depends"], 1, "p5 went with it")
+        self.assertIn("brackets p4 `joint` +1", rk.render(rk.build(o)))
+
+    def test_a_joint_strictly_inside_the_span_is_named_too(self):
+        """The other shape: nothing depends on the joint, so the run keeps its
+        later members and the joint sits in the middle of them."""
+        text = RUN.replace("rst: joint -> 2 | the leave case",
+                           "rst: joint | the leave case")
+        text = text.replace("rst: restatement -> 4 | says the stay case again",
+                            "rst: restatement -> 3 | says the stay case again")
+        row = rk.runs(rm.parse(_write(self.tmp.name, "in.md", text)))[0]
+        self.assertEqual(row["label"], "2, 3, 5")
+        self.assertEqual(row["paragraphs"], 3)
+        self.assertEqual([u["position"] for u in row["unattached"]], [4])
+        self.assertEqual(row["unattached"][0]["depends"], 0)
+
+    def test_a_joint_that_attaches_is_a_member_not_a_bracket(self):
+        row = rk.runs(self.o)[0]
+        self.assertEqual(row["paragraphs"], 4)
+        self.assertEqual(row["unattached"], [], "it joined; nothing to report")
+
+    def test_a_targetless_elaboration_is_not_named(self):
+        """It attaches to the section nucleus, which is a real statement about
+        where it belongs. `joint` says the tree reaches it nowhere, and
+        flattening the two would cost the distinction."""
+        o = self._variant("rst: joint -> 2 | the leave case",
+                          "rst: elaboration | the leave case")
+        self.assertEqual(rk.runs(o)[0]["unattached"], [])
+
+    def test_a_joint_beyond_the_abutting_position_is_not_named(self):
+        """The run reaches to `hi + 1` and no further. A joint past that might
+        belong to the passage, but nothing in the markers says so."""
+        text = RUN.replace("rst: joint -> 2 | the leave case",
+                           "rst: evidence -> 2 | the survey supports it")
+        text += ("\n<!-- rst: joint | a trailing orphan -->\n"
+                 "A trailing paragraph the argument does not reach at all.\n")
+        path = _write(self.tmp.name, "trail.md", text)
+        row = rk.runs(rm.parse(path))[0]
+        self.assertEqual(max(row["positions"]), 5)
+        self.assertEqual(row["unattached"], [],
+                         "the trailing joint is at 7; the run reaches 6")
+
+    def test_a_run_bracketing_nothing_renders_as_before(self):
+        sheet = rk.render(rk.build(self.o))
+        self.assertIn("### Runs, cut whole", sheet)
+        self.assertNotIn("brackets", sheet)
+
+    def test_the_bracketed_joint_keeps_its_own_candidate_row(self):
+        """Naming it on the run does not remove it from the ranking, where it
+        still sorts first as the cheapest finding the skill produces."""
+        o = self._variant("rst: joint -> 2 | the leave case",
+                          "rst: joint | the leave case")
+        cands = rk.build(o)["candidates"]
+        joint = [c for c in cands if c["relation"] == "joint"]
+        self.assertEqual([c["position"] for c in joint], [4])
+        self.assertEqual(cands[0]["relation"], "joint", "still rank 1")
+
     def test_runs_are_reproducible(self):
         self.assertEqual(rk.runs(self.o), rk.runs(self.o))
         self.assertEqual(rk.render(rk.build(self.o)), rk.render(rk.build(self.o)))

@@ -181,6 +181,40 @@ sheet** rather than dropped, on a line under the candidates table. The original
 failure was not the exclusion; it was the silence. A paragraph the ranking
 declines to rank is a decision the author is entitled to see.
 
+### What a run brackets
+
+Grouping follows targets, and `joint` is defined as the label for a paragraph
+nothing attaches — so a `joint` inside a passage carries no `-> n` and no run
+can reach it. The run then reports fewer paragraphs than the page shows, and
+extent is the thing the row exists to report.
+
+Two shapes, and the second costs more:
+
+| Markers | Run | Where the joint lands |
+|---|---|---|
+| p2 `sequence`, p3 `-> 2`, p4 `joint`, p5 `-> 3` | 2, 3, 5 | inside the span |
+| p2 `sequence`, p3 `-> 2`, p4 `joint`, p5 `-> 4` | 2–3 | one past the end |
+
+In the second the joint takes its dependents with it: p5 attached to p4, so
+detaching p4 detaches p5, the run shrinks, and the joint ends up abutting the
+span rather than inside it. A rule that reported only what sits strictly inside
+would miss the case that loses the most paragraphs, which is why a run reaches
+to **one position past its highest member** and no further. Beyond that the
+markers say nothing connecting the paragraph to the run, and neither does the
+sheet.
+
+The run row names what it brackets, with a count of what hangs off it —
+`2–3 · brackets p4 joint +1`. Membership does not change: `paragraphs` counts
+members, and a run's rank comes from its best member. This is reporting, and
+the bracketed paragraph keeps its own row in the candidates table, where
+`joint` still sorts first.
+
+Only `joint` is reported this way. A targetless `elaboration` attaches to the
+section nucleus, which is a real statement about where it belongs; `joint` says
+the tree reaches the paragraph nowhere. Flattening the two into "unattached"
+would cost the distinction that makes `joint` the cheapest finding the skill
+produces.
+
 ## Deliberate omissions
 
 - **No new role vocabulary.** RST's set is closed, published, and defined by
