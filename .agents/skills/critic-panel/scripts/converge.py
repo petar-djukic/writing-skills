@@ -32,6 +32,7 @@ import argparse
 import difflib
 import os
 import re
+import sys
 
 THRESHOLD = 0.8
 
@@ -69,14 +70,21 @@ def parse(path):
     kind = "verdict" if "findings" in sect else "suggest"
     spec = KINDS[kind]
     pattern = r"^(" + "|".join(spec["fields"]) + r"):\s*(.+?)\s*$"
+    blocks = re.split(r"^### +\S+\s*$", sect.get(spec["section"], ""),
+                      flags=re.M)[1:]
     items = []
-    for block in re.split(r"^### +\S+\s*$", sect.get(spec["section"], ""),
-                          flags=re.M)[1:]:
+    for block in blocks:
         fields = dict(re.findall(pattern, block, re.M))
         if all(f in fields for f in spec["required"]):
             items.append({"critic": name, "kind": kind,
                           "quote": fields[spec["quote"]], **fields})
-    return {"critic": name, "kind": kind,
+    return {"critic": name, "kind": kind, "path": path,
+            # What the file actually carried, so a refusal can name it rather
+            # than guess. `kind` alone cannot: absent both headings it reads
+            # "suggest" by default, which is the wrong thing to report.
+            "sections": sorted(sect),
+            "has_section": spec["section"] in sect,
+            "blocks": len(blocks),
             "diagnosis": sect.get("diagnosis", ""),
             "move": sect.get("paragraph move", ""),
             "verdict": sect.get("verdict", ""),
@@ -204,6 +212,53 @@ def render(reports, groups):
     return "\n".join(out)
 
 
+def unparseable(report):
+    """Why this report yields nothing usable, or None when it is fine.
+
+    Zero items is NOT the test, and getting that wrong would break the thing
+    the book roster exists to report: `Pass` in the Summary block is precisely
+    a verdict critic with no findings, so a report carrying `## Findings` with
+    nothing under it is a clean result, not a fault (GH-97).
+
+    What distinguishes a fault is the heading. The panel's first real run
+    (GH-107) wrote `## Ten line-level suggestions` and `1. **Original:**`,
+    matched nothing, and `converge.py` wrote a sheet anyway — three critics, 0
+    suggestions, no complaint. The sheet a human actually used from that run
+    was written by hand, and nothing recorded that the tool had contributed
+    nothing.
+    """
+    if not report["has_section"]:
+        seen = ", ".join(report["sections"]) or "no `## ` headings at all"
+        return (f"no `## Suggestions` or `## Findings` section — found: {seen}. "
+                f"The report format is fixed and machine-read; see the "
+                f"critic-panel SKILL.md")
+    if report["blocks"] and not report["items"]:
+        spec = KINDS[report["kind"]]
+        return (f"`## {spec['section'].title()}` has {report['blocks']} "
+                f"`### n` block(s) but no parseable entry — each needs "
+                f"{' and '.join(spec['required'])} on their own lines")
+    return None
+
+
+def refuse(reports):
+    """Exit naming every unparseable report, not just the first.
+
+    Refusing rather than warning: a sheet assembled from reports that parsed
+    to nothing is worthless, and a warning on stderr is what nobody read the
+    first time. Nothing is written — a partial sheet is the silent wrong
+    answer wearing a different hat.
+    """
+    bad = [(r, why) for r in reports for why in [unparseable(r)] if why]
+    if not bad:
+        return
+    lines = [f"converge: {len(bad)} of {len(reports)} report(s) parsed to "
+             f"nothing; no sheet written"]
+    for r, why in bad:
+        lines.append(f"  {r['path']}")
+        lines.append(f"    {why}")
+    sys.exit("\n".join(lines))
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("reports", nargs="+")
@@ -213,6 +268,7 @@ def main():
     a = ap.parse_args()
     reports = order([parse(p) for p in a.reports],
                     a.roster.split(",") if a.roster else None)
+    refuse(reports)
     sheet = render(reports, group(reports))
     with open(a.out, "w", encoding="utf-8") as f:
         f.write(sheet)

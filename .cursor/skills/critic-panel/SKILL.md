@@ -48,7 +48,9 @@ terminal stage (inject-vernacular)
    with its persona brief from
    [references/personas.md](./references/personas.md), the constraints its
    kind carries, and the report format its kind prescribes, writing to
-   `<stem>.critic-<name>.md`.
+   `<stem>.critic-<name>.md`. **The headings below are literal and the report
+   is machine-read** — `## Suggestions`, not `## Ten line-level suggestions`.
+   Step 3 refuses a report it cannot parse rather than merging it as empty.
 3. Merge: `scripts/converge.py <reports…> --out <stem>.critic-sheet.md
    [--roster <names>]` — findings targeting the same passage across critics
    are listed first, whichever kind produced them; agreement between
@@ -118,6 +120,17 @@ Fix: <what would fix it, described — never written as replacement prose>
 `Passage` for verdict — so two diagnosticians quoting one passage converge
 exactly as two adders targeting one sentence do, and a diagnostician and an
 adder converge on the same passage too.
+
+**The section headings and field names are read literally, and a report that
+does not carry them is refused.** The panel's first real run wrote
+`## Ten line-level suggestions` and `1. **Original:**`; `converge.py` matched
+nothing, reported `3 critics, 0 suggestions`, and wrote a sheet anyway, so the
+sheet a human worked from that day was assembled by hand and nothing recorded
+that the tool had contributed nothing (GH-107). A report parsing to nothing
+now names itself and stops the merge.
+
+A verdict critic with **no findings is not a failure** — that is what `Pass`
+in the Summary block reports. Write `## Findings` with nothing under it.
 
 ### Constraints
 
