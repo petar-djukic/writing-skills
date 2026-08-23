@@ -41,17 +41,71 @@ end.
 
 ## Stage order and the read-only-after-terminal invariant (GH-57)
 
-The full pipeline, in order:
+The pipeline is a **cycle**, not a line:
 
 ```
 draft (with declared/locked spans)
-  -> humanize stages, lock-respecting (structural step, filter-tells,
-     match-voice)
-  -> inject-vernacular (terminal — the last stage that writes)
-  -> read-only zone (Pangram, critic-panel, then voice-critic, cold
-     reads, author gate — critic-panel precedes voice-critic because its
-     author-accepted picks change what voice-critic audits)
+  ┌─> generative chain, lock-respecting
+  │     structural step -> filter-tells -> match-voice (SEEDED, Phase 3)
+  │     -> tighten-style -> inject-vernacular (terminal for this cycle)
+  │
+  ├─> read-only zone
+  │     reverse-outline annotate + rank, Pangram, critic-panel, then
+  │     voice-critic (critic-panel first: its author-accepted picks change
+  │     what voice-critic audits)
+  │
+  ├─> author picks and edits
+  │
+  └─< repeat the chain IF the trigger below fires; otherwise
+      -> author gate -> publish
 ```
+
+**Why the chain runs again after the read-only zone.** Two reasons, both
+measured on strategy-theatre (substack GH-208/GH-211):
+
+1. The read-only zone injects prose that has never been laundered. Critic
+   suggestions are model sentences, and they cost detector score even when
+   they improve the writing (0.332 -> 0.421 at one panel, again at the
+   next). Under a linear pipeline that prose ships as-is, because the
+   generative stages already ran. The post-critic chain is what cleans it:
+   assisted fell 0.255 -> 0.080 on the run that worked.
+2. The read-only zone finds defects the generative chain cannot see —
+   orphaned callbacks whose setup was trimmed, erosion across passes,
+   actor-name drift after a recast. Polishing diction over a broken
+   argument is wasted work, so the argument gets fixed first and the
+   chain runs over the corrected text.
+
+The only generative stage that survived cold review and improved the
+article ran *after* a socratic rewrite, two critic panels and a reverse
+outline. Run before that work, the same recipe gated 0.609 instead of
+0.370.
+
+### The trigger: when to run the chain again
+
+Not a count. Re-run when the read-only zone and the author's edits have
+changed enough text for the seed to have something to work on. Two
+indicators, both of which predicted the outcome before the scan confirmed
+it:
+
+| indicator | chain worked | chain failed |
+|---|---|---|
+| seed reach (paragraphs changed) | 19 of 125 | 16 of 125, 36 gate-rejected |
+| gated survival at cold review | 51% mid-edit, 35% well-edited | 39% and scoring worse |
+
+**When the seed cannot move the text, stop.** A converged article only
+shuffles between detector buckets: the failed run posted the best raw AI
+fraction of its day (0.167) with the entire gain sitting in paragraphs the
+cold reviewer reverted, and what movement there was went into *assisted*
+rather than *human*.
+
+### Terminal per cycle, not per article
+
+`inject-vernacular` is terminal **for its cycle**. Within a cycle nothing
+writes after it: a defect found in the read-only zone is fixed by the
+author's hand, or by opening the next cycle. Re-entering the generative
+chain in a new cycle is not a contract violation — it is the
+'re-running from a pre-terminal checkpoint' the contract already allows,
+made explicit.
 
 **After the terminal stage, models may read but never write.** The
 evidence behind the rule is the Strategy Theatre provenance logs: every
@@ -71,7 +125,7 @@ Three rules the order encodes:
    any model call and spliced back byte-identical after, in every stage —
    protection is mechanical, enforced in `prose_document.py` /
    `md_paragraphs.py`, never by prompts.
-2. **inject-vernacular is terminal because it is deterministic.** It
+2. **inject-vernacular is terminal (for its cycle) because it is deterministic.** It
    applies the idiolect.yaml operator bank by substitution and
    restoration only; nothing samples, so it cannot regress the text
    toward a model's center — which qualifies it to run after every stage
