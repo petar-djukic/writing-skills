@@ -216,7 +216,7 @@ tighten.py command line, or configure them in the venue profile.
    | choice | when to use | what it does |
    |---|---|---|
    | match-outline | article structure needs section-level rewriting (new blueprint, different register) | section-level rewrite via Kimi with chosen blueprint and anchor-tags |
-   | tighten-style | article structure is sound, paragraphs need tightening toward author density | paragraph-level rule-keyed rewriting via Ollama with anchor-gated verification |
+   | tighten-style | article structure is sound but the paragraphs are too dense for the rewriter to clear the gate | paragraph-level rule-keyed rewriting via Ollama with anchor-gated verification. **Not the default placement** — see Phase 3.5, which runs tighten-style after match-voice to recover the words the rewrite costs. Choose this one only for the gate reason. |
    | skip | article already structurally rewritten (e.g. resuming after step 1) | proceed directly to filter-tells |
 
 3. **If match-outline was chosen**, list available blueprints and tags, then
@@ -506,6 +506,39 @@ for i in 01 02 03 04; do
 done
 ```
 
+### Phase 3.5: tighten-style, after match-voice
+
+Run tighten-style **after** the rewrite, never before it. The rewrite buys
+the score and costs words; this pass gives the words back without giving
+back the score.
+
+```bash
+$RUN <tighten-style>/scripts/tighten.py --article <floor-pass.md> \
+  --out <tightened.md>
+```
+
+Measured (2026-07-26 worktrees run, carried from the substack
+write-article command, which has run this ordering longest):
+
+| | words | mean sentence | Pangram |
+|---|---:|---:|---|
+| before match-voice | 2,378 | 17.0 | 77.8% AI |
+| after match-voice | 2,502 | 17.8 | 0.0% AI |
+| after tighten-style | 2,306 | 16.5 | 0.0% AI |
+
+**The pass must run through the second model family.** The same tightening
+applied by Claude against the rule catalog took a 0.0% draft to **77.9%** —
+same article, same rules, opposite result, because Claude tightens toward
+Claude's own register. Read the findings; let the tool rewrite.
+
+**Two placements, two different questions.** Phase 1 offers tighten-style
+as the *structural step*: that placement answers "the paragraphs are too
+dense for the rewriter to clear the mechanical gate", and it runs before
+match-voice by design. This phase answers "the rewrite left the prose
+leisurely", and it runs after. A run picks one and states which; running
+both is defensible only if the first was chosen for the gate reason and
+the second for the word-count reason.
+
 ### Phase 3c: inject-vernacular (terminal)
 
 When the repository carries `writing-voice/idiolect.yaml`, run the
@@ -545,6 +578,7 @@ work.
 | Phase 3 iteration | every pass scored; stopped at an upturn, not a count |
 | floor selection | the publish candidate is the floor pass |
 | cold review | run on the floor pass; survival rate stated |
+| tighten-style | which placement was used (Phase 1 gate reason, or Phase 3.5 word-recovery), and through the second family |
 | inject-vernacular | ran, or skipped with the reason |
 | canonical blocks | registry found, or passed explicitly |
 | locks and markers | verified byte-identical after every stage |
