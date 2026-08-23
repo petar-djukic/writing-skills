@@ -101,6 +101,21 @@ inline_rules() {
 # dereferences them, so they were copied into all four generated surfaces and
 # --check then reported drift forever against the committed mirrors (GH-5).
 # They belong to the repository that owns them.
+# Every canonical skill file worth mirroring, relative to .claude/skills.
+#
+# Build caches are excluded here and nowhere else. They were excluded at three
+# separate call sites, which held only for as long as the one cache anyone had
+# seen: pytest later wrote .pytest_cache beside the match-voice tests, the copy
+# carried it into the generated surfaces, and --check reported drift against
+# the committed mirrors. `git status` stayed clean throughout, because pytest
+# writes a .gitignore containing `*` inside its own cache — so nothing pointed
+# at the cause. One list, one place to add the next one.
+skill_files() {
+  (cd "$ROOT/.claude/skills" && find . -type f \
+      ! -path '*/__pycache__/*' \
+      ! -path '*/.pytest_cache/*')
+}
+
 canonical_commands() {
   local f
   for f in "$ROOT/.claude/commands/"*.md; do
@@ -156,7 +171,7 @@ build_stage() {
     # A repository carrying only commands has no skills directory, and that is
     # a normal state, not an error (GH-20).
     [[ -d "$ROOT/.claude/skills" ]] || continue
-    (cd "$ROOT/.claude/skills" && find . -type f ! -path '*/__pycache__/*') | while IFS= read -r rel; do
+    skill_files | while IFS= read -r rel; do
       local src="$ROOT/.claude/skills/$rel"
       local dst="$STAGE/$target/skills/$rel"
       mkdir -p "$(dirname "$dst")"
@@ -200,7 +215,7 @@ build_stage() {
   # .claude/rules mentions — those files are not carried by a bare symlink.
   # A commands-only repository has no skills directory; skip the copy (GH-20).
   [[ -d "$ROOT/.claude/skills" ]] && \
-  (cd "$ROOT/.claude/skills" && find . -type f ! -path '*/__pycache__/*') | while IFS= read -r rel; do
+  skill_files | while IFS= read -r rel; do
     local src="$ROOT/.claude/skills/$rel"
     local dst="$STAGE/.github/skills/$rel"
     mkdir -p "$(dirname "$dst")"
@@ -289,7 +304,7 @@ EOF
   # inside .agents.
   # A commands-only repository has no skills directory; skip the copy (GH-20).
   [[ -d "$ROOT/.claude/skills" ]] && \
-  (cd "$ROOT/.claude/skills" && find . -type f ! -path '*/__pycache__/*') | while IFS= read -r rel; do
+  skill_files | while IFS= read -r rel; do
     local src="$ROOT/.claude/skills/$rel"
     local dst="$STAGE/.agents/skills/$rel"
     mkdir -p "$(dirname "$dst")"
