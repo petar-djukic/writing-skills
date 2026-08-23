@@ -207,6 +207,36 @@ prose, so nothing it returns can reach the draft except through a sentence
 the author writes. The book roster buys the same reading at none of the
 detector cost, and pays for it in the author doing the writing.
 
+## What the book roster buys, measured
+
+`03-what-is-an-agent.md` from agentic-coding-book, 2,523 words, 2026-08-23
+(GH-109). Six fresh-context critics in parallel, plus the retired
+single-context `review-chapter` run recovered from git as a baseline.
+
+Six of six reports parsed clean — `## Findings` with `Passage:` / `Finding:` /
+`Fix:` on their own lines — and nothing was refused. That is the question the
+run existed to answer: before it, every verdict report the tests had seen was
+written by the test file, and the panel's one earlier article run had produced
+three reports the parser matched nothing in (GH-107).
+
+56 findings, 11 passages drawing two or more critics, one drawing three.
+Roster order survived parallel execution into both the Diagnoses and the
+single-critic sections. The convergence is signal rather than coincidence: the
+deepest group is three critics who could not see each other landing on one
+claim — that a workflow change is "a recompile of nothing" — which the
+chapter's own printed runtime contradicts.
+
+**Two things the run did not establish.** No critic passed, so `Pass` rendered
+empty and that branch of the Summary is still unexercised on real verdicts.
+And the Top 3 did not reproduce the baseline's first fix: the panel found it
+(Cook and Kreischer, on the unclosed opening loop) and ranked it eleventh of
+eleven, because Top fixes rank by how many critics agreed and those two sit
+last in the roster. review-chapter ranked by "what most changes the chapter,
+not by which critic spoke loudest"; a count is exactly the thing that rule
+forbade. Nothing was lost — every baseline fix is somewhere in the sheet — but
+what rises to the top is decided differently, and the difference is not
+cosmetic. Tracked as GH-114.
+
 ## Calibration note on personas
 
 Hemingway answered the choppiness question honestly ("cutting more clauses
