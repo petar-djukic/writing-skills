@@ -97,6 +97,48 @@ def is_pre_ai(ex: dict) -> bool:
     return True if not isinstance(y, int) else y < AI_ERA_YEAR
 
 
+# The corpus convention: <Author>-<rest>.md. Letter-initial, so a
+# date-stamped name like 2026-08-20-strategy-theatre.md yields nothing rather
+# than an author called "2026". Deliberately not `<Author>-<YYYY>-`: on the
+# reference corpus that stricter form missed 13 of 181 exemplars, including
+# all ten Dijkstra essays, which carry EWD numbers where a year would go
+# (GH-98). A gate that drops the author it was asked for is the bug it was
+# meant to fix.
+FILENAME_AUTHOR = re.compile(r"^([A-Za-z][A-Za-z0-9]*)-")
+
+
+def author_of(ex):
+    """(name, source) for one exemplar; source is 'declared', 'inferred', None.
+
+    A declared `author:` field always wins. Inference reads the filename and
+    never overrides what the manifest states, so adding the field to a corpus
+    is always a refinement and never a change of meaning.
+    """
+    declared = (ex.get("author") or "").strip()
+    if declared:
+        return declared, "declared"
+    m = FILENAME_AUTHOR.match(os.path.basename(ex.get("file") or ""))
+    return (m.group(1), "inferred") if m else (None, None)
+
+
+def author_index(voice_dir: str):
+    """{name: 'declared'|'inferred'} for every author the corpus can express.
+
+    What `--author` is able to select. A caller that gets nothing back knows
+    the flag cannot work here at all, which is a different problem from
+    passing a name the corpus does not hold — and telling them apart is the
+    whole of GH-98.
+    """
+    out = {}
+    for ex in load_manifest(voice_dir):
+        name, src = author_of(ex)
+        if not name:
+            continue
+        if out.get(name) != "declared":
+            out[name] = src
+    return out
+
+
 def sample_paths(voice_dir: str, role: str = None, pre_ai: bool = None,
                  tags=None, author: str = None, for_diction: bool = True):
     """[(path, role)] for manifest exemplars whose file exists.
@@ -127,7 +169,7 @@ def sample_paths(voice_dir: str, role: str = None, pre_ai: bool = None,
     for ex in load_manifest(voice_dir):
         if role and ex.get("role") != role:
             continue
-        if author_lower and ex.get("author", "").strip().lower() != author_lower:
+        if author_lower and (author_of(ex)[0] or "").lower() != author_lower:
             continue
         if pre_ai is not None and is_pre_ai(ex) != pre_ai:
             continue
@@ -362,14 +404,14 @@ def cmd_tags(args):
         r = ex.get("role")
         if r:
             roles.add(r)
-    authors = set()
-    for ex in exemplars:
-        a = ex.get("author")
-        if a:
-            authors.add(a)
+    idx = author_index(d)
     out = {"writing_voice": d, "exemplars": len(exemplars),
            "tags": sorted(tags), "roles": sorted(roles),
-           "authors": sorted(authors)}
+           "authors": sorted(idx),
+           # Which are stated and which were read off a filename. Without
+           # this the discovery path reports nothing on a corpus that
+           # declares no authors, which is where GH-98 started.
+           "author_source": {k: idx[k] for k in sorted(idx)}}
     print(json.dumps(out, indent=2, ensure_ascii=False))
 
 
@@ -397,8 +439,9 @@ def main():
                     help="pre-ai restricts to diction-safe samples across roles")
     an.add_argument("--tags", help="comma-separated register tags; similarity "
                                    "still ranks WITHIN the selected pool")
-    an.add_argument("--author", help="hard pin to a named author (case-insensitive "
-                                     "match against the exemplar author field)")
+    an.add_argument("--author", help="hard pin to a named author (case-insensitive; "
+                                     "matches the exemplar author field, or the "
+                                     "filename prefix where the field is absent)")
     an.set_defaults(func=cmd_anchors)
 
     tg = sub.add_parser("tags", help="list available tags, roles, and authors")

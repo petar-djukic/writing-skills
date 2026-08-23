@@ -49,11 +49,13 @@ DRAFT = ("You are deciding what gets built and when, and the tooling does not "
 class Args:
     """The subset of drive.py's parsed flags that anchor reporting reads."""
 
-    def __init__(self, voice_dir, role=None, stratum=None, anchor_tags=None):
+    def __init__(self, voice_dir, role=None, stratum=None, anchor_tags=None,
+                 author=None):
         self.voice_dir = voice_dir
         self.role = role
         self.stratum = stratum
         self.anchor_tags = anchor_tags
+        self.author = author
 
 
 def build_corpus(tmp, all_pre_ai=True):
@@ -115,6 +117,80 @@ def test_inert_role_and_tags_are_detected():
         got = drive.inert_filters(
             va, vd, Args(vd, role="venue-voice", anchor_tags="clipped"))
         assert "tags=clipped" in got, got
+
+
+def _no_author_corpus(tmp):
+    """A writing-voice/ whose filenames encode nothing an author could be."""
+    vd = os.path.join(tmp, "writing-voice")
+    os.makedirs(vd, exist_ok=True)
+    lines = ["purpose: dates for names", "exemplars:"]
+    for f in ("2026-08-20-strategy-theatre.md", "2026-08-21-other.md"):
+        open(os.path.join(vd, f), "w").write(ESSAY + "\n")
+        lines += [f"  - id: {f[:-3]}", f"    file: {f}",
+                  "    role: venue-voice", "    year: 2019"]
+    open(os.path.join(vd, "manifest.yaml"), "w").write("\n".join(lines) + "\n")
+    return vd
+
+
+def test_an_unknown_author_names_the_ones_that_exist():
+    """GH-98. A typo and an impossible flag wore the same message."""
+    with tempfile.TemporaryDirectory() as tmp:
+        vd = build_corpus(tmp)
+        msg = drive.author_diagnosis(va, vd, "Nobody")
+        assert msg and "no exemplar by 'Nobody'" in msg, msg
+        for who in ("Djukic", "Yegge", "DanLuu", "Evans"):
+            assert who in msg, f"{who} missing from {msg}"
+
+
+def test_a_corpus_that_cannot_express_an_author_says_so():
+    """The failure that cost the debugging detour: the corpus loads, the tag
+    listing reports every exemplar, so a path problem is the natural first
+    guess and the manifest fields are the last thing anyone checks."""
+    with tempfile.TemporaryDirectory() as tmp:
+        vd = _no_author_corpus(tmp)
+        msg = drive.author_diagnosis(va, vd, "Krugman")
+        assert msg and "cannot select anything on this corpus" in msg, msg
+        assert "--anchor-tags" in msg, "must name what to use instead"
+        assert "no exemplar by" not in msg, "this is not an unknown-name failure"
+
+
+def test_a_known_author_is_not_diagnosed():
+    with tempfile.TemporaryDirectory() as tmp:
+        vd = build_corpus(tmp)
+        assert drive.author_diagnosis(va, vd, "Djukic") is None
+        assert drive.author_diagnosis(va, vd, "djukic") is None, "case-insensitive"
+        assert drive.author_diagnosis(va, vd, None) is None
+
+
+def test_inferred_authors_are_disclosed_in_the_pool_line(capsys=None):
+    """Inference must never read as something the manifest declared."""
+    import io as _io
+    import contextlib
+    with tempfile.TemporaryDirectory() as tmp:
+        vd = build_corpus(tmp)
+        buf = _io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            drive.anchor_provenance(Args(vd, author="Djukic"), "x.md", [])
+        out = buf.getvalue()
+        assert "author=Djukic (inferred from filenames)" in out, out
+        assert "2 exemplars available" in out, out
+
+
+def test_an_impossible_author_aborts_with_the_specific_message():
+    """The whole point: the abort names the real problem, not 'NOTHING
+    MATCHES THE FILTER'."""
+    import io as _io
+    import contextlib
+    with tempfile.TemporaryDirectory() as tmp:
+        vd = _no_author_corpus(tmp)
+        buf = _io.StringIO()
+        try:
+            with contextlib.redirect_stdout(buf):
+                drive.anchor_provenance(Args(vd, author="Krugman"), "x.md", [])
+            assert False, "should have exited"
+        except SystemExit as e:
+            assert "cannot select anything on this corpus" in str(e), e
+            assert "NOTHING MATCHES THE FILTER" not in str(e), e
 
 
 def test_no_filters_reports_nothing_inert():

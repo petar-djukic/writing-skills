@@ -465,6 +465,41 @@ def inert_filters(va, d, a):
     return out
 
 
+AUTHORS_LISTED = 12
+
+
+def author_diagnosis(va, d, author):
+    """Why `--author` selected nothing, when the reason is the author itself.
+
+    Two failures wear the same generic message today, and they need opposite
+    responses (GH-98). A name the corpus does not hold is a typo; a corpus that
+    cannot express authors at all is a flag that will never work here, whatever
+    is passed. The second cost a full debugging detour — the corpus loads, the
+    tag listing reports 181 exemplars, so a path problem is the natural first
+    hypothesis and three --voice-dir spellings go by before anyone reads the
+    manifest fields.
+
+    Returns the message, or None when the author is not what went wrong.
+    """
+    if not author:
+        return None
+    idx = va.author_index(d)
+    if not idx:
+        return ("anchors: --author cannot select anything on this corpus — no "
+                "exemplar declares an `author:` field and no filename implies "
+                "one. Steer register with --anchor-tags, or add `author:` to "
+                "the manifest entries you want to pin")
+    if any(k.lower() == author.strip().lower() for k in idx):
+        return None
+    known = sorted(idx)
+    shown = ", ".join(known[:AUTHORS_LISTED])
+    more = ("" if len(known) <= AUTHORS_LISTED
+            else f", and {len(known) - AUTHORS_LISTED} more "
+                 f"(voice_anchors.py tags lists them)")
+    return (f"anchors: no exemplar by '{author}' — this corpus can select "
+            f"{len(known)}: {shown}{more}")
+
+
 def realized_mix(va, d, a, paras, limit=None):
     """Run retrieval for real and report what it SELECTED, not what was available.
 
@@ -519,10 +554,16 @@ def anchor_provenance(a, article, paras, full=False):
     author = getattr(a, "author", None)
     paths = va.sample_paths(d, role=a.role, pre_ai=pre, tags=tags, author=author)
     mix = Counter(r for _, r in paths)
+    # Say when an author was read off a filename rather than declared, so
+    # inference is never mistaken for something the manifest states (GH-98).
+    src = va.author_index(d).get(author) if author else None
+    author_note = (f"author={author}"
+                   + (" (inferred from filenames)" if src == "inferred" else "")
+                   ) if author else ""
     filt = " ".join(x for x in (f"role={a.role}" if a.role else "",
                                 f"stratum={a.stratum}" if a.stratum else "",
                                 f"tags={a.anchor_tags}" if a.anchor_tags else "",
-                                f"author={author}" if author else "") if x)
+                                author_note) if x)
     weight = va.AUTHOR_VOICE_DICTION_WEIGHT
     print(f"anchors: {len(paths)} exemplars available from {d}")
     print(f"         pool {dict(mix)}{'  [' + filt + ']' if filt else ''}")
@@ -533,9 +574,12 @@ def anchor_provenance(a, article, paras, full=False):
               f"steering anything on this corpus", file=sys.stderr)
 
     if not paths:
-        sys.exit(f"anchors: NOTHING MATCHES THE FILTER"
-                 f"{'  [' + filt + ']' if filt else ''} — 0 exemplars in pool. "
-                 f"Use --no-anchors to run without voice steering")
+        # The specific reason first: a filter that CANNOT match is a different
+        # problem from filters that between them happen not to.
+        sys.exit(author_diagnosis(va, d, author)
+                 or f"anchors: NOTHING MATCHES THE FILTER"
+                    f"{'  [' + filt + ']' if filt else ''} — 0 exemplars in "
+                    f"pool. Use --no-anchors to run without voice steering")
     if not paras:
         return d
 
