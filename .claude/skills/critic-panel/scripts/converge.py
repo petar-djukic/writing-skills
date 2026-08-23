@@ -1,22 +1,32 @@
 #!/usr/bin/env python3
-"""Merge N critic reports into one sheet, convergence first (GH-75).
+"""Merge N critic reports into one sheet, convergence first (GH-75, GH-97).
 
-Each report is markdown in the fixed format the SKILL.md prescribes:
+Two report kinds, because a persona is either an adder or a diagnostician and
+forcing one into the other's shape yields a line edit for a conceptual defect.
 
-    ## Diagnosis
-    <prose>
-    ## Suggestions
-    ### 1
-    Original: <verbatim sentence>
-    Replacement: <proposed sentence, or CUT>
-    Buys: <one line>
-    ...
-    ## Paragraph move
-    <prose>
+    ## Diagnosis          ## Diagnosis
+    <prose>               <prose>
+    ## Suggestions        ## Findings
+    ### 1                 ### 1
+    Original: <verbatim>  Passage: <verbatim>
+    Replacement: <or CUT> Finding: <what is wrong>
+    Buys: <one line>      Fix: <described, never written>
+    ## Paragraph move     ## Verdict
+    <prose>               <the persona's own verdict format>
 
-Suggestions whose Original sentences match across critics (difflib ratio
->= THRESHOLD after whitespace/case normalization) are grouped as convergent
-and listed first — agreement between independent critics is the signal.
+    kind = suggest        kind = verdict
+
+Both kinds store their verbatim field under `quote`, which is the only thing
+grouping reads. That is what lets two diagnosticians quoting one passage
+converge exactly as two adders targeting one sentence do — and lets a
+diagnostician and an adder converge on the same passage — without a second
+comparison path. Items whose quotes match (difflib ratio >= THRESHOLD after
+whitespace/case normalization) are listed first: agreement between critics
+who could not see each other is the signal the panel exists to produce.
+
+A suggest-only run renders exactly what it rendered before GH-97, pinned by
+scripts/testdata/panel2-golden-sheet.md — the sheet from the real Strategy
+Theatre panel, byte for byte.
 """
 import argparse
 import difflib
@@ -26,7 +36,28 @@ import re
 THRESHOLD = 0.8
 
 
+# The verbatim field each kind quotes, and the pair each renders as
+# "what is wrong — what it buys". Adding a third kind means adding a row.
+KINDS = {
+    "suggest": {"section": "suggestions", "quote": "Original",
+                "fields": ("Original", "Replacement", "Buys"),
+                "required": ("Original", "Replacement"),
+                "body": "Replacement", "why": "Buys"},
+    "verdict": {"section": "findings", "quote": "Passage",
+                "fields": ("Passage", "Finding", "Fix"),
+                "required": ("Passage", "Finding"),
+                "body": "Finding", "why": "Fix"},
+}
+
+
 def parse(path):
+    """One report into a dict, kind detected from which section it carries.
+
+    `## Findings` means a diagnostician wrote it, `## Suggestions` an adder.
+    Both land in `items`, each item carrying `quote` — the verbatim text the
+    critic is pointing at — so nothing downstream branches on kind to find
+    what to group on.
+    """
     name = os.path.splitext(os.path.basename(path))[0]
     with open(path, encoding="utf-8") as f:
         text = f.read()
@@ -34,29 +65,40 @@ def parse(path):
     for title, body in re.findall(r"^## +([^\n]+)\n(.*?)(?=^## |\Z)", text,
                                   re.S | re.M):
         sect[title.strip().lower()] = body.strip()
-    sugg = []
-    for block in re.split(r"^### +\S+\s*$", sect.get("suggestions", ""),
+
+    kind = "verdict" if "findings" in sect else "suggest"
+    spec = KINDS[kind]
+    pattern = r"^(" + "|".join(spec["fields"]) + r"):\s*(.+?)\s*$"
+    items = []
+    for block in re.split(r"^### +\S+\s*$", sect.get(spec["section"], ""),
                           flags=re.M)[1:]:
-        fields = dict(re.findall(r"^(Original|Replacement|Buys):\s*(.+?)\s*$",
-                                 block, re.M))
-        if "Original" in fields and "Replacement" in fields:
-            sugg.append({"critic": name, **fields})
-    return {"critic": name, "diagnosis": sect.get("diagnosis", ""),
-            "move": sect.get("paragraph move", ""), "suggestions": sugg}
+        fields = dict(re.findall(pattern, block, re.M))
+        if all(f in fields for f in spec["required"]):
+            items.append({"critic": name, "kind": kind,
+                          "quote": fields[spec["quote"]], **fields})
+    return {"critic": name, "kind": kind,
+            "diagnosis": sect.get("diagnosis", ""),
+            "move": sect.get("paragraph move", ""),
+            "verdict": sect.get("verdict", ""),
+            "items": items,
+            # `suggestions` kept as the suggest-kind view; main() counts it
+            # and callers predating GH-97 read it.
+            "suggestions": [i for i in items if i["kind"] == "suggest"]}
 
 
 def norm(s):
     return " ".join(s.lower().split())
 
 
-def group(reports):
+def group(items_or_reports):
+    """Items pointing at the same passage, across critics and across kinds."""
     groups = []
-    for r in reports:
-        for s in r["suggestions"]:
+    for r in items_or_reports:
+        for s in r["items"]:
             for g in groups:
                 if difflib.SequenceMatcher(
-                        None, norm(g[0]["Original"]),
-                        norm(s["Original"])).ratio() >= THRESHOLD:
+                        None, norm(g[0]["quote"]),
+                        norm(s["quote"])).ratio() >= THRESHOLD:
                     g.append(s)
                     break
             else:
@@ -64,36 +106,101 @@ def group(reports):
     return groups
 
 
+def order(reports, roster):
+    """Reports in roster order; anything unnamed keeps file order, last.
+
+    Roster order is sheet order. The book roster's six critics were run in
+    sequence before GH-97, to get clarity and honesty ahead of hook and story;
+    ordering the rendering buys that reading without giving up the parallel
+    fresh contexts that make convergence mean anything.
+    """
+    if not roster:
+        return list(reports)
+    rank = {n.strip().lower(): i for i, n in enumerate(roster) if n.strip()}
+    return sorted(reports,
+                  key=lambda r: (rank.get(r["critic"].lower(), len(rank)),))
+
+
+def _body(s):
+    """`what is wrong — why it matters`, in the item's own kind's words."""
+    spec = KINDS[s["kind"]]
+    return f"{s[spec['body']]} — *{s.get(spec['why'], '')}*"
+
+
 def render(reports, groups):
+    """The sheet.
+
+    A suggest-only run renders exactly what it rendered before GH-97 — same
+    headings, same wording, same order — because the golden fixture pins it.
+    The verdict sections and the Summary appear only when a diagnostician is
+    in the run, and the two headings that say "sentences" say "passages"
+    instead, since a verdict critic quotes a passage rather than a line.
+    """
+    verdicts = [r for r in reports if r["kind"] == "verdict"]
     out = ["# Critic panel sheet", "",
            "Read-only. Nothing applied. Pick by critic and number.", ""]
     out += ["## Diagnoses", ""]
     for r in reports:
         out += [f"**{r['critic']}:** {r['diagnosis']}", ""]
+
     conv = [g for g in groups if len({s['critic'] for s in g}) > 1]
     solo = [g for g in groups if len({s['critic'] for s in g}) == 1]
-    out += [f"## Convergent ({len(conv)} sentences targeted by 2+ critics)",
-            ""]
-    for g in sorted(conv, key=lambda g: -len(g)):
-        out += [f"### \"{g[0]['Original']}\"", ""]
+    conv.sort(key=lambda g: -len(g))
+    unit = "passage" if verdicts else "sentence"
+    out += [f"## Convergent ({len(conv)} {unit}"
+            f"{'' if len(conv) == 1 else 's'} targeted by 2+ critics)", ""]
+    for g in conv:
+        out += [f"### \"{g[0]['quote']}\"", ""]
         for s in g:
-            out += [f"- **{s['critic']}:** {s['Replacement']} — "
-                    f"*{s.get('Buys', '')}*"]
+            out += [f"- **{s['critic']}:** {_body(s)}"]
         out += [""]
-    out += ["## Single-critic suggestions", ""]
+
+    heading = "findings" if verdicts else "suggestions"
+    out += [f"## Single-critic {heading}", ""]
     for r in reports:
         mine = [g[0] for g in solo if g[0]["critic"] == r["critic"]]
         if not mine:
             continue
         out += [f"### {r['critic']}", ""]
         for i, s in enumerate(mine, 1):
-            out += [f"{i}. \"{s['Original']}\" → {s['Replacement']} — "
-                    f"*{s.get('Buys', '')}*"]
+            out += [f"{i}. \"{s['quote']}\" → {_body(s)}"]
         out += [""]
-    out += ["## Paragraph-level moves", ""]
-    for r in reports:
-        if r["move"]:
+
+    moves = [r for r in reports if r["move"]]
+    if moves:
+        out += ["## Paragraph-level moves", ""]
+        for r in moves:
             out += [f"**{r['critic']}:** {r['move']}", ""]
+
+    if not verdicts:
+        return "\n".join(out)
+
+    out += ["## Verdicts", ""]
+    for r in verdicts:
+        out += [f"**{r['critic']}:** {r['verdict']}", ""]
+
+    passed = [r["critic"] for r in verdicts if not r["items"]]
+    failed = [r["critic"] for r in verdicts if r["items"]]
+    out += ["## Summary", "",
+            "**Pass**: " + (", ".join(passed) or "none"), "",
+            "**Needs work**: " + (", ".join(failed) or "none"), ""]
+    # Top fixes caps the rendered list, never the findings — everything above
+    # is still in the sheet. Ranked by how many critics landed on the passage,
+    # then by roster order, which `reports` already carries.
+    rank = {r["critic"]: i for i, r in enumerate(reports)}
+    top = sorted(conv, key=lambda g: (-len({s['critic'] for s in g}),
+                                      min(rank.get(s["critic"], len(rank))
+                                          for s in g)))
+    if top:
+        n = min(3, len(top))
+        out += [f"**Top {n} fix{'' if n == 1 else 'es'}** "
+                f"(in priority order):", ""]
+        for i, g in enumerate(top[:3], 1):
+            who = ", ".join(sorted({s["critic"] for s in g}, key=lambda c: rank.get(c, 0)))
+            spec = KINDS[g[0]["kind"]]
+            out += [f"{i}. \"{g[0]['quote']}\" — {g[0].get(spec['why'], '')} "
+                    f"({who})"]
+        out += [""]
     return "\n".join(out)
 
 
@@ -101,13 +208,18 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("reports", nargs="+")
     ap.add_argument("--out", required=True)
+    ap.add_argument("--roster", help="comma-separated critic names; sets "
+                                     "sheet order (default: file order)")
     a = ap.parse_args()
-    reports = [parse(p) for p in a.reports]
+    reports = order([parse(p) for p in a.reports],
+                    a.roster.split(",") if a.roster else None)
     sheet = render(reports, group(reports))
     with open(a.out, "w", encoding="utf-8") as f:
         f.write(sheet)
-    n = sum(len(r["suggestions"]) for r in reports)
-    print(f"{a.out}: {len(reports)} critics, {n} suggestions")
+    n = sum(len(r["items"]) for r in reports)
+    kinds = {r["kind"] for r in reports}
+    print(f"{a.out}: {len(reports)} critics, {n} "
+          f"{'findings' if kinds == {'verdict'} else 'suggestions'}")
 
 
 if __name__ == "__main__":

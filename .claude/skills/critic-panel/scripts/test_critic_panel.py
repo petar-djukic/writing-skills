@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import os
+import re
 import sys
 import tempfile
 import unittest
@@ -23,6 +24,14 @@ Buys: pace.
 ## Paragraph move
 Cut the last section.
 """
+
+
+
+def _write(tmp, name, text):
+    path = os.path.join(tmp, name)
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(text)
+    return path
 
 
 class PrepareTest(unittest.TestCase):
@@ -105,6 +114,195 @@ class ConvergeTest(unittest.TestCase):
             sheet = converge.render(reports, groups)
             self.assertLess(sheet.index("very scary"), sheet.index("Alpha only"))
             self.assertIn("Cut the last section.", sheet)
+
+
+VERDICT = """## Diagnosis
+{diag}
+
+## Findings
+{findings}
+## Verdict
+{verdict}
+"""
+
+FINDING = """### {n}
+Passage: {passage}
+Finding: {finding}
+Fix: {fix}
+
+"""
+
+
+def _verdict(tmp, name, diag, findings, verdict):
+    """A verdict report; `findings` is a list of (passage, finding, fix)."""
+    blocks = "".join(
+        FINDING.format(n=i, passage=p, finding=f, fix=x)
+        for i, (p, f, x) in enumerate(findings, 1))
+    return _write(tmp, f"{name}.md",
+                  VERDICT.format(diag=diag, findings=blocks, verdict=verdict))
+
+
+class VerdictTest(unittest.TestCase):
+    """GH-97. A diagnostician quotes the passage and names the defect; forcing
+    that into `Replacement:` yields a line edit for a conceptual problem, so
+    the kind is a parse-time distinction rather than a report-shape one."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.t = self.tmp.name
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def test_a_verdict_report_parses(self):
+        p = _verdict(self.t, "fowler", "Names a distinction it never defines.",
+                     [("The layer mediates between intent and execution.",
+                       "Used three ways in eight pages.",
+                       "Define it once at first use.")],
+                     "The concept is fuzzy.")
+        r = converge.parse(p)
+        self.assertEqual(r["kind"], "verdict")
+        self.assertEqual(len(r["items"]), 1)
+        item = r["items"][0]
+        self.assertEqual(item["Passage"], "The layer mediates between intent and execution.")
+        self.assertEqual(item["Finding"], "Used three ways in eight pages.")
+        self.assertEqual(item["Fix"], "Define it once at first use.")
+        self.assertEqual(item["quote"], item["Passage"], "grouping reads quote")
+        self.assertEqual(r["verdict"], "The concept is fuzzy.")
+
+    def test_two_verdict_critics_on_one_passage_converge(self):
+        shared = "The layer mediates between intent and execution."
+        a = _verdict(self.t, "fowler", "d", [(shared, "Used three ways.", "Define it.")], "v")
+        b = _verdict(self.t, "yegge", "d", [(shared, "It is a job queue.", "Say what differs.")], "v")
+        groups = converge.group([converge.parse(a), converge.parse(b)])
+        conv = [g for g in groups if len({i["critic"] for i in g}) > 1]
+        self.assertEqual(len(conv), 1)
+        self.assertEqual({i["critic"] for i in conv[0]}, {"fowler", "yegge"})
+
+    def test_a_diagnostician_and_an_adder_converge_on_one_passage(self):
+        """The reason both kinds store their verbatim text under one key."""
+        shared = "The layer mediates between intent and execution."
+        a = _verdict(self.t, "fowler", "d", [(shared, "Used three ways.", "Define it.")], "v")
+        b = _write(self.t, "levine.md", REPORT.format(rep="A queue that files intentions.",
+                                                      solo=shared))
+        reports = [converge.parse(a), converge.parse(b)]
+        self.assertEqual([r["kind"] for r in reports], ["verdict", "suggest"])
+        groups = converge.group(reports)
+        conv = [g for g in groups if len({i["critic"] for i in g}) > 1]
+        self.assertEqual(len(conv), 1)
+        sheet = converge.render(reports, groups)
+        self.assertIn("Used three ways.", sheet, "the verdict form")
+        self.assertIn("A queue that files intentions.", sheet, "the suggest form")
+
+    def test_summary_appears_only_when_a_verdict_critic_is_present(self):
+        v = _verdict(self.t, "fowler", "d", [("p", "f", "x")], "verdict text")
+        s = _write(self.t, "levine.md", REPORT.format(rep="R.", solo="S."))
+        with_v = [converge.parse(v)]
+        without = [converge.parse(s)]
+        self.assertIn("## Summary", converge.render(with_v, converge.group(with_v)))
+        self.assertNotIn("## Summary", converge.render(without, converge.group(without)))
+        self.assertNotIn("## Verdicts", converge.render(without, converge.group(without)))
+
+    def test_pass_and_needs_work_partition_on_zero_findings(self):
+        clean = _verdict(self.t, "cook", "The opening works.", [], "The hook is strong.")
+        dirty = _verdict(self.t, "fowler", "d", [("p", "f", "x")], "The concept is fuzzy.")
+        reports = [converge.parse(clean), converge.parse(dirty)]
+        sheet = converge.render(reports, converge.group(reports))
+        self.assertIn("**Pass**: cook", sheet)
+        self.assertIn("**Needs work**: fowler", sheet)
+
+    def test_top_fixes_caps_the_list_not_the_findings(self):
+        # Genuinely distinct sentences: near-identical strings group into one
+        # under THRESHOLD, which is the grouping working, not a fixture.
+        shared = ["The layer mediates between intent and execution.",
+                  "Every agent run costs money nobody is tracking.",
+                  "We shipped it on a Friday and regretted it by Monday.",
+                  "Autonomy is the wrong axis for this taxonomy."]
+        a = _verdict(self.t, "fowler", "d",
+                     [(p, f"finding {i}", f"fix {i}") for i, p in enumerate(shared)], "v")
+        b = _verdict(self.t, "yegge", "d",
+                     [(p, f"other {i}", f"otherfix {i}") for i, p in enumerate(shared)], "v")
+        reports = [converge.parse(a), converge.parse(b)]
+        groups = converge.group(reports)
+        conv = [g for g in groups if len({i["critic"] for i in g}) > 1]
+        self.assertEqual(len(conv), 4, "four passages converged")
+        sheet = converge.render(reports, groups)
+        self.assertIn("**Top 3 fixes**", sheet)
+        for p in shared:
+            self.assertIn(p, sheet, "every convergent passage is still in the sheet")
+
+    def test_roster_sets_sheet_order_and_file_order_is_the_default(self):
+        a = _verdict(self.t, "fowler", "F diagnosis.", [("p1", "f", "x")], "v")
+        b = _verdict(self.t, "cook", "C diagnosis.", [("p2", "f", "x")], "v")
+        reports = [converge.parse(a), converge.parse(b)]
+        self.assertEqual([r["critic"] for r in converge.order(reports, None)],
+                         ["fowler", "cook"])
+        self.assertEqual([r["critic"] for r in converge.order(reports, ["cook", "fowler"])],
+                         ["cook", "fowler"])
+        sheet = converge.render(converge.order(reports, ["cook", "fowler"]), converge.group(reports))
+        self.assertLess(sheet.index("C diagnosis."), sheet.index("F diagnosis."))
+
+
+class ContractTest(unittest.TestCase):
+    """SKILL.md prints both report formats and the critics are told to follow
+    them. Nothing made the printed format and the parser agree — and a spec
+    the parser disagrees with is how converge.py came to emit a
+    zero-suggestion sheet from three real reports (GH-107). These feed the
+    documented blocks straight to parse()."""
+
+    def _block(self, marker):
+        with open(os.path.join(os.path.dirname(SK), "SKILL.md"),
+                  encoding="utf-8") as f:
+            skill = f.read()
+        after = skill[skill.index(marker):]
+        return after.split("```")[1]
+
+    def _parses_as(self, marker, kind, tmp):
+        # `<the exact sentence, verbatim>` stands in for real text.
+        body = re.sub(r"<([^>]+)>", r"sample \1", self._block(marker))
+        r = converge.parse(_write(tmp, "c.md", body))
+        self.assertEqual(r["kind"], kind)
+        self.assertTrue(r["items"], "the documented format parsed to nothing")
+        return r
+
+    def test_the_documented_suggest_format_parses(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            r = self._parses_as("**`suggest`**", "suggest", tmp)
+            self.assertIn("Replacement", r["items"][0])
+            self.assertEqual(r["items"][0]["quote"], r["items"][0]["Original"])
+            self.assertTrue(r["move"], "the paragraph move section")
+
+    def test_the_documented_verdict_format_parses(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            r = self._parses_as("**`verdict`**", "verdict", tmp)
+            self.assertIn("Finding", r["items"][0])
+            self.assertIn("Fix", r["items"][0])
+            self.assertEqual(r["items"][0]["quote"], r["items"][0]["Passage"])
+            self.assertTrue(r["verdict"], "the verdict section")
+
+
+class GoldenSheetTest(unittest.TestCase):
+    """The suggest path, pinned against the sheet the real Strategy Theatre
+    panel actually produced — not against a fixture authored to match the
+    parser. A synthetic fixture cannot catch a parser that disagrees with what
+    critics really write, which is how converge.py came to emit a
+    zero-suggestion sheet from three real reports without anyone noticing."""
+
+    def test_a_suggest_only_run_reproduces_the_golden_sheet(self):
+        td = os.path.join(SK, "testdata")
+        paths = [os.path.join(td, f"{n}.md")
+                 for n in ("levine", "didion", "hemingway")]
+        reports = [converge.parse(p) for p in paths]
+        got = converge.render(reports, converge.group(reports))
+        with open(os.path.join(td, "panel2-golden-sheet.md"), encoding="utf-8") as f:
+            self.assertEqual(got, f.read())
+
+    def test_the_golden_inputs_are_all_suggest_kind(self):
+        td = os.path.join(SK, "testdata")
+        for n in ("levine", "didion", "hemingway"):
+            r = converge.parse(os.path.join(td, f"{n}.md"))
+            self.assertEqual(r["kind"], "suggest")
+            self.assertTrue(r["items"], f"{n} parsed to zero items")
 
 
 if __name__ == "__main__":
