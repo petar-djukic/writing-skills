@@ -50,6 +50,39 @@ the reason it is worth making at all.
 These questions are boring, which is exactly the point of asking them.
 """
 
+RUN = """---
+title: Strategy Theatre
+thesis: a document that cannot say what, for whom, and for how much is not a strategy
+---
+
+## Two legitimate stances
+<!-- rst: elaboration | the stay-or-leave passage -->
+
+<!-- rst: nucleus | the choice is stay or leave, and either is defensible -->
+There are two honest responses to a company that has stopped deciding things,
+and the choice between them is not a moral one.
+
+<!-- rst: sequence | stay / leave / decide, in that order -->
+Two legitimate stances present themselves, and they arrive in an order that
+matters more than either one taken alone.
+
+<!-- rst: elaboration -> 2 | unpacks the stay case -->
+Staying means accepting that the documents will keep arriving and that reading
+them is now part of the work rather than an interruption to it.
+
+<!-- rst: joint -> 2 | the leave case -->
+Leaving means the opposite, and the people who leave rarely say so at the time
+they decide it.
+
+<!-- rst: restatement -> 4 | says the stay case again -->
+To stay is to treat the arriving documents as the work, which is the same
+point made a second time in different clothes.
+
+<!-- rst: evidence | the survey numbers, nothing to do with the run -->
+A survey of four hundred managers put the median time spent on documents
+nobody acts on at six hours a week.
+"""
+
 
 def _write(tmp, name, text):
     path = os.path.join(tmp, name)
@@ -457,6 +490,120 @@ class Ranking(unittest.TestCase):
             o = rm.parse(_write(tmp, "a.md", text))
             self.assertEqual([s["position"] for s in rk.splits(o)], [4])
             self.assertNotIn("split", [c["relation"] for c in rk.candidates(o)])
+
+
+class Runs(unittest.TestCase):
+    """GH-94. A multinuclear label does two jobs — "these spans are peers in a
+    structure the argument needs" and "these paragraphs form a run" — and the
+    second is the shape an author cuts wholesale. The exclusion that was right
+    for one span left the head of a five-paragraph run out of the sheet with
+    nothing said about it, which is the part that had to stop."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.o = rm.parse(_write(self.tmp.name, "a.md", RUN))
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def _variant(self, old, new):
+        text = RUN.replace(old, new)
+        self.assertNotEqual(text, RUN, "fixture anchor moved")
+        path = _write(self.tmp.name, "v.md", text)
+        return rm.parse(path)
+
+    def test_a_deletable_run_is_one_row_naming_its_span(self):
+        rows = rk.runs(self.o)
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["label"], "2\u20135")
+        self.assertEqual(rows[0]["relation"], "sequence")
+        self.assertEqual(rows[0]["paragraphs"], 4)
+
+    def test_the_run_head_no_longer_disappears(self):
+        """The regression itself: p2 carries no cut rank, so it has no row in
+        the candidates table and never will. Before GH-94 that was the end of
+        it — nothing in the sheet mentioned the paragraph at all."""
+        sheet = rk.build(self.o)
+        self.assertNotIn(2, [c["position"] for c in sheet["candidates"]])
+        text = rk.render(sheet)
+        self.assertIn("### Runs, cut whole", text)
+        self.assertIn("2\u20135", text)
+
+    def test_members_keep_their_own_rows_and_carry_the_run_label(self):
+        sheet = rk.build(self.o)
+        labelled = {c["position"]: c["run"] for c in sheet["candidates"]}
+        self.assertEqual(labelled[3], "2\u20135")
+        self.assertEqual(labelled[4], "2\u20135")
+        self.assertEqual(labelled[5], "2\u20135")
+        self.assertIsNone(labelled[6], "the evidence paragraph is outside the run")
+
+    def test_the_run_is_ranked_by_its_best_member(self):
+        best = rk.runs(self.o)[0]["best"]
+        self.assertEqual(best["position"], 4)
+        self.assertEqual(best["relation"], "joint", "joint outranks depth")
+
+    def test_a_split_inside_the_run_disqualifies_it(self):
+        """`split` is a rewrite candidate, so a run carrying one is not a
+        clean whole-run cut. Saying so beats ranking it."""
+        o = self._variant("rst: restatement -> 4 |", "rst: split -> 4 |")
+        sheet = rk.build(o)
+        self.assertEqual(sheet["runs"], [])
+        self.assertEqual([u["position"] for u in sheet["excluded_multinuclear"]], [2])
+        self.assertIsNone(sheet["candidates"][0]["run"])
+
+    def test_a_lone_multinuclear_paragraph_is_named_not_dropped(self):
+        o = self._variant("rst: evidence | the survey numbers",
+                          "rst: contrast | held against the survey")
+        sheet = rk.build(o)
+        left = [(u["position"], u["relation"]) for u in sheet["excluded_multinuclear"]]
+        self.assertIn((6, "contrast"), left)
+        self.assertIn("6 `contrast`", rk.render(sheet))
+
+    def test_a_document_with_no_multinuclear_labels_renders_as_before(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            sheet = rk.build(rm.parse(_write(tmp, "a.md", GOOD)))
+        self.assertEqual(sheet["runs"], [])
+        self.assertEqual(sheet["excluded_multinuclear"], [])
+        text = rk.render(sheet)
+        self.assertNotIn("Runs, cut whole", text)
+        self.assertNotIn("Excluded as multinuclear", text)
+
+    def test_grouping_follows_targets_not_adjacency(self):
+        """Paragraph numbers go non-contiguous the moment a cycle lands, so a
+        run is what the targets say it is, not what sits next to what."""
+        o = self._variant("rst: elaboration -> 2 | unpacks the stay case",
+                          "rst: evidence | unrelated support")
+        rows = rk.runs(o)
+        self.assertEqual(rows[0]["label"], "2, 4, 5")
+        self.assertEqual(rows[0]["paragraphs"], 3)
+
+    def test_peers_sharing_relation_and_target_form_one_run(self):
+        o = self._variant("rst: joint -> 2 | the leave case",
+                          "rst: sequence | the leave case")
+        rows = rk.runs(o)
+        self.assertEqual(len(rows), 1, "both sequence spans are one group")
+        self.assertEqual(sorted(rows[0]["positions"]), [2, 3, 4, 5])
+
+    def test_a_cycle_inside_a_run_terminates_and_sorts_to_the_top(self):
+        o = self._variant("rst: sequence | stay / leave / decide, in that order",
+                          "rst: sequence -> 3 | stay / leave / decide")
+        rows = rk.runs(o)
+        self.assertEqual(len(rows), 1)
+        self.assertTrue(rows[0]["best"]["broken"], "check has already said so")
+
+    def test_a_paragraph_in_two_nested_runs_is_named_in_both(self):
+        """A `list` hanging off a `sequence` peer sits inside both runs.
+        Picking one label silently is the habit GH-94 exists to break."""
+        o = self._variant("rst: joint -> 2 | the leave case",
+                          "rst: list -> 2 | the leave case")
+        sheet = rk.build(o)
+        self.assertEqual(len(sheet["runs"]), 2)
+        held = {c["position"]: c["run"] for c in sheet["candidates"]}
+        self.assertIn(";", held[5], "p5 is in the sequence run and the list run")
+
+    def test_runs_are_reproducible(self):
+        self.assertEqual(rk.runs(self.o), rk.runs(self.o))
+        self.assertEqual(rk.render(rk.build(self.o)), rk.render(rk.build(self.o)))
 
 
 class Repetition(unittest.TestCase):
