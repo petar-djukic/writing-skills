@@ -29,7 +29,7 @@ its absence.
 |---|---|---|
 | structural step (match-outline or tighten-style) | changes enough sentence structure that the downstream paragraph rewriter can clear the mechanical gate — match-outline rewrites at section level against a blueprint, tighten-style tightens paragraph by paragraph toward the author's density floor | match-voice rewrites land at distance 0.0 from the original; the gate rejects every paragraph and nothing changes (unverified — measured against the broken gate, see calibration note) |
 | filter-tells semantic cleanup | collapse antithesis pairs, remove CoT leakage, cut recap ballast, fix banned words | Pangram score stays at 100% AI even after match-voice, because the rhetorical patterns survive diction changes |
-| match-voice --no-anchors | paragraph-level diction rewrite via gpt-oss with no voice anchors | prose retains the original model's lexical fingerprint; Pangram detects it |
+| seeded iteration (Phase 3) | seed in a second model family, then iterate the first --no-anchors to the score floor | unseeded, the iterator substitutes its own diction instead of stripping the old fingerprint: measured 0.609 gated, against 0.370 seeded, on the same article |
 
 The compound effect: semantic cleanup alone does not move Pangram (rhetorical
 patterns are not what it measures). Both steps together, with the structural
@@ -310,9 +310,82 @@ $RUN <match-structure>/scripts/style.py profile <step1-output.md>
 
 Record as the "after-tells" column.
 
-### Phase 3: match-voice --no-anchors
+### Phase 3: seeded iteration (seed in a second family, then iterate)
 
-Run the paragraph-level diction rewrite with no voice anchors. Inline
+**Run the seed. It is the mechanism, not an enhancement.** A single
+unseeded match-voice pass has only its own distribution to push against,
+so it substitutes diction instead of stripping it. Seeding with a
+different model family first leaves a foreign fingerprint the iterator
+has something to erase — and that difference decides whether the phase
+helps or hurts.
+
+Measured on strategy-theatre (2026-08-22), same article, same iterator,
+same cold-review standard:
+
+| variant | review-gated result | verdict |
+|---|---|---|
+| unseeded single pass | 0.609 ai, against a 0.375 baseline | dropped |
+| **seeded iteration** | **0.370 ai / 0.550 human** | **kept** |
+
+The unseeded pass is retained below as a named ablation. Choosing it is a
+deviation a run has to state and justify.
+
+#### 3.1 Seed — a different family, anchored
+
+```bash
+$RUN <match-voice>/scripts/drive.py \
+  --article <cleaned.md> \
+  --model gemma4:31b-cloud \
+  --anchor-tags <tags that select one author's exemplars> \
+  --voice-dir <repo>/writing-voice \
+  --out <seed.md>
+```
+
+Anchor by **tags**, not `--author`: the corpus carries no author field, so
+`--author` selects an empty pool and aborts (writing-skills GH-98). Pick
+tags exclusive to the author you want — `parable,ledger-read` selects the
+22 Krugman exemplars and nothing else. Verify the pool size before
+trusting the run:
+
+```bash
+$RUN <match-structure>/scripts/voice_anchors.py tags --voice-dir <repo>/writing-voice
+```
+
+The seed is expected to score badly on its own. That is not failure; a
+seed that scores well has not changed the fingerprint.
+
+#### 3.2 Iterate — the first family, no anchors, stop at the upturn
+
+```bash
+PREV=<seed.md>
+for i in 01 02 03 04; do
+  $RUN <match-voice>/scripts/drive.py --article $PREV \
+    --model gpt-oss:120b-cloud --no-anchors --pangram \
+    --canonical-blocks <repo>/writing-voice/canonical-blocks.txt \
+    --out pass$i.md
+  PREV=pass$i.md   # read the score; STOP at the first upturn
+done
+```
+
+Three rules, all load-bearing:
+
+1. **Score every pass and stop at the first upturn.** Never run a fixed
+   count. The floor is typically pass 1–4; past it each pass concentrates
+   the iterator's own signature and the score climbs back.
+2. **The publish candidate is the floor pass, not the last pass.** Keep
+   every pass on disk with its provenance.
+3. **Cold-review the floor pass before believing its score.** Every stage
+   measured this way lost most of its gain at review — the raw floor and
+   the gated floor are different numbers, and only the gated one counts.
+
+**Pass `--canonical-blocks` explicitly** when the article is staged
+anywhere but its repo: discovery walks up from the article path, so a run
+staged in a scratch directory silently has no registry and will rewrite
+the disclosure and subscribe lines.
+
+#### 3.3 Ablation: the unseeded single pass
+
+Run the paragraph-level diction rewrite with no voice anchors and no seed. Inline
 locks reach the rewriter as opaque `[[LOCK-n]]` anchor tokens; a rewrite
 that drops one is refused by the drivers and the original paragraph is
 kept — the locked bytes cannot be lost to this phase.
@@ -343,7 +416,7 @@ $RUN <match-structure>/scripts/style.py profile <output.md>
 
 Record as the "after-voice" column.
 
-### Phase 3b (optional): anchored seed + iterated no-anchors passes
+### Phase 3b: iteration calibration (reference)
 
 A single no-anchors pass leaves most windows near 0.75. Iterating the
 Phase 3 rewrite on its own output keeps stripping the previous model's
@@ -402,6 +475,25 @@ For the gate checklist, run the read-only critic on the final text:
 ```bash
 $RUN <voice-critic>/scripts/voice_critic.py <output.md> --form essay
 ```
+
+### Phase 3d: run-completeness check
+
+Before the report, state what actually ran. A partial run must report
+itself as partial — the failure this prevents is a run that stops at an
+unseeded Phase 3, looks complete, and quietly omits the step that does the
+work.
+
+| item | required |
+|---|---|
+| structural step | ran, or skipped with the reason |
+| filter-tells | ran; findings triaged into real vs false positives |
+| Phase 3 seed | ran, with the model family and anchor tags named |
+| Phase 3 iteration | every pass scored; stopped at an upturn, not a count |
+| floor selection | the publish candidate is the floor pass |
+| cold review | run on the floor pass; survival rate stated |
+| inject-vernacular | ran, or skipped with the reason |
+| canonical blocks | registry found, or passed explicitly |
+| locks and markers | verified byte-identical after every stage |
 
 ### Phase 4: Consolidated report
 
@@ -567,6 +659,26 @@ idea-factory:substack/2026/Q4/experiments/2026-07-29-gptoss-iter/stats.csv.
 | **2** | **0.432** | **55** |
 | 4 | 0.418 (floor) | 34 |
 | 10 | 0.700 | 0 |
+
+**Well-edited-input regime (2026-08-22, strategy-theatre).** The table
+above was measured descending from a fresh AI draft at 0.992, where every
+pass had something to strip. Against prose already through two critic
+panels and a socratic pass, the same recipe behaves differently and still
+works:
+
+| stage | score | note |
+|---|---|---|
+| article | 0.375 ai / 0.370 human | three rounds of human editing |
+| anchored gemma seed | 0.395 / 0.435 | **19 of 125 paragraphs changed** — the gate rejected most rewrites because the text is tight |
+| pass 1 (gpt-oss) | 0.251 / 0.615 | floor |
+| pass 2 | 0.344 / 0.597 | upturn, stopped |
+| floor, cold-reviewed (23 of 65 kept) | 0.370 / 0.550 | the publishable number |
+
+Two lessons. The seed does not need to rewrite wholesale to work — 19
+paragraphs of foreign fingerprint were enough. And survival at cold review
+falls as input quality rises (21% single-shot, 51% harness on mid-edit
+text, 33–35% on well-edited text): the pipeline's value is front-loaded
+onto drafts, and on edited prose the gated gain is real but small.
 
 Same-family iteration is a no-op: kimi match-voice on kimi-derived prose
 moved distance 0.05, Pangram 0.993 -> 0.993. The iterator must be a
