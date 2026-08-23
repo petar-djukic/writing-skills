@@ -10,7 +10,9 @@ Four sections, in the order an author reads them:
 
   1. the reverse outline   the one-liners in document order, which read
                            together should tell the article's story
-  2. deletion candidates   depth descending, then cut order, `joint` first
+  2. deletion candidates   depth descending, then cut order, `joint` first,
+                           with the multinuclear runs that can go whole and
+                           the multinuclear paragraphs no run accounts for
   3. repetition pairs      same relation, same target, near-duplicate glosses
   4. split paragraphs      the monster-paragraph list, rewrite candidates
 
@@ -52,6 +54,10 @@ CUT_ORDER = {
 # Each span of a multinuclear relation carries content of its own, so they are
 # not ranked as satellites; `nucleus` is the section, and `split` is a rewrite.
 NOT_CANDIDATES = frozenset(("nucleus", "split", "contrast", "sequence", "list"))
+# The three that group. `joint` is multinuclear too, but it means no relation
+# holds, so it forms no run with anything — it is a satellite of nothing and
+# already ranks first on its own.
+RUN_RELATIONS = frozenset(("contrast", "sequence", "list"))
 
 # Near-duplicate glosses. The same ratio critic-panel's converge.py uses for
 # the same job — deciding whether two one-liners say the same thing.
@@ -60,6 +66,26 @@ SIMILARITY = 0.72
 
 def _norm(s):
     return " ".join((s or "").lower().split())
+
+
+def _candidate(outline, unit):
+    """One deletion-candidate row, or None when the paragraph is not one."""
+    rank = CUT_ORDER.get(unit.relation)
+    if unit.relation in NOT_CANDIDATES or rank is None:
+        return None
+    depth = outline.depth(unit)
+    return {"position": unit.position, "line": unit.line,
+            "section": unit.section, "relation": unit.relation,
+            "target": unit.target, "gloss": unit.gloss,
+            "depth": depth, "cut_rank": rank, "broken": depth is None}
+
+
+def _sort_key(c):
+    """Worst first. Shared by the candidate table and the run table, so a run
+    lands exactly where its best member would have."""
+    return (0 if c["broken"] else 1,
+            0 if c["relation"] == "joint" else 1,
+            -(c["depth"] or 0), c["cut_rank"], c["line"])
 
 
 def candidates(outline):
@@ -81,24 +107,99 @@ def candidates(outline):
     the author the tree is broken; the ranking should not also hide the
     paragraph that broke it.
     """
-    out = []
-    for u in outline.paragraphs:
-        if not u.labelled or u.relation in NOT_CANDIDATES:
-            continue
-        rank = CUT_ORDER.get(u.relation)
-        if rank is None:
-            continue
-        depth = outline.depth(u)
-        out.append({
-            "position": u.position, "line": u.line, "section": u.section,
-            "relation": u.relation, "target": u.target, "gloss": u.gloss,
-            "depth": depth, "cut_rank": rank,
-            "broken": depth is None,
-        })
-    out.sort(key=lambda c: (0 if c["broken"] else 1,
-                            0 if c["relation"] == "joint" else 1,
-                            -(c["depth"] or 0), c["cut_rank"], c["line"]))
+    out = [c for c in (_candidate(outline, u) for u in outline.paragraphs
+                       if u.labelled) if c is not None]
+    out.sort(key=_sort_key)
     return out
+
+
+def runs(outline):
+    """Multinuclear runs that are cuttable whole, worst first.
+
+    A run is one or more sibling paragraphs sharing a multinuclear relation
+    and the same target — the peer spans — plus every paragraph that
+    transitively targets one of them. Grouping follows the `-> n` targets
+    rather than adjacency: paragraph numbers go non-contiguous the moment an
+    author-directed cycle lands, and `--renumber` repairs targets, not order.
+
+    GH-94. `contrast`/`sequence`/`list` are excluded from the candidate table
+    because each span carries content of its own, and that reasoning holds for
+    one span. It does not hold for the run: an author cutting a stay/leave/
+    decide passage cuts all five paragraphs, and the head of that run was
+    leaving the sheet with nothing said about it.
+
+    A run qualifies only when every member is otherwise deletable — a
+    `nucleus` or a `split` inside it means the passage is not a clean whole-run
+    cut — and only when at least one member carries a cut rank, since the run
+    is ranked by that member and a group of bare peers gives nothing to rank
+    it by. Everything that does not qualify is named in the sheet's exclusion
+    line instead, so no multinuclear label leaves silently either way.
+    """
+    out = []
+    for section, units in outline.sections.items():
+        paras = [u for u in units if u.kind == "paragraph" and u.labelled]
+        children = {}
+        for u in paras:
+            if u.target is not None:
+                children.setdefault(u.target, []).append(u)
+
+        peer_groups = {}
+        for u in paras:
+            if u.relation in RUN_RELATIONS:
+                peer_groups.setdefault((u.relation, u.target), []).append(u)
+
+        for (relation, _target), peers in peer_groups.items():
+            members, queue = list(peers), list(peers)
+            seen = {p.position for p in peers}
+            while queue:                        # transitive closure, cycle-safe
+                cur = queue.pop()
+                for child in children.get(cur.position, []):
+                    if child.position in seen:
+                        continue
+                    seen.add(child.position)
+                    members.append(child)
+                    queue.append(child)
+            members.sort(key=lambda m: m.line)
+
+            ranked = [c for c in (_candidate(outline, m) for m in members)
+                      if c is not None]
+            blocked = [m for m in members if m.relation not in RUN_RELATIONS
+                       and CUT_ORDER.get(m.relation) is None]
+            if blocked or not ranked:
+                continue
+            best = min(ranked, key=_sort_key)
+            positions = [m.position for m in members]
+            out.append({
+                "section": section, "relation": relation,
+                "positions": positions, "paragraphs": len(members),
+                "line": members[0].line, "gloss": peers[0].gloss,
+                "label": _run_label(positions), "best": best,
+            })
+    out.sort(key=lambda r: _sort_key(r["best"]))
+    return out
+
+
+def _run_label(positions):
+    """`6–10` when the run is contiguous, `6, 8, 11` when it is not."""
+    ordered = sorted(positions)
+    if len(ordered) > 1 and ordered == list(range(ordered[0], ordered[-1] + 1)):
+        return f"{ordered[0]}\u2013{ordered[-1]}"
+    return ", ".join(str(p) for p in ordered)
+
+
+def excluded_multinuclear(outline, runs_):
+    """Multinuclear paragraphs no cuttable run accounts for.
+
+    The sheet says these out loud. GH-94's failure was silence: a `sequence`
+    head vanished from the ranking and nothing told the author a paragraph had
+    been skipped.
+    """
+    claimed = {(r["section"], p) for r in runs_ for p in r["positions"]}
+    return [{"position": u.position, "line": u.line, "section": u.section,
+             "relation": u.relation, "gloss": u.gloss}
+            for u in outline.paragraphs
+            if u.labelled and u.relation in RUN_RELATIONS
+            and (u.section, u.position) not in claimed]
 
 
 def sections(outline):
@@ -160,6 +261,23 @@ def thesis_of(outline):
 
 
 def build(outline):
+    """The whole sheet as data.
+
+    Run members keep their individual rows and gain the run's label. Both
+    grains are findings: the run row says the passage can go as one decision,
+    the member row says which single paragraph is the weakest in it. GH-94's
+    acceptance case needed both — the run was worth looking at because one of
+    its members had ranked second of fifty-seven on its own.
+    """
+    cands = candidates(outline)
+    runs_ = runs(outline)
+    labels = {}                     # a nested run puts a paragraph in two of
+    for r in runs_:                 # them; name both rather than pick one
+        for pos in r["positions"]:
+            labels.setdefault((r["section"], pos), []).append(r["label"])
+    for c in cands:
+        held = labels.get((c["section"], c["position"]))
+        c["run"] = "; ".join(held) if held else None
     return {
         "file": outline.path,
         "thesis": thesis_of(outline),
@@ -168,7 +286,9 @@ def build(outline):
                      "target": u.target, "gloss": u.gloss,
                      "depth": outline.depth(u)}
                     for u in outline.units],
-        "candidates": candidates(outline),
+        "candidates": cands,
+        "runs": runs_,
+        "excluded_multinuclear": excluded_multinuclear(outline, runs_),
         "sections": sections(outline),
         "repetitions": repetitions(outline),
         "splits": splits(outline),
@@ -199,15 +319,40 @@ def render(sheet):
     o += ["", "## 2. Deletion candidates", "",
           "Furthest from the point first, then by what the relation costs to "
           "lose. Cutting stops being cheap around rank 6.", "",
-          "| # | line | depth | relation | section | what it does |",
-          "|---|---|---|---|---|---|"]
+          "| # | line | depth | relation | run | section | what it does |",
+          "|---|---|---|---|---|---|---|"]
     for c in sheet["candidates"]:
         d = "—" if c["broken"] else c["depth"]
         o.append(f"| {c['position']} | {c['line']} | {d} | `{c['relation']}` | "
-                 f"{c['section'] or '—'} | {c['gloss']} |")
+                 f"{c.get('run') or '—'} | {c['section'] or '—'} | {c['gloss']} |")
     if not sheet["candidates"]:
-        o.append("| — | — | — | — | — | nothing is a satellite; every "
+        o.append("| — | — | — | — | — | — | nothing is a satellite; every "
                  "paragraph carries its own content |")
+
+    runs_ = sheet.get("runs") or []
+    if runs_:
+        o += ["", "### Runs, cut whole", "",
+              "A multinuclear passage whose every paragraph is otherwise "
+              "deletable. Cutting one of these is a single decision, not one "
+              "per row; the members are listed above as well, because which "
+              "paragraph in the run is weakest is a separate question from "
+              "whether the run goes.", "",
+              "| run | relation | paragraphs | ranked by | section | what the run does |",
+              "|---|---|---|---|---|---|"]
+        for r in runs_:
+            b = r["best"]
+            d = "—" if b["broken"] else f"d{b['depth']}"
+            o.append(f"| {r['label']} | `{r['relation']}` | {r['paragraphs']} | "
+                     f"{b['position']} `{b['relation']}` {d} | "
+                     f"{r['section'] or '—'} | {r['gloss']} |")
+
+    left = sheet.get("excluded_multinuclear") or []
+    if left:
+        named = ", ".join(f"{u['position']} `{u['relation']}`" for u in left)
+        o += ["", "_Excluded as multinuclear, and not part of a whole-run "
+              f"cut: {named}. Each span carries content of its own, so the "
+              "ranking declines to rank it — but it is named here rather than "
+              "dropped._"]
 
     if sheet["sections"]:
         o += ["", "### Sections, against the thesis", "",
@@ -267,6 +412,7 @@ def main():
         f.write(render(sheet))
     print(f"sheet: {out}")
     print(f"  {len(sheet['candidates'])} deletion candidate(s), "
+          f"{len(sheet['runs'])} run(s) cuttable whole, "
           f"{len(sheet['repetitions'])} repetition pair(s), "
           f"{len(sheet['splits'])} to split")
     sys.exit(0)

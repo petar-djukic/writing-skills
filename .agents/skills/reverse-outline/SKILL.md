@@ -154,6 +154,15 @@ Deterministic from the markers alone. No model call. Writes
    never reaches beats a distant one that at least supports something; then
    by depth descending, then by cut order. Sections ranked against the
    thesis. Every row carries its paragraph number.
+
+   Beneath the table, **runs that can be cut whole**: a `contrast`, `sequence`
+   or `list` group whose every member is otherwise deletable, ranked by its
+   best member and listed as one row, because cutting a stay/leave/decide
+   passage is one decision rather than five. Members keep their own rows —
+   whether the run goes and which paragraph in it is weakest are different
+   questions. Any multinuclear paragraph no run accounts for is **named**
+   under the table rather than dropped; see
+   [references/relations.md](./references/relations.md).
 3. **Repetition pairs** — same relation, same target, near-duplicate
    one-liners, by `difflib` as `converge.py` does it.
 4. **`split` paragraphs** — the monster-paragraph list. These are rewrite

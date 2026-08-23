@@ -126,7 +126,7 @@ supports something.
 | 6 | `purpose`, `solutionhood` | Say what the nucleus is for. |
 | 7 | `motivation`, `justify` | Move the reader to act, or establish standing. |
 | 8 | `evidence`, `concession`, `antithesis` | Change what the reader believes. Cutting these is cutting the argument. |
-| — | `contrast`, `sequence`, `list` | Multinuclear: each span carries content of its own, so they are not ranked as satellites. Cut one and something goes missing. |
+| — | `contrast`, `sequence`, `list` | Multinuclear: each span carries content of its own, so they are not ranked as satellites. Cut one and something goes missing — but see **Runs** below, where the whole group goes at once. |
 | — | `nucleus` | Never a deletion candidate. Cutting it is cutting the section. |
 
 Two consequences worth stating plainly.
@@ -139,6 +139,47 @@ section depends on. Authors rarely defend those once they are listed.
 sheet that recommends cutting evidence is a sheet describing an article with
 nothing left to trim. The ranking is a reading order for a decision; the
 skill never cuts anything.
+
+## Runs
+
+The exclusion above is right about one span and wrong about a passage, because
+a multinuclear label is doing two jobs at once:
+
+- **these spans are peers inside a structure the argument needs** — cut one and
+  the remaining spans no longer make sense;
+- **these paragraphs form a run** — a stay/leave/decide passage, a list of
+  three examples, a pair of contrasted cases.
+
+The second is exactly the shape an author cuts wholesale, and the exclusion hid
+it. GH-88's acceptance run found the case: a five-paragraph run whose four
+satellites came back at ranks 2, 6, 12 and 22 of 57, while the head that
+governed all four was labelled `sequence` and left the sheet entirely. The
+author was being shown the pieces of a passage and never the passage.
+
+A **run** is one or more sibling paragraphs sharing a multinuclear relation and
+the same target — the peer spans — plus every paragraph that transitively
+targets one of them. Grouping follows the `-> n` targets rather than adjacency,
+because paragraph numbers stop being contiguous the first time an
+author-directed cycle lands.
+
+`rank` lists a run as a single row when two conditions hold:
+
+1. **Every member is otherwise deletable.** A `nucleus` cannot appear inside a
+   run — it carries no target, so nothing attaches it — but a `split` can, and
+   one inside the group means the passage is not a clean whole-run cut.
+2. **At least one member carries a cut rank.** The run is ranked by its best
+   member under the ordering above, so a group of bare peers with no satellites
+   gives nothing to rank it by.
+
+Members keep their individual rows. Both grains are findings: the run row says
+the passage can go as one decision, the member row says which paragraph in it
+is weakest, and the acceptance case needed both — the run was worth a second
+look precisely because one member had ranked second of fifty-seven alone.
+
+Anything multinuclear that no qualifying run accounts for is **named in the
+sheet** rather than dropped, on a line under the candidates table. The original
+failure was not the exclusion; it was the silence. A paragraph the ranking
+declines to rank is a decision the author is entitled to see.
 
 ## Deliberate omissions
 
