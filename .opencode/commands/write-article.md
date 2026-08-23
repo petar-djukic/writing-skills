@@ -346,15 +346,50 @@ sentence in the published text comes out of the second model family. This was
 measured the hard way on 2026-07-26; the numbers are in 6f, and they are not
 subtle.
 
-Five stages run in a fixed order, and the order is not arbitrary:
+**The chain itself belongs to `humanize`. Do not restate it here.**
 
-| # | Stage | Why it sits here |
-|---|---|---|
-| 6b | `match-structure` (gemma) | Fixes how the article is *built* — openers, ladders, section shape. Must run first: the later stages work inside paragraphs and cannot see the skeleton. |
-| 6c | `filter-tells` | Detects AI patterns. Detection is Claude's job; **the repairs are gemma's**. Leaves prose flat on purpose. |
-| 6d | `match-voice` | Puts the author's voice back, anchored on `substack/writing-voice/` exemplars, through a second model family. |
-| 6e | `tighten-style` | **After** match-voice, never before. Gives back the words the rewrite costs, without giving back the score. |
-| 6f | `filter-tells` (re-check) | Maker is not checker. Runs in a fresh subagent that sees only the final text. |
+This command owns *when* the chain runs and what is substack-specific
+about it. `humanize` owns the stages, their order, and the measurements
+behind that order. Every time this file restated the chain it drifted:
+6b named `match-structure` for a structural rewrite that
+[moved to `match-outline`](../skills/match-outline/SKILL.md), 6d described
+an unseeded `match-voice` that measures worse than the seeded one, and
+the read-only instruments were missing entirely. Invoke the skill:
+
+```
+/humanize <article.md>
+```
+
+### The processing cycle
+
+Processing is a cycle, not a line. `humanize` carries the full contract;
+the shape is:
+
+```
+draft
+  ┌─> generative chain (humanize: structural step, filter-tells,
+  │     SEEDED match-voice, tighten-style, inject-vernacular)
+  ├─> read-only zone (reverse-outline annotate + rank, Pangram,
+  │     critic-panel, voice-critic)
+  ├─> author picks and edits
+  └─< repeat the chain while the seed can still move the text
+      -> author gate -> publish
+```
+
+Three things this command insists on, which the skill cannot know:
+
+| rule | why |
+|---|---|
+| **Claude writes no word that ships.** | Measured 2026-07-26: the same tightening applied by Claude against the rule catalog took a 0.0% draft to 77.9%. Claude picks anchors, reads findings, judges results, decides what to keep. Every shipping sentence comes from the second model family. |
+| **Decide the Pangram measurement before anything is rewritten** (6a below). | The driver scans before it touches a paragraph. Once paragraphs are replaced the baseline is gone and the run can never be measured. |
+| **Cold-review every generative stage before believing its score.** | Raw figures evaporated every time they were checked: 0.078 → 0.460, 0.408 → 0.609, 0.167 → 0.391. Survival below ~35% at review means drop the stage rather than keep it for the number. |
+
+**When to stop cycling.** When the seed cannot move the text. Two
+indicators, both of which predicted the outcome before the scan confirmed
+it: seed reach (19 of 125 paragraphs when the chain worked, 16 of 125 with
+36 gate rejections when it failed) and gated survival (51% mid-edit, 35%
+well-edited and working, 39% but scoring worse once converged). A
+converged article only shuffles between detector buckets.
 
 **Why the structural pass leads.** `match-voice` and `tighten-style` both
 rewrite paragraph by paragraph. They will swap every word in a section and
@@ -421,7 +456,16 @@ actually do to this article" without rerunning anything. Use the stage name in
 the message: `tighten-style: <slug>`, `filter-tells: <slug>`, and so on. Do not
 squash them; the separation is the point.
 
-#### 6b. match-structure — fix the skeleton first
+### Measurements and cautions from this repo's runs
+
+**The subsections below are evidence, not procedure.** `humanize` is
+authoritative on which stage runs when; what follows is what these
+particular articles taught, kept because the numbers are worth having and
+are cited in issues. Where a subsection names a stage, read it as "when
+this stage runs, here is what happened on our articles" — not as an
+instruction to run it in that position.
+
+#### 6b. The structural pass — fix the skeleton first
 
 What a detector reads first is not diction, it is construction. Two things
 reproduce on every article measured so far:
@@ -477,7 +521,7 @@ to the model, which turned `[3] Cherny, B. (2026)...` into chatty prose and
 silently dropped two citations. Verify every quote survives too — the model
 will paraphrase inside quotation marks given the chance.
 
-**Known limitation.** `match_structure.py` in the `match-structure` skill does
+**Known limitation** (and note the section-level rewrite driver has since moved to `match-outline`; `match-structure` now provides metrics and anchor retrieval). `match_structure.py` in the `match-structure` skill does
 this job properly but reads its corpus from `references.yaml`, which the
 Substack side does not have; `struct-rewrite.py` is the writing-voice-shaped
 stand-in. It also hardcoded `claude-opus-4-8` until coding-skills#263 — if you
@@ -886,6 +930,14 @@ After writing the article:
 After saving, provide this checklist:
 
 ```markdown
+## Paste checklist additions
+
+- **Strip reverse-outline `rst:` markers** before pasting. They live in the
+  article as HTML comments so they survive rewrite passes and feed the
+  `audit` mode; they must not reach Substack. `reverse-outline strip` does
+  it, and the marker tree can be re-annotated later.
+- Strip the `<!-- SUBSCRIBE BLOCK -->` and lock comments as usual.
+
 ## Draft Checklist
 
 - [ ] Title is catchy and under 70 characters
