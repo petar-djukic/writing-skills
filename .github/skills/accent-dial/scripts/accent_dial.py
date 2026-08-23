@@ -43,7 +43,11 @@ CALQUES = re.compile(
     r"|feel\s+the\s+void"
     r"|a\s+guy\s+from\s+\w+)\b", re.I)
 
-LOCK = re.compile(r"<!--\s*/?(?:lock|snark)[^>]*-->")
+# Non-greedy rather than `[^>]*` (GH-96): the class stops at the first `>`,
+# so a marker carrying an arrow would not match. Anchored on lock|snark, so
+# this one could never swallow an rst marker — hardened with the other site
+# rather than left as the last instance of the pattern.
+LOCK = re.compile(r"<!--\s*/?(?:lock|snark).*?-->")
 SENT_SPLIT = re.compile(
     r"(?:(?<=[.!?])|(?<=[.!?][\"”]))\s+(?=[A-Z\"“'(\[*])")
 QUOTED = re.compile(r"\"([^\"]{2,})\"|“([^”]{2,})”")
