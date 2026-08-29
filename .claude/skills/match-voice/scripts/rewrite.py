@@ -51,6 +51,8 @@ DEFAULT_ENDPOINT = os.environ.get("OLLAMA_ENDPOINT", "http://localhost:11434")
 # of those, since a cohere: default with no key stops rather than falling back.
 DEFAULT_MODEL = os.environ.get("MATCH_VOICE_MODEL", "cohere:command-a-03-2025")
 DEFAULT_TIMEOUT = int(os.environ.get("MATCH_VOICE_TIMEOUT", "300"))
+# Retries for transient Ollama transport failures (dropped connection, timeout).
+OLLAMA_MAX_RETRIES = int(os.environ.get("OLLAMA_MAX_RETRIES", "3"))
 
 # Cohere is an opt-in cross-family backend, selected by a `cohere:` model-id
 # prefix (e.g. --model cohere:command-a-03-2025). It routes to Cohere's hosted
@@ -332,24 +334,54 @@ def generate(prompt, endpoint=DEFAULT_ENDPOINT, model=DEFAULT_MODEL,
     if think is not None:
         payload["think"] = bool(think)
     body = json.dumps(payload).encode()
-    req = urllib.request.Request(f"{endpoint}/api/generate", data=body,
-                                 headers={"Content-Type": "application/json"})
-    try:
-        with urllib.request.urlopen(req, timeout=timeout) as r:
-            data = json.loads(r.read())
-    except socket.timeout:
-        raise RuntimeError(
-            f"Ollama timed out after {timeout}s on model '{model}'. A cold "
-            "model load can take minutes (gemma4:12b measured ~210s cold). "
-            "Raise the timeout or warm the model first with "
-            f"`ollama run {model} ''`. No Claude fallback, by design.")
-    except urllib.error.URLError as e:
-        if isinstance(getattr(e, "reason", None), socket.timeout):
+    # Bounded retry with backoff for transient transport failures. Ollama's
+    # cloud endpoint drops connections mid-request (RemoteDisconnected, a
+    # ConnectionError subclass); before this, one dropped connection killed a
+    # whole filter-tells run — 12 semantic prompts plus 3 rewrite passes — with
+    # no recovery (GH-147). A cold-load timeout is retried too; it usually is
+    # not fixed by retrying, so the final message still points at the timeout.
+    last = None
+    for attempt in range(OLLAMA_MAX_RETRIES):
+        req = urllib.request.Request(f"{endpoint}/api/generate", data=body,
+                                     headers={"Content-Type": "application/json"})
+        try:
+            with urllib.request.urlopen(req, timeout=timeout) as r:
+                data = json.loads(r.read())
+            break
+        except socket.timeout:
+            last = "timeout"
+            if attempt < OLLAMA_MAX_RETRIES - 1:
+                time.sleep(2 ** attempt)
+                continue
             raise RuntimeError(
-                f"Ollama timed out after {timeout}s on model '{model}'. "
-                f"Raise the timeout or warm the model first.")
-        raise RuntimeError(f"Ollama request failed: {e.reason}. "
-                           "No Claude fallback, by design.")
+                f"Ollama timed out after {timeout}s on model '{model}' "
+                f"({OLLAMA_MAX_RETRIES} attempts). A cold model load can take "
+                "minutes (gemma4:12b measured ~210s cold). Raise the timeout or "
+                f"warm the model first with `ollama run {model} ''`. No Claude "
+                "fallback, by design.")
+        except ConnectionError as e:
+            last = f"connection ({e.__class__.__name__})"
+            if attempt < OLLAMA_MAX_RETRIES - 1:
+                time.sleep(2 ** attempt)
+                continue
+            raise RuntimeError(
+                f"Ollama connection dropped on model '{model}' "
+                f"({OLLAMA_MAX_RETRIES} attempts, {e.__class__.__name__}). "
+                "No Claude fallback, by design.")
+        except urllib.error.URLError as e:
+            if isinstance(getattr(e, "reason", None), socket.timeout):
+                last = "timeout"
+                if attempt < OLLAMA_MAX_RETRIES - 1:
+                    time.sleep(2 ** attempt)
+                    continue
+                raise RuntimeError(
+                    f"Ollama timed out after {timeout}s on model '{model}'. "
+                    "Raise the timeout or warm the model first.")
+            raise RuntimeError(f"Ollama request failed: {e.reason}. "
+                               "No Claude fallback, by design.")
+    else:  # pragma: no cover - loop always breaks or raises
+        raise RuntimeError(f"Ollama failed after {OLLAMA_MAX_RETRIES} attempts "
+                           f"on '{model}' ({last}).")
     out = (data.get("response") or "").strip()
     # models sometimes wrap the answer in quotes or a lead-in line
     if out.startswith('"') and out.endswith('"') and out.count('"') == 2:

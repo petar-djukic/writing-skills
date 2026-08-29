@@ -102,6 +102,27 @@ class CohereRouting(unittest.TestCase):
         self.assertFalse(ok)
 
 
+class OllamaRetry(unittest.TestCase):
+    def test_retry_on_dropped_connection(self):
+        # RemoteDisconnected is a ConnectionError subclass; a dropped Ollama
+        # connection is transient and must be retried (GH-147).
+        calls = {"n": 0}
+
+        def flaky(req, timeout=None):
+            calls["n"] += 1
+            if calls["n"] == 1:
+                raise ConnectionResetError("Remote end closed connection")
+            cm = mock.MagicMock()
+            cm.__enter__.return_value.read.return_value = b'{"response":"ok"}'
+            return cm
+
+        with mock.patch.object(rewrite.time, "sleep", lambda s: None):
+            with mock.patch.object(rewrite.urllib.request, "urlopen", flaky):
+                out = rewrite.generate("p", model="gemma4:12b")
+        self.assertEqual(out, "ok")
+        self.assertEqual(calls["n"], 2)
+
+
 class DefaultModel(unittest.TestCase):
     def test_default_is_cohere_command_a_03(self):
         # GH-145 flipped the match-voice default. MATCH_VOICE_MODEL still wins,
