@@ -83,6 +83,22 @@ LOCK_NOTE = ("The paragraph contains anchor tokens that look like [[LOCK-1]]. Ea
              "it sits. Do not remove, reword, duplicate, or invent tokens.")
 
 
+def classify_rewrite_error(msg):
+    """Bucket a rewrite-error's stderr/message into a cause, so a run reports
+    *why* paragraphs failed, not just how many (GH-142). Order matters: the
+    empty-output and refusal messages are checked before the API/timeout ones."""
+    m = (msg or "").lower()
+    if "empty output" in m:
+        return "empty/sanitized-to-empty"
+    if "refusing" in m or "denylist" in m:
+        return "refused-model"
+    if "timed out" in m or "timeout" in m:
+        return "timeout"
+    if "http" in m or "request failed" in m:
+        return "api-error"
+    return "other"
+
+
 def _protected_terms_module():
     if SK not in sys.path:
         sys.path.insert(0, SK)
@@ -1089,7 +1105,15 @@ def main():
                 cmd += ["--protected-terms", protected_path]
             rw = run(cmd)
             if rw.returncode != 0 or not rw.stdout.strip():
-                rec["status"] = "rewrite-error"; rec["err"] = (rw.stderr or "")[:200]
+                rec["status"] = "rewrite-error"
+                # Distinguish the two ways this fires: a non-zero exit carries
+                # the rewrite model's error on stderr (API failure, refusal, a
+                # denylisted model); a clean exit with empty stdout means the
+                # model returned nothing, or sanitizing stripped it to empty.
+                if rw.returncode != 0:
+                    rec["err"] = (rw.stderr or "").strip()[:200] or "nonzero exit, no stderr"
+                else:
+                    rec["err"] = "empty output (model returned nothing, or sanitized to empty)"
                 break
             # Repair before verifying, not at assembly time: the gate now checks
             # markup (GH-232), so a candidate the driver would have patched on
@@ -1210,9 +1234,19 @@ def main():
             print(f"  kept p{r['n']:02d} (L{r['lines'][0]}): {why}")
         if r["status"] == "gate-error":
             print(f"  GATE-ERROR p{r['n']:02d} (L{r['lines'][0]}): {r.get('err', '?')}")
+        if r["status"] == "rewrite-error":
+            print(f"  rewrite-error p{r['n']:02d} (L{r['lines'][0]}): "
+                  f"{r.get('err', '?')}")
         if r.get("warnings"):
             print(f"  advisory p{r['n']:02d} (L{r['lines'][0]}): "
                   f"{','.join(r['warnings'])}")
+    # By-cause breakdown of rewrite-errors, so a run does not report only a bare
+    # count (GH-140 left 6 undiagnosed because the cause was never surfaced).
+    rw_errs = [r for r in results if r["status"] == "rewrite-error"]
+    if rw_errs:
+        by_cause = C(classify_rewrite_error(r.get("err")) for r in rw_errs)
+        print("  rewrite-error by cause: "
+              + ", ".join(f"{k}={v}" for k, v in sorted(by_cause.items())))
     if not a.no_critique:
         summary = critique_mod.summarize_passes(results)
         summary["model"] = critic_model

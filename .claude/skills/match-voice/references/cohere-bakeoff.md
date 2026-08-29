@@ -121,16 +121,43 @@ of 22 paragraphs going through a real repair pass against the gemma critic,
 Cohere command-a-03-2025 measures **0.489 (Mixed)** — still well under gemma's
 1.000, but a more modest win than 0.246 suggested.
 
-### Go/no-go
+### The residual errors, diagnosed and fixed (GH-142)
 
-**No default change; Cohere command-a-03-2025 stays the additive backend, now
-hardened and more usable.** It keeps a real Pangram advantage over the incumbents
-(0.489 vs gemma's 1.000, which *raised* the score), the CoT-leak and
-unparsed-critique failure modes are closed, and its output is clean. What still
-blocks a default swap is the 6 rewrite-errors (~27% of paragraphs fall back to
-original), whose cause is undiagnosed pending per-paragraph error logging. Reach
-for it deliberately on a score-sensitive draft; the incumbents remain the
-default for their perfect gate reliability.
+Per-paragraph error logging (GH-142) showed the 6 rewrite-errors were all
+**HTTP 422** from Cohere on the long match-voice prompt. They were not
+deterministic content rejections: the same paragraph succeeded on a direct
+retry, even at a 13,722-char prompt, so the 422 behaves as **intermittent**.
+The GH-140 retry had excluded 422 (only 429/5xx/timeout), which is exactly why
+it "did not help." Adding 422 to the retryable set cleared them:
+
+| stage | rewrite-errors | rejected | unparsed |
+|-------|---------------:|---------:|---------:|
+| pre-GH-140 | 6 | 1 | 9 |
+| post-GH-140 (non-Cohere critic) | 6 | 0 | 0 |
+| **post-GH-142 (422 retried)** | **0** | **0** | **0** |
+
+Cohere command-a-03-2025 now runs **fully clean** through the whole pipeline —
+24/24 paragraphs processed, zero failures — at Pangram **0.499** (Mixed), stable
+with the earlier 0.489, against gemma's 1.000. (GH-142 also tightened the GH-140
+output sanitizer, which had been stripping any line that merely opened with
+"Now,"/"So,"/"OK," — legitimate prose — down to genuine reasoning/echo lines.)
+
+### Go/no-go (updated after GH-142)
+
+The reliability blocker is gone. Cohere command-a-03-2025 clears the gate as
+cleanly as the incumbents (0 errors, 0 rejected, 0 unparsed) **and** keeps a
+real, reproducible Pangram advantage (≈0.49 vs gemma's 1.000, where gemma
+*raises* the score on a low-AI draft). On the measured axes it now beats the
+incumbents for score at equal reliability.
+
+What remains before flipping the match-voice **default** to it is not quality
+but **operational and the author's call**: it is a hosted API (per-token cost
+across many paragraph calls; draft text leaves the machine under Cohere's terms),
+where the incumbents include local options. Recommendation: promote
+command-a-03-2025 from "additive backend" to the **recommended cross-family
+model for score-sensitive drafts**, and put the default-flip decision to the
+author with the cost/egress tradeoff stated. The command-a-plus tier stays
+denylisted (CoT leak).
 
 ## Caveats
 

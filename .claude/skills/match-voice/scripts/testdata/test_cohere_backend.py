@@ -165,6 +165,26 @@ class CohereHardening(unittest.TestCase):
         self.assertEqual(out, "done.")
         self.assertEqual(calls["n"], 2)
 
+    def test_retry_on_422_then_success(self):
+        # 422 is intermittent on the long match-voice prompt (GH-142); retrying
+        # the identical request recovers it.
+        calls = {"n": 0}
+
+        def flaky_urlopen(req, timeout=None):
+            calls["n"] += 1
+            if calls["n"] == 1:
+                raise rewrite.urllib.error.HTTPError(
+                    req.full_url, 422, "unprocessable", hdrs=None, fp=None)
+            return _fake_response(
+                {"message": {"content": [{"type": "text", "text": "ok."}]}})
+
+        with mock.patch.dict(os.environ, {"COHERE_API_KEY": "k"}, clear=False):
+            with mock.patch.object(rewrite.time, "sleep", lambda s: None):
+                with mock.patch.object(rewrite.urllib.request, "urlopen", flaky_urlopen):
+                    out = rewrite.generate("p", model="cohere:command-a-03-2025")
+        self.assertEqual(out, "ok.")
+        self.assertEqual(calls["n"], 2)
+
     def test_no_retry_on_400(self):
         def bad_urlopen(req, timeout=None):
             raise rewrite.urllib.error.HTTPError(
