@@ -23,6 +23,14 @@ sweep fills with 429s that look like failures.
 Usage:
   COHERE_SECRETS_FILE=... python3 cohere_ab.py sweep <draft.md> [--out results.json]
   COHERE_SECRETS_FILE=... python3 cohere_ab.py replicate [--trials 6]
+  COHERE_SECRETS_FILE=... python3 cohere_ab.py bakeoff <draft.md> --out-dir <dir>
+
+`bakeoff` (GH-160) runs the two Cohere models AND the incumbent Ollama
+rewriters over the same paragraphs, single-message shape only (the shape the
+code uses; GH-156 rejected the split). Besides the per-paragraph scores it
+assembles one rewritten draft per model, so an external register measurement
+can compare whole documents — the mechanical axes alone cannot decide a
+default, which is how GH-138's verdict went stale.
 """
 import argparse
 import json
@@ -38,6 +46,10 @@ import rewrite as rw  # noqa: E402
 import md_paragraphs as mp  # noqa: E402
 
 MODELS = ("cohere:command-a-03-2025", "cohere:command-a-plus-05-2026")
+# GH-160 adds the incumbents from the GH-138/147 bake-offs. Ollama cloud has no
+# per-minute cap, but generate() paces nothing for it either — the PACE sleep
+# is applied uniformly, which is harmless and keeps the loop simple.
+BAKEOFF_MODELS = MODELS + ("gemma4:31b-cloud", "gpt-oss:120b-cloud")
 # 20 calls/minute on a trial key. 3.2s leaves headroom for jitter.
 PACE_SECONDS = float(os.environ.get("COHERE_AB_PACE", "3.2"))
 
@@ -125,7 +137,8 @@ def _run(rules, content, original, model, arm, idx):
         rec.update(ok=True, text=out)
     except RuntimeError as e:
         rec = {"ok": False, "error": str(e)[:200]}
-    rec.update(model=model.split(":", 1)[1], arm=arm, item=idx)
+    label = model.split(":", 1)[1] if model.startswith("cohere:") else model
+    rec.update(model=label, arm=arm, item=idx)
     flag = ("ERR" if not rec["ok"]
             else ("ok " if rec["cites_kept"] and rec["nums_kept"] and not rec["meta_hits"]
                   else "BAD"))
@@ -170,6 +183,64 @@ def sweep(path, out_path):
         json.dump(results, open(out_path, "w"), indent=1)
         print(f"\nwrote {out_path}")
     return results
+
+
+def bakeoff(path, out_dir):
+    """Four models, arm A only, plus an assembled rewritten draft per model.
+
+    Every paragraph of the draft is carried into the assembly — rewritten where
+    it was a target and the rewrite succeeded, original otherwise — so each
+    output file is a complete document a register detector can score against
+    the baseline, not a bag of fragments."""
+    os.makedirs(out_dir, exist_ok=True)
+    all_paras = [t for t in (_text_of(p) for p in
+                             mp.paragraphs(open(path).read(), min_words=25)) if t]
+    anchors = "\n\n".join(all_paras[:3])
+    targets = [(i, p) for i, p in enumerate(all_paras)
+               if i >= 3 and (CITE.search(p) or NUM.search(p))]
+    print(f"draft: {path}\nmodels: {', '.join(BAKEOFF_MODELS)}\n"
+          f"targets: {len(targets)} of {len(all_paras)} paragraphs -> "
+          f"{len(targets) * len(BAKEOFF_MODELS)} calls\n")
+    results = []
+    for model in BAKEOFF_MODELS:
+        rewritten = dict()
+        for k, (pi, para) in enumerate(targets):
+            rules, content = _split_match_voice_prompt(para, anchors)
+            rec = _run(rules, content, para, model, "A", k)
+            results.append(rec)
+            if rec["ok"] and rec["text"].strip():
+                rewritten[pi] = rec["text"].strip()
+        assembled = "\n\n".join(rewritten.get(i, p) for i, p in enumerate(all_paras))
+        stem = model.split(":", 1)[-1].replace(":", "-")
+        fn = os.path.join(out_dir, f"rewritten-{stem}.md")
+        open(fn, "w").write(assembled + "\n")
+        print(f"  assembled {fn} ({len(assembled.split())} words, "
+              f"{len(rewritten)}/{len(targets)} paragraphs rewritten)")
+    baseline = os.path.join(out_dir, "baseline.md")
+    open(baseline, "w").write("\n\n".join(all_paras) + "\n")
+    _report_bakeoff(results)
+    json.dump(results, open(os.path.join(out_dir, "bakeoff.json"), "w"), indent=1)
+    print(f"\nwrote {out_dir}/bakeoff.json, baseline.md and one rewritten-*.md "
+          f"per model. Register measurement is a separate, consent-gated step.")
+    return results
+
+
+def _report_bakeoff(results):
+    print("\n## BAKEOFF (match-voice prompt, single-message shape)\n")
+    print("| model | n | fully clean | citations | numbers | runaway >1.5x | meta | errors |")
+    print("|---|--:|--:|--:|--:|--:|--:|--:|")
+    for model in (m.split(":", 1)[1] if m.startswith("cohere:") else m
+                  for m in BAKEOFF_MODELS):
+        g = [r for r in results if r["model"] == model]
+        ok = [r for r in g if r["ok"]]
+        cite = [r for r in ok if r["cites_in"]]
+        run = [r for r in ok if r["words_in"] and r["words_out"] / r["words_in"] > 1.5]
+        clean = [r for r in ok if r["cites_kept"] and r["nums_kept"]
+                 and not r["meta_hits"] and r not in run]
+        cs = f"{sum(r['cites_kept'] for r in cite)}/{len(cite)}" if cite else "n/a"
+        print(f"| {model} | {len(g)} | **{len(clean)}/{len(g)}** | {cs} | "
+              f"{sum(r['nums_kept'] for r in ok)}/{len(ok)} | {len(run)} | "
+              f"{sum(1 for r in ok if r['meta_hits'])} | {len(g) - len(ok)} |")
 
 
 def replicate(trials, out_path=None):
@@ -219,9 +290,13 @@ def main():
     rp = sub.add_parser("replicate")
     rp.add_argument("--trials", type=int, default=6)
     rp.add_argument("--out")
+    bk = sub.add_parser("bakeoff"); bk.add_argument("draft")
+    bk.add_argument("--out-dir", required=True)
     a = ap.parse_args()
     if a.cmd == "sweep":
         sweep(a.draft, a.out)
+    elif a.cmd == "bakeoff":
+        bakeoff(a.draft, a.out_dir)
     else:
         replicate(a.trials, a.out)
 
