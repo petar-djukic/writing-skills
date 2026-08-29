@@ -1,7 +1,16 @@
 # Model choice
 
-Which Ollama model to rewrite with, and why. Read once when setting up or when
+Which model to rewrite with, and why. Read once when setting up or when
 changing models; the default works without it.
+
+**Default (GH-145): `cohere:command-a-03-2025`.** The GH-138/142 bake-off found
+it drives a draft toward human where the gemma family raises the Pangram score,
+and after the 422-retry fix it runs clean through the gate. It is a hosted API
+(needs `COHERE_API_KEY`/`COHERE_SECRETS_FILE`, bills per token, sends the draft
+off the machine). The table below is now the **local / no-egress fallback**
+reference — set `--model gemma4:12b` (or `MATCH_VOICE_MODEL`) on a keyless
+machine or when the draft must stay local. Full Cohere reasoning:
+[cohere-bakeoff.md](./cohere-bakeoff.md).
 
 **Model choice (GH-163 bake-off, 10 models on one paragraph with identical
 anchors, judged on voice fidelity plus the full gate):**

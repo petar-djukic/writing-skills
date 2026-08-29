@@ -11,9 +11,10 @@ unreachable or the model is missing, this exits nonzero with remediation. The
 skill must report that and stop — falling back to a Claude rewrite would
 defeat the decorrelation the pipeline exists for.
 
-Defaults to local gemma4:12b, the best local model in the GH-163 bake-off that
-runs on any machine. Bigger is a one-flag swap: --model gemma4:31b-mlx on a
-32 GB Apple Silicon box keeps the paragraphs on the machine, --model
+Defaults to cohere:command-a-03-2025 (the GH-138/142 bake-off winner on
+Pangram; needs COHERE_API_KEY / COHERE_SECRETS_FILE). The GH-163 local models
+are the no-egress fallback via --model or MATCH_VOICE_MODEL: gemma4:12b runs
+anywhere, gemma4:31b-mlx keeps 31b-tier quality on a 32 GB Apple Silicon box,
 gemma4:31b-cloud when the memory is not there. SKILL.md has the tiers.
 
 Usage:
@@ -39,13 +40,16 @@ if HERE not in sys.path:
 import protected_terms as _pt  # noqa: E402
 
 DEFAULT_ENDPOINT = os.environ.get("OLLAMA_ENDPOINT", "http://localhost:11434")
-# Defaults chosen by the GH-163 bake-off (10 models, one draft paragraph,
-# same anchors, judged on voice fidelity + gate + register scan):
-# gemma4:12b was the best local; gemma4:31b-cloud the best overall, with
-# kimi-k2.6:cloud a complementary second opinion (it edits least).
-# llama3.1:8b ranked last — it destroyed a term of art and weakened a claim
-# while passing the mechanical gate — and is no longer a default.
-DEFAULT_MODEL = os.environ.get("MATCH_VOICE_MODEL", "gemma4:12b")
+# Default set by the GH-138/142 Cohere bake-off: command-a-03-2025 drove a
+# non-saturated draft to ~0.49 Pangram where gemma4:31b RAISED it to 1.000
+# (Pangram reads the common open families as AI; Cohere's rarer fingerprint
+# reads as human), and after the 422-retry fix it runs fully clean through the
+# gate. The author accepted its cost/egress tradeoff and flipped the default
+# (GH-145). The GH-163 local models remain the no-egress fallback via --model
+# or MATCH_VOICE_MODEL: gemma4:12b (best local), gemma4:31b-cloud (best Ollama
+# overall), kimi-k2.6:cloud (edits least). A keyless environment MUST pass one
+# of those, since a cohere: default with no key stops rather than falling back.
+DEFAULT_MODEL = os.environ.get("MATCH_VOICE_MODEL", "cohere:command-a-03-2025")
 DEFAULT_TIMEOUT = int(os.environ.get("MATCH_VOICE_TIMEOUT", "300"))
 
 # Cohere is an opt-in cross-family backend, selected by a `cohere:` model-id

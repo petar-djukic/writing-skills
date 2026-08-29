@@ -837,7 +837,8 @@ def parse_paragraphs(path, min_words):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--article", required=True)
-    ap.add_argument("--model", default=os.environ.get("MATCH_VOICE_MODEL", "gemma4:12b"))
+    ap.add_argument("--model",
+                    default=os.environ.get("MATCH_VOICE_MODEL", "cohere:command-a-03-2025"))
     ap.add_argument("--endpoint", default=os.environ.get("OLLAMA_ENDPOINT", "http://localhost:11434"))
     ap.add_argument("--out", help="draft path (default: <stem>.vr-draft<ext> "
                                   "beside the article)")

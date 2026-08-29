@@ -102,6 +102,19 @@ class CohereRouting(unittest.TestCase):
         self.assertFalse(ok)
 
 
+class DefaultModel(unittest.TestCase):
+    def test_default_is_cohere_command_a_03(self):
+        # GH-145 flipped the match-voice default. MATCH_VOICE_MODEL still wins,
+        # but the fallback is the bake-off winner.
+        env = {k: v for k, v in os.environ.items() if k != "MATCH_VOICE_MODEL"}
+        with mock.patch.dict(os.environ, env, clear=True):
+            import importlib
+            importlib.reload(rewrite)
+            self.assertEqual(rewrite.DEFAULT_MODEL, "cohere:command-a-03-2025")
+            self.assertTrue(rewrite._is_cohere(rewrite.DEFAULT_MODEL))
+        importlib.reload(rewrite)  # restore ambient env
+
+
 class CohereHardening(unittest.TestCase):
     def test_denylisted_plus_refused_in_generate(self):
         with mock.patch.dict(os.environ, {"COHERE_API_KEY": "k"}, clear=False):
