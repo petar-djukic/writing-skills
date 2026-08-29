@@ -199,12 +199,13 @@ temperature 0.3:
 The last row is the GH-138 signature verbatim. Reasoning with nowhere to go goes
 into the answer.
 
-**Stated plainly: GH-138 was not reproduced under the settings this code uses.**
-The backend sends no `thinking` field, and at that default the real
-11,034-character match-voice prompt came back clean — 195 characters, no meta,
-citation intact, 3/3 on a repeat. `token_budget: 1` demonstrates the mechanism,
-not the historical conditions. GH-148 (multi-pass loop corruption, since fixed)
-remains a live alternative explanation for what the bake-off actually saw.
+**Correction (GH-156): GH-138 IS reproducible, and this paragraph originally
+said it was not.** That claim rested on single-paragraph probes, which came back
+clean — 195 characters, no meta, citation intact, 3/3 on a repeat. A 76-call
+sweep over a real draft found the leak on 4 of 19 paragraphs, at the default
+settings, with reasoning left alone. See "Where the leak actually lives" below.
+`token_budget: 1` is therefore one route to a scratchpad in the answer, not the
+only one.
 
 **Disabling thinking is not the fix.** `{"type":"disabled"}` returns a
 deterministic 422 `INVALID_TOOL_GENERATION` on a long prompt — 7/7 across two
@@ -216,6 +217,82 @@ the variable is set.
 **What this does not settle.** command-a-plus-05-2026 is now allowed, not
 recommended. It has not been re-bake-offed; GH-156 measures it against
 command-a-03-2025 before any default moves.
+
+## The system/user split A/B (GH-156, 2026-08-29)
+
+GH-153 proposed routing Cohere with the rules in a `system` message and only the
+content in `user`, on the strength of a single-passage A/B: the split preserved a
+citation 4/4 where the current single-message shape dropped it 4/4. **The verdict
+is reject.** Two independent measurements, 100 calls, find no consistent benefit.
+
+Harness: `match-voice/scripts/cohere_ab.py` (`sweep` and `replicate`). Arms are
+A = everything in one `user` message (what the code does today) and B = rules in
+`system`, content in `user`. Both go through the real `generate()`.
+
+### Measurement 1 — GH-153's own passage and prompt, 6 trials per cell
+
+| model | arm | citations kept | numbers kept | meta-leak |
+|---|---|--:|--:|--:|
+| command-a-03-2025 | A | 2/6 | 2/6 | 0 |
+| command-a-03-2025 | B | 1/6 | 1/6 | 1 |
+| command-a-plus-05-2026 | A | **6/6** | **6/6** | 0 |
+| command-a-plus-05-2026 | B | 4/6 | 4/6 | 0 |
+
+The split is neutral-to-harmful here and produced the run's only meta-leak.
+
+### Measurement 2 — a real draft, 19 paragraphs, 76 calls
+
+`agentic-coding-book/11-language-selection.md`, every paragraph carrying a
+citation or a number, constant anchors, model and arm the only variables.
+"Fully clean" means citations kept, numbers kept, no rule-echo, and output
+length within 1.5x of the input.
+
+| model | arm | fully clean | citations | numbers | runaway (>1.5x) | meta-echo |
+|---|---|--:|--:|--:|--:|--:|
+| command-a-03-2025 | A | 15/19 | 7/9 | 17/19 | 3 | 2 |
+| command-a-03-2025 | B | 16/19 | 9/9 | 18/19 | 2 | 0 |
+| command-a-plus-05-2026 | A | **18/19** | 9/9 | 18/19 | **0** | 0 |
+| command-a-plus-05-2026 | B | 17/19 | 8/9 | 18/19 | 2 | 0 |
+
+Every arm-to-arm difference is one or two items out of nine or nineteen, and the
+sign flips: the split helps command-a-03-2025 slightly and hurts
+command-a-plus-05-2026 slightly, having done the reverse in measurement 1. That
+is noise, not an effect. **No change to the message construction.**
+
+### Where the leak actually lives
+
+The GH-138 signature turned up on 4 of 19 paragraphs — items 3, 10, 11 and 16 —
+in both models and both arms, at default settings with reasoning left alone.
+Since GH-154 the returned prose is text blocks only, so this deliberation was in
+the model's *answer*, not in a thinking block that leaked:
+
+```
+command-a-plus arm B, item 11:   40 words in -> 668 out (16.7x)
+  '...Now check for any changed "inner loop" vs "inner loop's". That's okay.
+     Now check for any changed "inner loop" vs "inner loop's". That's okay...'
+
+command-a-03    arm A, item 10:  85 words in -> 246 out (2.9x)
+  '**VOICE ANCHORS (match this register — sentence rhythm, vocabulary,
+     directness):**  In manual development, the team ensures...'
+```
+
+The second one echoes the prompt's own section heading back as output. This is
+paragraph-triggered, not model-triggered: the same four items fail for both
+families, and the other fifteen are clean for both.
+
+**A prompt bug, found on the way.** Rewriting item 10, command-a-03-2025 replaced
+`[@park2024]` with `[@key]` — the literal example from the prompt's own rule 1
+("Citation keys look like `[@key]`"). A rule that illustrates a format with a
+plausible-looking value invites the model to copy the value. Filed separately.
+
+### What this does not settle
+
+command-a-plus-05-2026 came out ahead on both measurements, cleanest of all in
+the arm the code already uses (18/19, zero runaways, 9/9 citations). That is one
+draft and one prompt shape, and Pangram was not run — the register axis that
+decided GH-145 is untouched here. It is not grounds to move the default; it is
+grounds to bake it off properly.
+
 
 ## Caveats
 
