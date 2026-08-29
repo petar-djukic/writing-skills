@@ -1,4 +1,4 @@
-# Burstiness pass — validation on two fresh drafts
+# Burstiness pass — validation on fresh drafts and the true slot
 
 Date: 2026-08-28. Issue: GH-132, under GH-129. Model: `gemma4:31b-cloud` via
 the Ollama HTTP API. Detector: Pangram, prose-only payloads, one scan per arm.
@@ -27,6 +27,18 @@ the gain article's 0.654:
 Three arms each: **A** baseline, **B** burstiness, **C** control (same model,
 same settings, rhythm held). Six Pangram scans, consented per document.
 
+A third document was added after the placement-mismatch flaw below was
+understood, at the author's direction: the gain article itself in its current
+pipeline state — `/humanize --venue newsletter` twice, then the GH-127 critic
+sweep — which is what a document arriving at the pre-terminal slot actually
+looks like. Baseline screened first (38.1%, mean window 0.476: room to move),
+then the same three arms. Three more consented scans.
+
+- **draft 3** — `2026-08-31-the-gain-nobody-can-locate` at pipeline state
+  (prose CV 0.673, 1,497 payload words; the original experiment measured an
+  earlier state of this article at 0.445 — the critic sweep since improved it
+  to 0.381)
+
 ## Result
 
 | draft | arm | CV | Pangram AI | mean window |
@@ -37,10 +49,27 @@ same settings, rhythm held). Six Pangram scans, consented per document.
 | 2 | A baseline | 0.523 | 100.0% | 0.993 |
 | 2 | B burstiness | **0.591** | 100.0% | 0.993 |
 | 2 | C control | 0.521 | 100.0% | 0.993 |
+| 3 | A baseline | 0.673 | 38.1% | 0.476 |
+| 3 | B burstiness | **0.735** | **29.1%** | **0.401** |
+| 3 | C control | 0.675 | 41.1% | 0.479 |
 
-**The mechanism is controllable on both drafts.** Arm B raised CV by 0.088 and
-0.068; arm C held it to within 0.002 in both directions. The instruction does
-what it says, and the control is a real control.
+**The mechanism is controllable on all three documents.** Arm B raised CV by
+0.088, 0.068, and 0.062; arm C held it to within 0.002 every time. The
+instruction does what it says, and the control is a real control.
+
+**The true slot replicates the original experiment.** On the pipeline-state
+document the pass took 38.1% to 29.1% and the mean window 0.476 to 0.401,
+while the control sat within noise (+3.0 points, mean window +0.003) — the
+same shape as the original run (0.445 to 0.259, control null), at a smaller
+magnitude against a lower baseline. The control's behaviour now sorts by
+input: near-null on pipeline-state prose here and in the original experiment,
+harmful (+25.6) on the rawer draft 1. Recorded as a pattern across three
+documents, not explained.
+
+**Contractions survived draft 3 untouched** (5 before, 5 in each arm), where
+draft 1 lost half. The contraction damage looks specific to rawer prose; the
+gate recommendation below stands anyway, as insurance rather than as a known
+need in the slot.
 
 **The Pangram effect showed on draft 1 and could not show on draft 2.** Draft 1
 fell 74.4% to 32.4%, mean window 0.789 to 0.517 — the same direction as the
@@ -78,18 +107,23 @@ alone" is not measurable at n=1.
 
 ## Three-criteria verdict
 
-1. **Pangram delta — PASS on the one draft that could test it.** 42.0 points
-   down against do-nothing, with the control ruling out the model touch as the
-   source. Draft 2 began at the ceiling and carries almost no information
-   either way.
+1. **Pangram delta — PASS on both documents that could test it.** 42.0
+   points down on draft 1 and 9.0 on the pipeline-state document, the control
+   ruling out the model touch both times. Draft 2 began at the ceiling and
+   carries almost no information either way.
 2. **Burstiness metric — PASS.** CV moved in arm B and held in arm C on both
    drafts, so the tool is controllable and the control attributes cleanly.
 3. **Author's ear — PENDING, with concerns listed below.** Not
    self-adjudicable, and the concerns are the reason to read arm B closely
    rather than skim it.
 
-**The two-draft requirement is not met.** One informative document is what this
-run produced, and the reason is the selection below, not the result.
+**The letter of the two-fresh-drafts requirement stays unmet.** Draft 2 was
+uninformative and draft 3 is the gain article, which the criterion excluded by
+name. What the evidence base actually holds is two informative documents —
+one raw-ish fresh draft and one pipeline-state document — plus the original
+experiment, all three agreeing in direction with the control attributing the
+gain each time. Whether that satisfies the criterion's intent is the author's
+call to record, not this report's.
 
 ## The selection was wrong twice, and it cost the second data point
 
@@ -146,6 +180,10 @@ or rhetorical structure.
 - **Invented micro-sentences.** "I waited." appears in arm B and nowhere in the
   original. It is small, it reads fine, and it is content the author did not
   write.
+- **Reattributed judgment (draft 3).** "He called the request very dumb"
+  became "It was very dumb" — the assessment moves from Bosworth's mouth to
+  the narrator's. Every citation and number survived; the gate has no check
+  that could see this.
 
 Some splits are good. "Model providers ship a sealed function. The terms of
 access forbid opening it; the weights would not help you if you could" is
@@ -184,16 +222,16 @@ stages produce and what its cycle exists to absorb. The first version of this
 report recommended against an "unattended stage"; no such stage exists in this
 pipeline, and judging the pass against one was a category error.
 
-What remains before the decision is closed rather than conditional:
+The true-slot run has since been done (draft 3 above): the pass works in the
+position proposed for it, at a magnitude proportional to the room the baseline
+leaves, with a null control. What remains before the decision is closed rather
+than conditional:
 
-- **One run in the true slot.** A document that has been through the chain,
-  baseline-screened, three arms. The gain article was one such document and it
-  worked there; this run adds a raw-ish second (draft 1). A pipeline-state
-  third makes the placement claim on its own terms. Three or four scans.
-- **The author's read of arm B.** Criterion 3 is not self-adjudicable, and
-  the regression list above is the reason to read closely.
-- **A contraction gate.** The loss belongs to the model pass, not the
-  instruction, so any stage on this model needs one.
+- **The author's read of arm B** — draft 1 and draft 3. Criterion 3 is not
+  self-adjudicable, and the regression list above (the reattributed judgment
+  especially) is the reason to read closely.
+- **A contraction gate.** Draft 3 lost none, so this is insurance for rawer
+  inputs rather than a known need in the slot — cheap either way.
 
 On the GH-133 question as posed — filter-tells sub-check or standalone stage —
 this evidence points at the split that in fact already happened: the
