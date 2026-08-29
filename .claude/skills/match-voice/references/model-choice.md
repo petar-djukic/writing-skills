@@ -34,3 +34,7 @@ half of the gate is not optional.
 
 A first `ollama pull` of a cloud model can fail transiently; an immediate
 retry succeeds.
+
+## Cohere (GH-138)
+
+A later bake-off added Cohere's command-a models against these incumbents, through the real driver. Summary: `command-a-03-2025` won the Pangram axis decisively (drove a 0.744 draft to 0.246, where gemma4:31b *raised* it to 1.000) but failed often through the gate (integration-level, likely fixable); `command-a-plus-05-2026` is disqualified for chain-of-thought / instruction-echo leakage. No default change yet — hardening and re-test in GH-140. Full report: [cohere-bakeoff.md](./cohere-bakeoff.md).
