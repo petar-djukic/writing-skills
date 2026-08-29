@@ -102,5 +102,80 @@ class CohereRouting(unittest.TestCase):
         self.assertFalse(ok)
 
 
+class CohereHardening(unittest.TestCase):
+    def test_denylisted_plus_refused_in_generate(self):
+        with mock.patch.dict(os.environ, {"COHERE_API_KEY": "k"}, clear=False):
+            with self.assertRaises(RuntimeError) as ctx:
+                rewrite.generate("p", model="cohere:command-a-plus-05-2026")
+        self.assertIn("denylist", str(ctx.exception).lower())
+
+    def test_denylisted_plus_refused_in_check_server(self):
+        with mock.patch.dict(os.environ, {"COHERE_API_KEY": "k"}, clear=False):
+            ok, msg = rewrite.check_server(
+                "http://unused", "cohere:command-a-plus-05-2026")
+        self.assertFalse(ok)
+
+    def test_command_a_03_still_allowed(self):
+        with mock.patch.dict(os.environ, {"COHERE_API_KEY": "k"}, clear=False):
+            ok, msg = rewrite.check_server("http://unused", "cohere:command-a-03-2025")
+        self.assertTrue(ok)
+
+    def test_sanitizer_strips_instruction_echo_and_reasoning(self):
+        raw = (
+            "The system checks input before it runs.\n"
+            "is the rewritten paragraph. No preamble, no explanation.\n"
+            "Now, we need to ensure we preserve the term \"four\".\n"
+            "Let me verify the citation [1] is intact.\n"
+            "It rejects a bad action at the boundary.")
+        cleaned = rewrite._sanitize_cohere_output(raw)
+        self.assertIn("The system checks input", cleaned)
+        self.assertIn("rejects a bad action", cleaned)
+        self.assertNotIn("rewritten paragraph", cleaned)
+        self.assertNotIn("we need to", cleaned)
+        self.assertNotIn("Let me", cleaned)
+
+    def test_sanitizer_keeps_clean_output_untouched(self):
+        clean = "The engine reads the table.\nIt dispatches tools by name."
+        self.assertEqual(rewrite._sanitize_cohere_output(clean), clean)
+
+    def test_generate_sanitizes_cohere_response(self):
+        payload = {"message": {"content": [{"type": "text", "text":
+            "Now, we should rewrite this.\nThe validator runs first."}]}}
+        with mock.patch.dict(os.environ, {"COHERE_API_KEY": "k"}, clear=False):
+            with mock.patch.object(rewrite.urllib.request, "urlopen",
+                                   lambda req, timeout=None: _fake_response(payload)):
+                out = rewrite.generate("p", model="cohere:command-a-03-2025")
+        self.assertEqual(out, "The validator runs first.")
+
+    def test_retry_on_429_then_success(self):
+        calls = {"n": 0}
+
+        def flaky_urlopen(req, timeout=None):
+            calls["n"] += 1
+            if calls["n"] == 1:
+                raise rewrite.urllib.error.HTTPError(
+                    req.full_url, 429, "rate", hdrs=None, fp=None)
+            return _fake_response(
+                {"message": {"content": [{"type": "text", "text": "done."}]}})
+
+        with mock.patch.dict(os.environ, {"COHERE_API_KEY": "k"}, clear=False):
+            with mock.patch.object(rewrite.time, "sleep", lambda s: None):
+                with mock.patch.object(rewrite.urllib.request, "urlopen", flaky_urlopen):
+                    out = rewrite.generate("p", model="cohere:command-a-03-2025")
+        self.assertEqual(out, "done.")
+        self.assertEqual(calls["n"], 2)
+
+    def test_no_retry_on_400(self):
+        def bad_urlopen(req, timeout=None):
+            raise rewrite.urllib.error.HTTPError(
+                req.full_url, 400, "bad", hdrs=None, fp=None)
+
+        with mock.patch.dict(os.environ, {"COHERE_API_KEY": "k"}, clear=False):
+            with mock.patch.object(rewrite.urllib.request, "urlopen", bad_urlopen):
+                with self.assertRaises(RuntimeError) as ctx:
+                    rewrite.generate("p", model="cohere:command-a-03-2025")
+        self.assertIn("400", str(ctx.exception))
+
+
 if __name__ == "__main__":
     unittest.main()

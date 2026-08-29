@@ -998,7 +998,24 @@ def main():
     critic = None
     critique_mod = _critique_module()
     banned = critique_mod.load_banned()
-    critic_model = a.critic_model or a.model
+    rwm_early = _rewrite_module()
+    # A Cohere rewrite model makes a poor critic of itself: in the GH-138 bake-off
+    # Cohere-as-its-own-critic produced 9 unparsable critiques of 24. When the
+    # rewrite model is cohere: and no --critic-model was given, default the critic
+    # to the reliable Ollama default so the critique step parses. An explicit
+    # --critic-model always wins.
+    if a.critic_model:
+        critic_model = a.critic_model
+    elif rwm_early._is_cohere(a.model):
+        # A Cohere run already needs network, so default its critic to a reliable
+        # cloud Ollama model rather than the local default (which may be unpulled).
+        # Env-overridable; falls back to mechanical-only if unreachable.
+        critic_model = os.environ.get("COHERE_CRITIC_MODEL", "gemma4:31b-cloud")
+        print(f"critique: rewrite model is Cohere; defaulting critic to "
+              f"{critic_model} (Cohere critiques itself poorly, GH-140). "
+              f"Override with --critic-model or COHERE_CRITIC_MODEL.")
+    else:
+        critic_model = a.model
     if not a.no_critique:
         rwm = _rewrite_module()
         ok, msg = rwm.check_server(a.endpoint, critic_model)
