@@ -431,6 +431,90 @@ occurrence that motivated the fix.
   enough to carry the verdict; the mechanical differences between the two
   Cohere models are not.
 
+## Three-article bake-off (GH-168, 2026-08-29)
+
+Every prior match-voice bake-off ran on one draft, and two of them disagreed
+with each other (GH-160 and GH-166 produced opposite mechanical rankings for
+the two Cohere models). Three published articles, four arms, same harness —
+the smallest design that separates a model effect from a payload effect.
+
+Payloads, all published Substack posts: `who-reads-your-prompts` (20 targets),
+`the-loop-is-the-easy-part` (12), `biking-on-sidewalks` (11, a personal essay
+rather than a technical one). 172 rewrite calls, 15 Pangram uploads, 0 errors.
+
+### Register, per article
+
+| article | baseline | command-a-03 | command-a-plus | gemma4:31b | gpt-oss:120b |
+|---|--:|--:|--:|--:|--:|
+| who-reads-your-prompts | 0.919 | **0.716** (−0.202) | 0.930 (+0.011) | 1.000 (+0.081) | 0.902 (−0.016) |
+| the-loop-is-the-easy-part | 0.913 | 1.000 (+0.087) | 1.000 (+0.087) | 1.000 (+0.087) | 0.917 (+0.004) |
+| biking-on-sidewalks | 1.000 | **0.747** (−0.253) | **0.748** (−0.252) | 1.000 (0.000) | 1.000 (0.000) |
+
+| arm | mean Δ ai | mean Δ human | improved on |
+|---|--:|--:|--:|
+| **command-a-03-2025** | **−0.123** | **+0.061** | 2/3 |
+| command-a-plus-05-2026 | −0.051 | +0.013 | 1/3 |
+| gemma4:31b-cloud | +0.056 | −0.011 | 0/3 |
+| gpt-oss:120b-cloud | −0.004 | −0.011 | 1/3 |
+
+### Mechanical, pooled over 43 paragraphs
+
+| arm | fully clean | citations | numbers | runaway | meta |
+|---|--:|--:|--:|--:|--:|
+| command-a-03-2025 | 39/43 | 30/32 | 42/43 | 1 | 1 |
+| command-a-plus-05-2026 | **31/43** | **24/32** | 31/43 | **8** | 2 |
+| gemma4:31b-cloud | **41/43** | **32/32** | 43/43 | 0 | 2 |
+| gpt-oss:120b-cloud | 32/43 | 32/32 | 32/43 | 0 | 0 |
+
+### What replicated, and what did not
+
+**Held.** The default wins on register and the incumbents do not: gemma4 is the
+only arm that improved *nothing* (0/3) and the only one whose mean Δai is
+positive, exactly as GH-138 and GH-166 found. gemma4 is simultaneously the
+cleanest rewriter (41/43, 32/32 citations) — mechanically excellent,
+register-inert, third time measured.
+
+**Did not replicate — command-a-plus-05-2026.** GH-160 rated it the cleanest
+arm (18/19, 9/9 citations); GH-166 already disagreed; over 43 paragraphs it is
+the *worst* of the four — 31/43 clean, 24/32 citations (a quarter dropped), and
+8 of the 9 runaway rewrites in the entire run. Two single-draft results said
+opposite things and the pooled answer sides with neither. It should not be used
+for citation-bearing work.
+
+**Did not replicate — "no rewrite cracks a saturated ceiling" (GH-138).**
+`biking-on-sidewalks` had a 1.000 baseline and both Cohere models took it to
+≈0.747, while both incumbents left it at 1.000. Saturation is not a property of
+the payload alone; it is a property of the payload and the rewriter. The advice
+to use a sub-saturation draft for model comparison stands, but the reason is
+sensitivity, not impossibility.
+
+**Newly visible — the ranking is payload-dependent.** `the-loop-is-the-easy-part`
+was made worse by three arms of four and saturated under all three of those.
+command-a-03 ranged from −0.202 to +0.087 across articles. No single-draft
+bake-off could have shown that, and every earlier one implicitly claimed a
+stability the data does not have.
+
+**Slices score differently from whole documents.** GH-166's 2,719-word slice
+scored 0.225; these whole articles score 0.913–1.000. Its headroom looks like an
+artifact of slicing rather than a property of the writing, which weakens the
+"only Cohere improved it" reading of that run — the direction survives here, the
+magnitude does not.
+
+### Verdict
+
+- **The GH-145 default holds**, and now on three payloads rather than one:
+  `command-a-03-2025` has the best mean register delta (−0.123), the best human
+  delta, improves the most articles (2/3), and is second-cleanest mechanically
+  (39/43) behind a model that improves nothing.
+- **command-a-plus-05-2026 should be un-recommended, not merely
+  not-recommended.** Its GH-160 showing was a single-draft artifact; pooled, it
+  drops a quarter of citations.
+- **The incumbents remain right for filter-tells and wrong here**, on the same
+  evidence as before, now three times over.
+- Real limit: n=43, one prompt shape, one detector, and the harness rewrites
+  only marker-bearing paragraphs, so each document is partly original. Read the
+  per-article spread, not the pooled mean alone.
+
 ## Caveats
 
 Pangram-human is not an HN pass (HN detector unknown). The score is a proxy; a

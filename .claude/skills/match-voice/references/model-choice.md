@@ -53,4 +53,13 @@ retry succeeds.
 
 A later bake-off added Cohere's command-a models against these incumbents, through the real driver. Summary: `command-a-03-2025` won the Pangram axis decisively (drove a 0.744 draft to 0.246, where gemma4:31b *raised* it to 1.000) but failed often through the gate (integration-level, likely fixable). Full report: [cohere-bakeoff.md](./cohere-bakeoff.md).
 
-`command-a-plus-05-2026` was disqualified there for chain-of-thought leakage, and that disqualification no longer stands (GH-155). Cohere separates reasoning into its own content block; reading blocks by type keeps it out of the prose (GH-154), and the model is no longer refused. GH-156 measured the two against each other on a real draft: `command-a-plus-05-2026` was cleanest of any arm (18/19 paragraphs fully clean, zero runaway rewrites, 9/9 citations) in the single-message shape the code already uses, against 15/19 for `command-a-03-2025`. GH-160 then covered the register axis: on Pangram, command-a-plus and command-a-03 tie (0.884 vs 0.876 fraction_ai from a 1.000 baseline — the only two models of four to move a saturated draft at all), and command-a-plus stays mechanically cleaner. The GH-145 default stands: register shows no gain that would justify a reasoning model's scratchpad cost per paragraph. command-a-plus is a legitimate alternative for a run where mechanical cleanliness matters more than tokens.
+`command-a-plus-05-2026` was disqualified there for chain-of-thought leakage, and that disqualification no longer stands (GH-155). Cohere separates reasoning into its own content block; reading blocks by type keeps it out of the prose (GH-154), and the model is no longer refused. GH-156 measured the two against each other on a real draft: `command-a-plus-05-2026` was cleanest of any arm (18/19 paragraphs fully clean, zero runaway rewrites, 9/9 citations) in the single-message shape the code already uses, against 15/19 for `command-a-03-2025`. GH-160 then covered the register axis: on Pangram, command-a-plus and command-a-03 tie (0.884 vs 0.876 fraction_ai from a 1.000 baseline — the only two models of four to move a saturated draft at all), and command-a-plus stays mechanically cleaner. The GH-145 default stands: register shows no gain that would justify a reasoning model's scratchpad cost per paragraph.
+
+**Superseded by GH-168.** Both sentences above rest on one draft each. Over
+three articles and 43 paragraphs `command-a-plus-05-2026` is the *worst* of
+four arms — 31/43 fully clean and 24/32 citations preserved, against 39/43 and
+30/32 for `command-a-03-2025`, plus 8 of the run's 9 runaway rewrites. Its
+GH-156/GH-160 showing was a single-draft artifact, and GH-166 had already
+disagreed with it. **Do not use it for citation-bearing work.** The earlier
+numbers are kept above because the reversal is the point: two single-payload
+bake-offs pointed opposite ways, and only the three-article run settled it.
