@@ -46,6 +46,93 @@ DEFAULT_ENDPOINT = os.environ.get("OLLAMA_ENDPOINT", "http://localhost:11434")
 DEFAULT_MODEL = os.environ.get("MATCH_VOICE_MODEL", "gemma4:12b")
 DEFAULT_TIMEOUT = int(os.environ.get("MATCH_VOICE_TIMEOUT", "300"))
 
+# Cohere is an opt-in cross-family backend, selected by a `cohere:` model-id
+# prefix (e.g. --model cohere:command-a-03-2025). It routes to Cohere's hosted
+# v2 /chat API instead of Ollama; every generative stage that calls generate()
+# gets it for free. Defaults are unchanged — nothing routes here unless the
+# model id asks for it. Rationale: the substack GH-269 confound test measured a
+# cross-family fixer (Cohere) taking a filter-tells fix to 0.335/0.665 human
+# where the session model produced 1.000, so a distinct non-Claude family is
+# worth having in the toolbox. Adoption as a default is gated on the bake-off
+# (writing-skills GH-138).
+COHERE_PREFIX = "cohere:"
+COHERE_ENDPOINT = os.environ.get("COHERE_ENDPOINT", "https://api.cohere.com/v2/chat")
+
+
+def _cohere_key():
+    """Cohere API key from COHERE_API_KEY, else the JSON file named by
+    COHERE_SECRETS_FILE (key 'cohere'). Returns None if neither yields one.
+    Never hardcoded; the key value never lives in this repo."""
+    key = os.environ.get("COHERE_API_KEY")
+    if key:
+        return key.strip()
+    path = os.environ.get("COHERE_SECRETS_FILE")
+    if path and os.path.exists(path):
+        try:
+            with open(path) as fh:
+                return (json.load(fh).get("cohere") or "").strip() or None
+        except Exception:  # noqa: BLE001
+            return None
+    return None
+
+
+def _is_cohere(model):
+    return isinstance(model, str) and model.startswith(COHERE_PREFIX)
+
+
+def _cohere_reasoning(model):
+    """A reasoning/thinking Cohere variant, whose chain-of-thought would land in
+    the captured response (the GH-129 lesson) — routed here only to be refused."""
+    return "reasoning" in model[len(COHERE_PREFIX):].lower()
+
+
+def _cohere_generate(prompt, model, temperature, timeout, system=None):
+    """One raw Cohere v2 /chat call. Raises RuntimeError; never falls back.
+
+    Same contract as the Ollama path in generate(): no Claude fallback, clear
+    remediation on failure. Reference shape mirrors the substack
+    burstiness-validation cohere_chat.py driver.
+    """
+    name = model[len(COHERE_PREFIX):]
+    if _cohere_reasoning(model):
+        raise RuntimeError(
+            f"refusing Cohere reasoning model '{name}': thinking-model "
+            "chain-of-thought contaminates the captured text (GH-129). Use a "
+            "non-reasoning variant such as command-a-03-2025.")
+    key = _cohere_key()
+    if not key:
+        raise RuntimeError(
+            "no Cohere API key. Set COHERE_API_KEY, or COHERE_SECRETS_FILE to a "
+            "JSON file with a 'cohere' key. match-voice does not fall back to "
+            "Claude: that would defeat its purpose.")
+    messages = []
+    if system is not None:
+        messages.append({"role": "system", "content": system})
+    messages.append({"role": "user", "content": prompt})
+    body = json.dumps({
+        "model": name,
+        "messages": messages,
+        "temperature": float(temperature),
+    }).encode()
+    req = urllib.request.Request(
+        COHERE_ENDPOINT, data=body,
+        headers={"Authorization": f"Bearer {key}",
+                 "Content-Type": "application/json"})
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            data = json.loads(r.read())
+    except socket.timeout:
+        raise RuntimeError(
+            f"Cohere timed out after {timeout}s on model '{name}'. Raise the "
+            "timeout or try again. No Claude fallback, by design.")
+    except urllib.error.URLError as e:
+        if isinstance(getattr(e, "reason", None), socket.timeout):
+            raise RuntimeError(f"Cohere timed out after {timeout}s on '{name}'.")
+        raise RuntimeError(f"Cohere request failed: {e.reason}. "
+                           "No Claude fallback, by design.")
+    parts = (data.get("message") or {}).get("content") or []
+    return "".join(p.get("text", "") for p in parts).strip()
+
 PROMPT = """You are rewriting one paragraph so it sounds like the author of the anchor passages below. The anchors are the author's own published prose.
 
 VOICE ANCHORS (match this register — sentence rhythm, vocabulary, directness):
@@ -85,6 +172,8 @@ def build_prompt(paragraph, anchors, retry_note="", protected_terms=None):
 
 def check_server(endpoint, model):
     """Return (ok, message). Never falls back — the caller must stop on False."""
+    if _is_cohere(model):
+        return _check_cohere(model)
     try:
         req = urllib.request.Request(f"{endpoint}/api/tags")
         with urllib.request.urlopen(req, timeout=10) as r:
@@ -102,6 +191,19 @@ def check_server(endpoint, model):
                        f"Pull it with `ollama pull {model}`, or pick one of: "
                        f"{', '.join(names[:8])}")
     return True, f"{endpoint} ready, model {model}"
+
+
+def _check_cohere(model):
+    """Return (ok, message) for a cohere: model — key present and not a
+    reasoning variant. Does not spend a request. Never falls back."""
+    if _cohere_reasoning(model):
+        return False, (f"refusing Cohere reasoning model "
+                       f"'{model[len(COHERE_PREFIX):]}': its chain-of-thought "
+                       "contaminates captured text (GH-129). Use command-a-03-2025.")
+    if not _cohere_key():
+        return False, ("no Cohere API key. Set COHERE_API_KEY, or "
+                       "COHERE_SECRETS_FILE to a JSON file with a 'cohere' key.")
+    return True, f"Cohere ready, model {model[len(COHERE_PREFIX):]}"
 
 
 def generate(prompt, endpoint=DEFAULT_ENDPOINT, model=DEFAULT_MODEL,
@@ -123,7 +225,13 @@ def generate(prompt, endpoint=DEFAULT_ENDPOINT, model=DEFAULT_MODEL,
     chain-of-thought plus terminal control codes and mid-word backspace
     artifacts. The corrupted text measured 0.428 on Pangram against 0.259 for
     the clean rerun, so the transport silently changed the finding.
+
+    A ``cohere:`` model id routes to Cohere's hosted v2 /chat API instead
+    (opt-in; the Ollama path stays the default). The signature is unchanged, so
+    every stage that calls generate() can select Cohere without its own client.
     """
+    if _is_cohere(model):
+        return _cohere_generate(prompt, model, temperature, timeout, system)
     payload = {
         "model": model,
         "prompt": prompt,

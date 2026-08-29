@@ -385,6 +385,26 @@ stay verbatim in the draft, and are counted in the manifest.
 | Critic model | `--critic-model` / `--no-critique` | the rewrite model; critique on |
 | External check | `--pangram` | off (the flag is the consent) |
 
+### Cohere backend (opt-in)
+
+A `cohere:` model id routes to Cohere's hosted v2 `/chat` API instead of
+Ollama — for example `--model cohere:command-a-03-2025`. It is additive: the
+Ollama path stays the default, and nothing routes to Cohere unless the model id
+asks for it. Because the transport lives in `generate()`, the same prefix works
+from `drive.py`, filter-tells, and burstiness — no stage grows its own client.
+
+- **Non-reasoning variants only.** `cohere:command-a-reasoning-*` is refused:
+  a thinking model's chain-of-thought lands in the captured text (the GH-129
+  lesson). Use `command-a-03-2025` or `command-a-plus-05-2026`.
+- **Key** comes from `COHERE_API_KEY`, or from the JSON file named by
+  `COHERE_SECRETS_FILE` (key `cohere`). Never hardcoded, never committed. The
+  no-Claude-fallback contract holds: a missing key or an unreachable endpoint
+  stops the run, it does not silently fall back.
+- **It is a hosted API**, so the paragraph text leaves the machine (as the
+  `:cloud` Ollama models already do) and billing is per token. Whether Cohere
+  should be a *default* anywhere is gated on the bake-off (GH-138); this is the
+  backend it runs through.
+
 `--style-note "active voice, plain diction"` sends a standing directive to
 the rewrite model on every attempt, first included; retries append their
 failure-classified note after it. Use it when a run's register drifts in a
