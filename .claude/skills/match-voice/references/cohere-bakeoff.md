@@ -353,6 +353,84 @@ models are equivalent on register (0.876 vs 0.884 is noise at this resolution).
 - Sub-saturation replication would sharpen the register numbers; on a
   saturated payload the Cohere delta is a floor, not an estimate.
 
+## Sub-saturation bake-off (GH-166, 2026-08-29)
+
+GH-160 ran on a saturated payload (Pangram baseline 1.000), so its register
+delta was a floor. GH-159 then changed `PROMPT` rule 1, leaving GH-160's
+mechanical numbers measured against a prompt that no longer exists. This run
+fixes both.
+
+Payload: a 2,719-word slice of a **published** post
+(`substack/2026/Q3/2026-08-20-strategy-theatre.md`), 17 marker-bearing
+paragraphs, 15 citations, comparable in size to GH-160's. Baseline **0.225
+fraction_ai / 0.385 human** — real headroom in both directions, so an arm can
+be measured making the draft worse, which is the discrimination GH-160 lacked.
+
+### Register — the discriminating axis
+
+| arm | fraction_ai | ai-assisted | human | vs baseline |
+|---|--:|--:|--:|--:|
+| baseline | 0.225 | 0.389 | 0.385 | — |
+| **command-a-03-2025** | **0.131** | 0.252 | **0.617** | **−0.095** |
+| command-a-plus-05-2026 | 0.291 | 0.113 | 0.596 | +0.066 |
+| gemma4:31b-cloud | 0.465 | 0.142 | 0.394 | +0.239 |
+| gpt-oss:120b-cloud | 0.461 | 0.403 | 0.136 | +0.236 |
+
+**Only `command-a-03-2025` improved the draft.** Both incumbents made it
+materially worse — the GH-138 finding ("gemma4 *raised* the score") replicated
+on a sub-saturation payload with the current prompt, and gpt-oss additionally
+collapsed the human fraction from 0.385 to 0.136, the worst outcome of any arm
+on any axis measured.
+
+`command-a-plus` splits: it raised the human fraction almost as much as the
+default (0.596 vs 0.617) while also raising AI. Mixed, not an improvement.
+
+### Mechanical axes
+
+| model | fully clean | citations | numbers | runaway >1.5x | meta |
+|---|--:|--:|--:|--:|--:|
+| command-a-03-2025 | 16/17 | 15/15 | 16/17 | 1 | 0 |
+| command-a-plus-05-2026 | 15/17 | 13/15 | 15/17 | 0 | 1 |
+| gemma4:31b-cloud | **17/17** | 15/15 | 17/17 | 0 | 0 |
+| gpt-oss:120b-cloud | 16/17 | 15/15 | 16/17 | 0 | 0 |
+
+The standing pattern holds: the incumbents are mechanically excellent and
+register-harmful. gemma4 was again perfect (17/17) on the draft it damaged most.
+
+**GH-160's mechanical ranking did not replicate.** There command-a-plus led
+(18/19) and command-a-03 trailed (15/19); here they swap (15/17 vs 16/17), and
+command-a-plus lost two citations where it had lost none. Both of its failures
+are the same deliberation-in-the-answer signature GH-156 documented:
+
+```
+item 12  119w -> 51w   'preserve the dash after "...the middle shrinks". So we need to keep that da'
+item 13  122w -> 7w    'add any extra parentheses for citation. none.'
+```
+
+Two runs of ~17 paragraphs cannot separate 15/17 from 16/17. Treat the two
+Cohere models as mechanically equivalent and decide on register, where the
+separation is an order of magnitude larger.
+
+### GH-159 held
+
+Zero invented `[@key]` literals across all 68 rewrites, against the one
+occurrence that motivated the fix.
+
+### Verdict
+
+- **The GH-145 default stands, now on direct evidence rather than a floor.**
+  `command-a-03-2025` is the only arm measured to improve a draft that had room
+  to move in either direction.
+- **The incumbents are disqualified for this skill's purpose**, not merely
+  unhelpful: both moved a 0.225 draft to ~0.46. Their mechanical perfection is
+  real and is why they remain right for filter-tells, whose job is neutral
+  cleanup rather than voice.
+- **command-a-plus-05-2026 stays allowed, not recommended.** It buys no
+  register gain over the default and costs reasoning tokens per paragraph.
+- One draft, one prompt shape, n=17 per arm. The register separation is large
+  enough to carry the verdict; the mechanical differences between the two
+  Cohere models are not.
+
 ## Caveats
 
 Pangram-human is not an HN pass (HN detector unknown). The score is a proxy; a

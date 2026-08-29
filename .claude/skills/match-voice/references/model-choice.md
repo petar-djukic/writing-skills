@@ -3,7 +3,12 @@
 Which model to rewrite with, and why. Read once when setting up or when
 changing models; the default works without it.
 
-**Default (GH-145): `cohere:command-a-03-2025`.** The GH-138/142 bake-off found
+**Default (GH-145, re-confirmed GH-166): `cohere:command-a-03-2025`.** On a
+sub-saturation draft it is the only model of four measured to *improve* the
+register (0.225 -> 0.131 fraction_ai, human 0.385 -> 0.617); both Ollama
+incumbents moved the same draft to ~0.46, and gpt-oss collapsed the human
+fraction to 0.136. Mechanically the incumbents are the cleaner rewriters, which
+is why they stay right for filter-tells and wrong here. The GH-138/142 bake-off found
 it drives a draft toward human where the gemma family raises the Pangram score,
 and after the 422-retry fix it runs clean through the gate. It is a hosted API
 (needs `COHERE_API_KEY`/`COHERE_SECRETS_FILE`, bills per token, sends the draft
