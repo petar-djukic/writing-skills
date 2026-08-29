@@ -294,6 +294,65 @@ decided GH-145 is untouched here. It is not grounds to move the default; it is
 grounds to bake it off properly.
 
 
+## Four-arm register bake-off (GH-160, 2026-08-29)
+
+The measurement both earlier bake-offs lacked once the backend changed under
+them: the two Cohere models against the incumbents, through the corrected
+GH-154/155 backend, mechanical axes and Pangram on the same run. Harness:
+`cohere_ab.py bakeoff`. Draft: `agentic-coding-book/11-language-selection.md`,
+19 citation- or number-bearing paragraphs, identical anchors, single-message
+shape (GH-156 rejected the split).
+
+### Mechanical axes
+
+| model | fully clean | citations | numbers | runaway >1.5x | meta | errors |
+|---|--:|--:|--:|--:|--:|--:|
+| command-a-03-2025 | 16/19 | 9/9 | 17/19 | 2 | 1 | 0 |
+| command-a-plus-05-2026 | 18/19 | 9/9 | 18/19 | 1 | 0 | 0 |
+| gemma4:31b-cloud | **19/19** | 9/9 | 19/19 | 0 | 0 | 0 |
+| gpt-oss:120b-cloud | 18/19 | 9/9 | 18/19 | 0 | 0 | 0 |
+
+Citations: 9/9 everywhere. GH-153's criterion — "Cohere preserves citations at
+the same rate as the incumbents" — is met by every model on this draft with the
+corrected backend. The GH-156 open question is answered too: the incumbents
+pass the four paragraphs that drew rule-echo from Cohere (zero runaways, zero
+meta across both), so that failure is Cohere-family-specific after all, just
+paragraph-*selected* within the family.
+
+### Register (Pangram, whole assembled drafts, consented upload)
+
+| document | fraction_ai | ai-assisted | human |
+|---|--:|--:|--:|
+| baseline | 1.000 | 0.000 | 0.000 |
+| command-a-03-2025 | 0.876 | 0.124 | 0.000 |
+| command-a-plus-05-2026 | 0.884 | 0.116 | 0.000 |
+| gemma4:31b-cloud | 1.000 | 0.000 | 0.000 |
+| gpt-oss:120b-cloud | 1.000 | 0.000 | 0.000 |
+
+The baseline is saturated, which GH-138 warned limits discrimination — and the
+result is informative despite that: **only the Cohere models moved a saturated
+draft off 1.000 at all.** Both incumbents left it pinned. Same direction as
+GH-138 and GH-269, now measured through the corrected backend. The two Cohere
+models are equivalent on register (0.876 vs 0.884 is noise at this resolution).
+
+### Verdict
+
+- **The GH-145 default flip stands.** Register is match-voice's purpose, Cohere
+  remains the only family measured to move it, and citation preservation now
+  matches the incumbents. GH-153's suspicion that the flip was confounded by
+  backend misuse is resolved: the misuse was real (untyped block parsing), the
+  confound was not.
+- **command-a-plus-05-2026 is a legitimate alternative, not the new default.**
+  It beat command-a-03-2025 mechanically (18/19 vs 16/19) and tied it on
+  register, so the GH-138 disqualification is fully dead — but it is a
+  reasoning model that spends thousands of scratchpad tokens per paragraph,
+  and register, the axis that would justify paying that, shows no gain.
+- **The incumbents are mechanically perfect and register-inert.** gemma4 went
+  19/19 clean and left the draft at 1.000 — the GH-138 pattern again. Right
+  model for filter-tells-style cleanup, wrong one for this skill's job.
+- Sub-saturation replication would sharpen the register numbers; on a
+  saturated payload the Cohere delta is a floor, not an estimate.
+
 ## Caveats
 
 Pangram-human is not an HN pass (HN detector unknown). The score is a proxy; a
