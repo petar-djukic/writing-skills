@@ -63,11 +63,17 @@ class CohereRouting(unittest.TestCase):
             out = rewrite.generate("p", model="gemma4:12b")
         self.assertEqual(out, "ollama out")
 
-    def test_reasoning_variant_refused(self):
+    def test_reasoning_variant_allowed(self):
+        # GH-155: reasoning models are no longer refused by name. GH-154 reads
+        # content blocks by type, so a scratchpad cannot reach the prose.
+        payload = {"message": {"content": [
+            {"type": "thinking", "thinking": "Deliberating at length."},
+            {"type": "text", "text": "The scheduler runs once per frame."}]}}
         with mock.patch.dict(os.environ, {"COHERE_API_KEY": "k"}, clear=False):
-            with self.assertRaises(RuntimeError) as ctx:
-                rewrite.generate("p", model="cohere:command-a-reasoning-08-2025")
-        self.assertIn("reasoning", str(ctx.exception).lower())
+            with mock.patch.object(rewrite.urllib.request, "urlopen",
+                                   lambda req, timeout=None: _fake_response(payload)):
+                out = rewrite.generate("p", model="cohere:command-a-reasoning-08-2025")
+        self.assertEqual(out, "The scheduler runs once per frame.")
 
     def test_missing_key_raises_not_falls_back(self):
         env = {k: v for k, v in os.environ.items()
@@ -95,11 +101,11 @@ class CohereRouting(unittest.TestCase):
             ok, msg = rewrite.check_server("http://unused", "cohere:command-a-03-2025")
         self.assertTrue(ok)
 
-    def test_check_server_cohere_reasoning_refused(self):
+    def test_check_server_cohere_reasoning_allowed(self):
         with mock.patch.dict(os.environ, {"COHERE_API_KEY": "k"}, clear=False):
             ok, msg = rewrite.check_server(
                 "http://unused", "cohere:command-a-reasoning-08-2025")
-        self.assertFalse(ok)
+        self.assertTrue(ok)
 
 
 class OllamaRetry(unittest.TestCase):
@@ -137,17 +143,26 @@ class DefaultModel(unittest.TestCase):
 
 
 class CohereHardening(unittest.TestCase):
-    def test_denylisted_plus_refused_in_generate(self):
+    def test_command_a_plus_no_longer_denylisted(self):
+        # GH-155: the denylist named command-a-plus for leaking reasoning into
+        # the answer. It is a reasoning model, and its reasoning arrives in its
+        # own block — verified live 2026-08-29: 1014 characters of thinking
+        # beside 113 of clean prose.
+        payload = {"message": {"content": [
+            {"type": "thinking", "thinking": "We need to preserve [2]."},
+            {"type": "text", "text": "Throughput rose, stability fell [2]."}]}}
         with mock.patch.dict(os.environ, {"COHERE_API_KEY": "k"}, clear=False):
-            with self.assertRaises(RuntimeError) as ctx:
-                rewrite.generate("p", model="cohere:command-a-plus-05-2026")
-        self.assertIn("denylist", str(ctx.exception).lower())
+            with mock.patch.object(rewrite.urllib.request, "urlopen",
+                                   lambda req, timeout=None: _fake_response(payload)):
+                out = rewrite.generate("p", model="cohere:command-a-plus-05-2026")
+        self.assertEqual(out, "Throughput rose, stability fell [2].")
+        self.assertFalse(hasattr(rewrite, "COHERE_DENYLIST"))
 
-    def test_denylisted_plus_refused_in_check_server(self):
+    def test_command_a_plus_passes_check_server(self):
         with mock.patch.dict(os.environ, {"COHERE_API_KEY": "k"}, clear=False):
             ok, msg = rewrite.check_server(
                 "http://unused", "cohere:command-a-plus-05-2026")
-        self.assertFalse(ok)
+        self.assertTrue(ok)
 
     def test_command_a_03_still_allowed(self):
         with mock.patch.dict(os.environ, {"COHERE_API_KEY": "k"}, clear=False):
@@ -342,6 +357,153 @@ class CohereEmptyOutput(unittest.TestCase):
             self.assertEqual(
                 mv_drive.classify_rewrite_error(self._raise_on(payload)),
                 "empty/sanitized-to-empty")
+
+
+class CohereThinkingBudget(unittest.TestCase):
+    """A budget the model cannot finish inside spills the scratchpad into the
+    answer (GH-155). The default sends no field at all."""
+
+    def _body_for(self, env):
+        captured = {}
+
+        def fake_urlopen(req, timeout=None):
+            captured.update(json.loads(req.data.decode()))
+            return _fake_response(
+                {"message": {"content": [{"type": "text", "text": "ok."}]}})
+
+        base = dict(env)
+        base["COHERE_API_KEY"] = "k"
+        with mock.patch.dict(os.environ, base, clear=False):
+            import importlib
+            importlib.reload(rewrite)
+            with mock.patch.object(rewrite.urllib.request, "urlopen", fake_urlopen):
+                rewrite.generate("p", model="cohere:command-a-03-2025")
+        return captured
+
+    def tearDown(self):
+        import importlib
+        importlib.reload(rewrite)  # restore ambient env
+
+    def test_default_sends_no_thinking_field(self):
+        env = {k: "" for k in ("COHERE_THINKING", "COHERE_THINKING_BUDGET")}
+        self.assertNotIn("thinking", self._body_for(env))
+
+    def test_no_token_budget_is_ever_sent_by_default(self):
+        # The starving-budget failure cannot happen if no budget is sent.
+        body = self._body_for({k: "" for k in
+                               ("COHERE_THINKING", "COHERE_THINKING_BUDGET")})
+        self.assertNotIn("token_budget", json.dumps(body))
+
+    def test_configured_budget_is_clamped_to_the_floor(self):
+        # token_budget=1 produced a 2-character thinking block and a 6590-char
+        # answer that opened "<EOS_TOKEN>We need to rewrite the passage:".
+        body = self._body_for({"COHERE_THINKING_BUDGET": "1"})
+        self.assertEqual(body["thinking"]["type"], "enabled")
+        self.assertGreaterEqual(body["thinking"]["token_budget"],
+                                rewrite.COHERE_MIN_THINKING_BUDGET)
+
+    def test_generous_budget_is_left_alone(self):
+        body = self._body_for({"COHERE_THINKING_BUDGET": "31000"})
+        self.assertEqual(body["thinking"]["token_budget"], 31000)
+
+    def test_floor_sits_above_the_longest_observed_scratchpad(self):
+        # Probes measured 1447-6541 characters of thinking. The floor is in
+        # tokens, so it clears that with room even at one token per character.
+        self.assertGreaterEqual(rewrite.COHERE_MIN_THINKING_BUDGET, 8000)
+
+    def test_disabled_is_opt_in_and_sent_verbatim(self):
+        body = self._body_for({"COHERE_THINKING": "disabled"})
+        self.assertEqual(body["thinking"], {"type": "disabled"})
+
+    def test_non_integer_budget_is_refused(self):
+        with mock.patch.dict(os.environ, {"COHERE_THINKING_BUDGET": "lots",
+                                          "COHERE_API_KEY": "k"}, clear=False):
+            import importlib
+            importlib.reload(rewrite)
+            with self.assertRaises(RuntimeError) as ctx:
+                rewrite.generate("p", model="cohere:command-a-03-2025")
+        self.assertIn("COHERE_THINKING_BUDGET", str(ctx.exception))
+
+
+class Cohere422Classification(unittest.TestCase):
+    """Not every 422 is transient (GH-155)."""
+
+    def _error(self, code, payload_bytes, calls):
+        def urlopen(req, timeout=None):
+            calls["n"] += 1
+            raise rewrite.urllib.error.HTTPError(
+                req.full_url, code, "err", hdrs=None,
+                fp=io.BytesIO(payload_bytes))
+        return urlopen
+
+    def test_invalid_tool_generation_is_not_retried(self):
+        # Measured deterministic 7/7 on the long prompt with thinking disabled.
+        # Retrying spends three requests and the backoff to fail identically.
+        calls = {"n": 0}
+        body = b'{"error_type":"INVALID_TOOL_GENERATION","message":"bad"}'
+        with mock.patch.dict(os.environ, {"COHERE_API_KEY": "k"}, clear=False):
+            with mock.patch.object(rewrite.time, "sleep", lambda s: None):
+                with mock.patch.object(rewrite.urllib.request, "urlopen",
+                                       self._error(422, body, calls)):
+                    with self.assertRaises(RuntimeError) as ctx:
+                        rewrite.generate("p", model="cohere:command-a-03-2025")
+        self.assertEqual(calls["n"], 1)
+        self.assertIn("INVALID_TOOL_GENERATION", str(ctx.exception))
+        self.assertIn("COHERE_THINKING", str(ctx.exception))
+
+    def test_other_422_still_retried(self):
+        # GH-142's intermittent 422 must keep recovering on retry.
+        calls = {"n": 0}
+
+        def flaky(req, timeout=None):
+            calls["n"] += 1
+            if calls["n"] == 1:
+                raise rewrite.urllib.error.HTTPError(
+                    req.full_url, 422, "unprocessable", hdrs=None,
+                    fp=io.BytesIO(b'{"error_type":"SOMETHING_ELSE"}'))
+            return _fake_response(
+                {"message": {"content": [{"type": "text", "text": "ok."}]}})
+
+        with mock.patch.dict(os.environ, {"COHERE_API_KEY": "k"}, clear=False):
+            with mock.patch.object(rewrite.time, "sleep", lambda s: None):
+                with mock.patch.object(rewrite.urllib.request, "urlopen", flaky):
+                    out = rewrite.generate("p", model="cohere:command-a-03-2025")
+        self.assertEqual(out, "ok.")
+        self.assertEqual(calls["n"], 2)
+
+    def test_error_type_reaches_the_final_message(self):
+        calls = {"n": 0}
+        body = b'{"error_type":"CONTENT_FILTER","message":"refused the payload"}'
+        with mock.patch.dict(os.environ, {"COHERE_API_KEY": "k"}, clear=False):
+            with mock.patch.object(rewrite.time, "sleep", lambda s: None):
+                with mock.patch.object(rewrite.urllib.request, "urlopen",
+                                       self._error(422, body, calls)):
+                    with self.assertRaises(RuntimeError) as ctx:
+                        rewrite.generate("p", model="cohere:command-a-03-2025")
+        self.assertIn("CONTENT_FILTER", str(ctx.exception))
+        self.assertIn("refused the payload", str(ctx.exception))
+
+    def test_unparseable_error_body_does_not_crash(self):
+        calls = {"n": 0}
+        with mock.patch.dict(os.environ, {"COHERE_API_KEY": "k"}, clear=False):
+            with mock.patch.object(rewrite.time, "sleep", lambda s: None):
+                with mock.patch.object(rewrite.urllib.request, "urlopen",
+                                       self._error(400, b'<html>nope</html>', calls)):
+                    with self.assertRaises(RuntimeError) as ctx:
+                        rewrite.generate("p", model="cohere:command-a-03-2025")
+        self.assertIn("400", str(ctx.exception))
+
+    def test_check_server_warns_when_thinking_disabled(self):
+        with mock.patch.dict(os.environ, {"COHERE_THINKING": "disabled",
+                                          "COHERE_API_KEY": "k"}, clear=False):
+            import importlib
+            importlib.reload(rewrite)
+            ok, msg = rewrite.check_server("http://unused",
+                                           "cohere:command-a-plus-05-2026")
+        import importlib
+        importlib.reload(rewrite)
+        self.assertTrue(ok)
+        self.assertIn("INVALID_TOOL_GENERATION", msg)
 
 
 if __name__ == "__main__":

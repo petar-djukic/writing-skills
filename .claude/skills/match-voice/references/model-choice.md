@@ -46,4 +46,6 @@ retry succeeds.
 
 ## Cohere (GH-138)
 
-A later bake-off added Cohere's command-a models against these incumbents, through the real driver. Summary: `command-a-03-2025` won the Pangram axis decisively (drove a 0.744 draft to 0.246, where gemma4:31b *raised* it to 1.000) but failed often through the gate (integration-level, likely fixable); `command-a-plus-05-2026` is disqualified for chain-of-thought / instruction-echo leakage. No default change yet — hardening and re-test in GH-140. Full report: [cohere-bakeoff.md](./cohere-bakeoff.md).
+A later bake-off added Cohere's command-a models against these incumbents, through the real driver. Summary: `command-a-03-2025` won the Pangram axis decisively (drove a 0.744 draft to 0.246, where gemma4:31b *raised* it to 1.000) but failed often through the gate (integration-level, likely fixable). Full report: [cohere-bakeoff.md](./cohere-bakeoff.md).
+
+`command-a-plus-05-2026` was disqualified there for chain-of-thought leakage, and that disqualification no longer stands (GH-155). Cohere separates reasoning into its own content block; reading blocks by type keeps it out of the prose (GH-154), and the model is no longer refused. It has not been re-bake-offed, so it is **allowed, not recommended** — GH-156 measures it against `command-a-03-2025` before any default moves.

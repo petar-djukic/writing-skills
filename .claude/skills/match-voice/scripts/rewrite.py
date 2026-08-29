@@ -65,14 +65,36 @@ OLLAMA_MAX_RETRIES = int(os.environ.get("OLLAMA_MAX_RETRIES", "3"))
 # (writing-skills GH-138).
 COHERE_PREFIX = "cohere:"
 COHERE_ENDPOINT = os.environ.get("COHERE_ENDPOINT", "https://api.cohere.com/v2/chat")
-# Denylisted Cohere families: they leak chain-of-thought and echo the prompt's
-# own rules into the output on the long match-voice prompt (GH-138 bake-off:
-# command-a-plus-05-2026 ballooned 1386 -> 2086 words of meta-commentary, and
-# its low Pangram was a garbage-text artifact). The name-based reasoning guard
-# does not catch them ("plus", not "reasoning"), so they are named here.
-# command-a-03-2025 is NOT listed — it produced clean output.
-COHERE_DENYLIST = ("command-a-plus",)
 COHERE_MAX_RETRIES = int(os.environ.get("COHERE_MAX_RETRIES", "3"))
+
+# Reasoning models are allowed here. Two guards used to refuse them — a name
+# substring ("reasoning") and a denylist naming command-a-plus — both written
+# when a scratchpad in the answer looked like a property of the model. It is
+# not. Cohere separates reasoning into its own content block, and since GH-154
+# this module reads blocks by type, so a thinking model's scratchpad cannot
+# reach the returned prose whatever the model is called. The name guard could
+# not have worked anyway: command-a-plus-05-2026 is a reasoning model whose name
+# says nothing of the sort, which is why the denylist existed to patch it.
+#
+# What DOES put a scratchpad in the answer is starving the thinking budget.
+# Measured 2026-08-29 on command-a-plus-05-2026, one passage, temperature 0.3:
+#
+#   thinking setting                    thinking block   answer block
+#   (none sent — the default here)        3954-6310 ch      97-154 ch  clean
+#   {"type": "disabled"}                        0 ch           91 ch   clean
+#   {"type": "enabled", "token_budget": 1}      2 ch         6590 ch   SPILLED
+#
+# The last row opened "<EOS_TOKEN>We need to rewrite the passage:" — the GH-138
+# signature exactly. Reasoning with nowhere to go goes into the answer. So the
+# default is to send no `thinking` field at all, and a budget, if one is ever
+# configured, is clamped to a floor well above the longest run observed.
+COHERE_MIN_THINKING_BUDGET = int(os.environ.get("COHERE_MIN_THINKING_BUDGET", "8000"))
+# Opt-in only, and not recommended: disabling thinking on a reasoning model
+# gives a deterministic 422 INVALID_TOOL_GENERATION on a long prompt (7/7 across
+# two probes on the 11k-character match-voice prompt; 4/4 clean on a short one).
+# Unset sends no field, which is what every measured-clean run above did.
+COHERE_THINKING = os.environ.get("COHERE_THINKING", "").strip().lower()
+COHERE_THINKING_BUDGET = os.environ.get("COHERE_THINKING_BUDGET", "").strip()
 # Lines a leak-prone model emits instead of, or around, the rewrite: prompt-rule
 # echoes and reasoning narration. Stripped as defense in depth even for allowed
 # models; if stripping leaves nothing, the caller treats it as a failed rewrite.
@@ -158,10 +180,40 @@ def _is_cohere(model):
     return isinstance(model, str) and model.startswith(COHERE_PREFIX)
 
 
-def _cohere_reasoning(model):
-    """A reasoning/thinking Cohere variant, whose chain-of-thought would land in
-    the captured response (the GH-129 lesson) — routed here only to be refused."""
-    return "reasoning" in model[len(COHERE_PREFIX):].lower()
+def _cohere_thinking():
+    """The `thinking` field for the request body, or None to send no field.
+
+    None is the default and the measured-clean setting. A configured budget is
+    clamped up to COHERE_MIN_THINKING_BUDGET: a budget the model cannot finish
+    inside pushes the scratchpad into the answer, which is the one failure this
+    whole path exists to avoid."""
+    if COHERE_THINKING_BUDGET:
+        try:
+            want = int(COHERE_THINKING_BUDGET)
+        except ValueError:
+            raise RuntimeError(
+                f"COHERE_THINKING_BUDGET must be an integer, got "
+                f"{COHERE_THINKING_BUDGET!r}.")
+        return {"type": "enabled",
+                "token_budget": max(want, COHERE_MIN_THINKING_BUDGET)}
+    if COHERE_THINKING == "disabled":
+        return {"type": "disabled"}
+    return None
+
+
+def _cohere_http_error(e):
+    """Read an HTTPError body once and return (error_type, message).
+
+    Once: HTTPError.read() drains the stream, so a second call yields nothing.
+    The old code read it only on the non-retry branch, which is why a retried
+    422 was never classified."""
+    try:
+        payload = json.loads(e.read().decode("utf-8", "replace") or "{}")
+    except Exception:  # noqa: BLE001
+        return "", ""
+    if not isinstance(payload, dict):
+        return "", ""
+    return (payload.get("error_type") or ""), (payload.get("message") or "")
 
 
 def _cohere_generate(prompt, model, temperature, timeout, system=None,
@@ -173,17 +225,6 @@ def _cohere_generate(prompt, model, temperature, timeout, system=None,
     burstiness-validation cohere_chat.py driver.
     """
     name = model[len(COHERE_PREFIX):]
-    if _cohere_reasoning(model):
-        raise RuntimeError(
-            f"refusing Cohere reasoning model '{name}': thinking-model "
-            "chain-of-thought contaminates the captured text (GH-129). Use a "
-            "non-reasoning variant such as command-a-03-2025.")
-    if any(bad in name for bad in COHERE_DENYLIST):
-        raise RuntimeError(
-            f"refusing denylisted Cohere model '{name}': it leaks reasoning and "
-            "echoes the prompt's rules into the output on the match-voice prompt "
-            "(GH-138), which the name-based reasoning guard does not catch. Use "
-            "command-a-03-2025.")
     key = _cohere_key()
     if not key:
         raise RuntimeError(
@@ -194,11 +235,15 @@ def _cohere_generate(prompt, model, temperature, timeout, system=None,
     if system is not None:
         messages.append({"role": "system", "content": system})
     messages.append({"role": "user", "content": prompt})
-    body = json.dumps({
+    payload = {
         "model": name,
         "messages": messages,
         "temperature": float(temperature),
-    }).encode()
+    }
+    thinking = _cohere_thinking()
+    if thinking is not None:
+        payload["thinking"] = thinking
+    body = json.dumps(payload).encode()
 
     # Bounded retry with backoff for transient failures (429, 5xx, timeout).
     # A rewrite-error dropped a paragraph to its original on the first hiccup in
@@ -215,24 +260,32 @@ def _cohere_generate(prompt, model, temperature, timeout, system=None,
                 data = json.loads(r.read())
             break
         except urllib.error.HTTPError as e:
-            # 422 is included empirically (GH-142): Cohere returns it
-            # intermittently on the long match-voice prompt, and retrying the
-            # identical request succeeds — so here it behaves as transient, not
-            # as a permanent "unprocessable" verdict. 400/401 stay non-retryable.
+            # Read the body first: the decision to retry depends on what it
+            # says, and it can only be read once. 422 is retryable in general
+            # (GH-142: Cohere returns it intermittently on the long match-voice
+            # prompt and the identical request then succeeds), but not every
+            # 422 is the same animal. 400/401 stay non-retryable.
+            error_type, msg = _cohere_http_error(e)
+            if e.code == 422 and error_type == "INVALID_TOOL_GENERATION":
+                # Deterministic, not transient: measured 7/7 on the 11k-character
+                # match-voice prompt with thinking disabled, against 0/6 for the
+                # same prompt with thinking left alone. Retrying spends three
+                # requests and the backoff between them to fail identically.
+                raise RuntimeError(
+                    f"Cohere is refusing this request: HTTP 422 "
+                    f"INVALID_TOOL_GENERATION "
+                    f"on '{name}'. Measured cause: thinking disabled on a "
+                    f"reasoning model with a long prompt — it is deterministic, "
+                    f"so this is not retried. Unset COHERE_THINKING (the default "
+                    f"sends no thinking field and does not hit this), or shorten "
+                    f"the prompt. No Claude fallback, by design.")
             if e.code in (422, 429, 500, 502, 503, 504) and attempt < COHERE_MAX_RETRIES - 1:
-                last = f"HTTP {e.code}"
+                last = f"HTTP {e.code}{'/' + error_type if error_type else ''}"
                 time.sleep(2 ** attempt)
                 continue
-            # Surface the response body: a 422 (Unprocessable Entity) carries
-            # Cohere's reason (content filter, payload issue), which is what
-            # tells a non-retryable content rejection apart from a format bug.
-            detail = ""
-            try:
-                body_txt = e.read().decode("utf-8", "replace")
-                msg = (json.loads(body_txt).get("message") if body_txt else "") or ""
-                detail = f" ({msg[:120]})" if msg else ""
-            except Exception:  # noqa: BLE001
-                pass
+            # Surface Cohere's own reason, which is what tells a content
+            # rejection apart from a format bug.
+            detail = f" ({error_type}: {msg[:120]})" if error_type or msg else ""
             raise RuntimeError(f"Cohere request failed: HTTP {e.code} on "
                                f"'{name}'{detail}. No Claude fallback, by design.")
         except socket.timeout:
@@ -345,21 +398,23 @@ def check_server(endpoint, model):
 
 
 def _check_cohere(model):
-    """Return (ok, message) for a cohere: model — key present and not a
-    reasoning variant. Does not spend a request. Never falls back."""
+    """Return (ok, message) for a cohere: model. Does not spend a request.
+
+    The key is the only hard requirement. Model families are no longer refused
+    by name — see the COHERE_MIN_THINKING_BUDGET comment for why the reasoning
+    guard and the denylist went away. A disabled-thinking setting is reported,
+    since it is the one configuration measured to fail outright on a long
+    prompt, and check_server runs before a batch rather than during it."""
     name = model[len(COHERE_PREFIX):]
-    if _cohere_reasoning(model):
-        return False, (f"refusing Cohere reasoning model '{name}': its "
-                       "chain-of-thought contaminates captured text (GH-129). "
-                       "Use command-a-03-2025.")
-    if any(bad in name for bad in COHERE_DENYLIST):
-        return False, (f"refusing denylisted Cohere model '{name}': it leaks "
-                       "reasoning / prompt-rule echoes into the output on the "
-                       "match-voice prompt (GH-138). Use command-a-03-2025.")
     if not _cohere_key():
         return False, ("no Cohere API key. Set COHERE_API_KEY, or "
                        "COHERE_SECRETS_FILE to a JSON file with a 'cohere' key.")
-    return True, f"Cohere ready, model {model[len(COHERE_PREFIX):]}"
+    if COHERE_THINKING == "disabled":
+        return True, (f"Cohere ready, model {name} — WARNING: COHERE_THINKING="
+                      "disabled gives a deterministic 422 "
+                      "INVALID_TOOL_GENERATION on prompts the size of "
+                      "match-voice's. Unset it unless the prompts are short.")
+    return True, f"Cohere ready, model {name}"
 
 
 def generate(prompt, endpoint=DEFAULT_ENDPOINT, model=DEFAULT_MODEL,

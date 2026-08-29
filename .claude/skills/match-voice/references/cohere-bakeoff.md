@@ -94,6 +94,8 @@ non-saturated draft, hardened pipeline):
 - **CoT-leak guard:** `command-a-plus` denylisted in generate() and check_server(),
   plus a `_sanitize_cohere_output()` that strips instruction-echo / reasoning
   lines as defense in depth. command-a-03-2025 stays allowed.
+  *(The denylist half of this was reverted in GH-155 — see "What the CoT leak
+  actually was" below. The sanitizer stayed.)*
 - **Non-Cohere critic:** a `cohere:` rewrite model now defaults its critic to
   gemma4:31b-cloud (env `COHERE_CRITIC_MODEL`), since Cohere critiqued itself
   into 9 unparsable verdicts.
@@ -161,7 +163,59 @@ the match-voice default to `cohere:command-a-03-2025`.** `MATCH_VOICE_MODEL` and
 gemma4:12b`, the local GH-163 winner (no silent fallback — a cohere: default
 with no key stops with remediation). Scope is match-voice's rewrite default
 only; filter-tells and burstiness keep their own model defaults. The
-command-a-plus tier stays denylisted (CoT leak).
+command-a-plus tier stays denylisted (CoT leak). *(Superseded by GH-155: the
+denylist is gone. The default itself is untouched and is re-examined in GH-156.)*
+
+## What the CoT leak actually was (GH-155, 2026-08-29)
+
+The GH-138 disqualification above says command-a-plus-05-2026 "emits reasoning
+and echoes the prompt's own instructions into the output." Live probes against
+the v2 /chat API found the mechanism is not what that sentence implies, and the
+denylist it justified has been removed.
+
+**Cohere separates the scratchpad already.** A reasoning model answers in two
+typed content blocks:
+
+```
+blocks: [('thinking', ['thinking', 'type']), ('text', ['text', 'type'])]
+  type='thinking'  6541 ch   "We need to rewrite the passage to remove AI writing tells..."
+  type='text'       195 ch   "Google DORA research indicates that adopting AI is..."
+```
+
+Since GH-154 the backend reads blocks by type, so a thinking model's reasoning
+cannot reach the prose whatever the model is called. The name-based guard could
+never have worked: command-a-plus-05-2026 is a reasoning model whose name says
+nothing of the sort, which is exactly why the denylist existed to patch it.
+
+**A starved thinking budget is what puts reasoning in the answer.** One passage,
+temperature 0.3:
+
+| thinking setting | thinking block | answer block | answer opens with |
+|---|---:|---:|---|
+| none sent (the default) | 3954-6310 ch | 97-154 ch | clean prose |
+| `{"type":"disabled"}` | 0 ch | 91 ch | clean prose |
+| `{"type":"enabled","token_budget":1}` | **2 ch** | **6590 ch** | `<EOS_TOKEN>We need to rewrite the passage:` |
+
+The last row is the GH-138 signature verbatim. Reasoning with nowhere to go goes
+into the answer.
+
+**Stated plainly: GH-138 was not reproduced under the settings this code uses.**
+The backend sends no `thinking` field, and at that default the real
+11,034-character match-voice prompt came back clean — 195 characters, no meta,
+citation intact, 3/3 on a repeat. `token_budget: 1` demonstrates the mechanism,
+not the historical conditions. GH-148 (multi-pass loop corruption, since fixed)
+remains a live alternative explanation for what the bake-off actually saw.
+
+**Disabling thinking is not the fix.** `{"type":"disabled"}` returns a
+deterministic 422 `INVALID_TOOL_GENERATION` on a long prompt — 7/7 across two
+probes on the 11k-character prompt, against 0/6 for the same prompt with
+thinking left alone, and 4/4 clean on a short one. It is opt-in via
+`COHERE_THINKING`, that 422 is no longer retried, and `check_server` warns when
+the variable is set.
+
+**What this does not settle.** command-a-plus-05-2026 is now allowed, not
+recommended. It has not been re-bake-offed; GH-156 measures it against
+command-a-03-2025 before any default moves.
 
 ## Caveats
 
