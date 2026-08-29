@@ -161,6 +161,23 @@ profile (any |z| ≥ 2) is NOT clean.** Report "passes named checks;
 voice-distance high" and route to Step 3 with the deviating metrics and their
 direction as seeds. No corpus, no check — say so in one line and continue.
 
+**Burstiness (sentence-length dispersion).** The structural metrics carry
+`sentence_length_cv` alongside the mean, stdev, min, and max, and the
+voice-distance block scores CV against the corpus. Only stdev is thresholded
+— CV is reported, because the flags above are calibrated on stdev and moving
+them is a separate decision. Quote CV when comparing documents or registers:
+stdev alone conflates dispersion with sentence length, so a paper and a
+newsletter differ on it without differing in uniformity.
+
+Report CV before and after a rewrite pass, next to the Pangram score. On a
+plain stylometric model the two discriminative features are AI-phrase density
+and burstiness; this skill attacks the first, and the second only shows up if
+someone measures it. The canonical before/after number is
+`style.py burstiness <draft.md> --baseline <before.md> --text` — the CV here
+runs lower, since `split_sentences()` drops fragments under four words and
+those are the ones that widen the spread. Keep both sides of a comparison on
+one tool.
+
 ### Step 3: Semantic Analysis (Requires Opus) — MANDATORY
 
 If Pass 1 or Pass 2 found *any* issue, Step 3 is required, not optional. The scripts are blind to rhetorical patterns. Reporting a verdict without Step 3 is a procedural error and produces false negatives.

@@ -460,13 +460,92 @@ The two scripts underneath, `<agent-dir>/scripts/pangram.py` and
 `pangram_report.py`, sit at the shared scripts root. filter-tells invokes the
 same pair for a point-in-time reading; neither skill owns them.
 
+## The burstiness pass (`burstiness.py`)
+
+A second entry point that shares this skill's transport and its gate, and
+changes something else entirely: sentence-length variance, measured as the
+coefficient of variation of sentence lengths. It is the second of the two
+editable features a plain stylometric detector keys on. filter-tells attacks
+the first, AI-phrase density; nothing attacked this one.
+
+```bash
+$RUN <skill>/scripts/burstiness.py --article draft.md            # arm B
+$RUN <skill>/scripts/burstiness.py --article draft.md --control  # arm C
+$RUN <skill>/scripts/burstiness.py --article draft.md --dry-run  # no model call
+```
+
+Measured across three documents, three arms each, prose-only on Pangram
+3.3.2 (GH-129; full report in
+[references/burstiness-validation.md](./references/burstiness-validation.md)):
+
+| document | arm B | arm C (control) |
+|---|---|---|
+| gain article, original state (0.445 baseline) | **0.259** | 0.436 |
+| gain article, pipeline state (0.381 baseline) | **0.291** | 0.411 |
+| raw-ish fresh draft (0.744 baseline) | **0.324** | 1.000 |
+| raw draft at the ceiling (1.000 baseline) | 1.000 | 1.000 |
+
+CV rose in arm B and held in arm C on every document. Two patterns worth
+knowing before running it: a saturated baseline has no room to fall, so the
+pass does nothing measurable on a raw 100% draft — run it on documents
+already through the chain; and the control's own effect sorts by input,
+near-null on pipeline-state prose and harmful on raw prose, so the
+attribution only reads cleanly where the pass belongs anyway.
+
+**`--control` is not an option, it is the method.** Arm C is what licenses the
+claim that the drop is burstiness rather than a second model's diction; run it
+alongside arm B on every new draft, or the comparison attributes nothing. When
+the control moves CV by more than 0.02 the report says so, because a control
+that reshapes rhythm has stopped being one.
+
+What the gate refuses, in order: an empty response, a candidate outside the
+0.5x-1.6x word band (grown means content added, shrunk means summarised), a
+lost `[[LOCK-n]]` anchor token, an added defect class, and any fatal finding
+from `verify.py` — citations, numbers, markup, terms of art. A rejected
+paragraph keeps its original text and the report names the reason. Nothing is
+repaired.
+
+The banned constructions are checked as a **delta**, never a level: the pass
+may not introduce a tricolon, an "X, not Y", or an em-dash, and it also has no
+business removing the author's own. Em-dashes are normalized to the sentence
+break they were imitating before the gate runs, since that is the edit the
+pass wanted anyway.
+
+**Placement (GH-133, decided 2026-08-28):** a standalone pre-terminal pass in
+this skill, run inside the GH-57 cycle like every other generative stage —
+optional, author-in-the-loop, its regressions caught by the read-only zone and
+the author's picks downstream. The filter-tells-sub-check half of the question
+resolved by function: the *measurement* is a filter-tells/humanize report line
+and a match-structure subcommand (GH-130), and the *generation* cannot live in
+filter-tells at all, because filter-tells is Claude-side detection and prose
+generation is cross-family by the pipeline's own rule. Locked spans are
+excised before the model sees a paragraph and spliced back byte-identical, and
+the written file is re-checked against the manifest before the run reports
+success. The author read arm B on both informative documents and signed it
+(GH-132) — with the note that the gate cannot see reattributed judgment
+("He called the request very dumb" returning as "It was very dumb"), which is
+one more reason the read-only zone downstream is not optional.
+
+Measure the effect with match-structure:
+
+```bash
+$RUN <match-structure>/scripts/style.py burstiness draft-bursty.md \
+  --baseline draft.md --text
+```
+
+Standing caveat: 0.259 is "Mixed", not "Human", and the venue's detector is not
+Pangram. The score is a proxy. The durable reason to want burstiness is that
+prose which alternates long and short reads better, so do not tune past what
+the author's ear approves.
+
 ## Relationship to the other prose skills
 
 - **filter-tells** detects the tells and, with `writing-voice/`, steers its own
   rewrites toward the same anchors. Use filter-tells when Claude should do the
   rewriting; use this skill when you want a different model's prose.
 - **match-structure** owns voice profiling and the similarity guard this skill
-  reuses for the copy check.
+  reuses for the copy check, and the `burstiness` subcommand that measures what
+  the burstiness pass moves.
 - Run filter-tells over the finished draft afterward regardless — a local model's
   output is not exempt from the tells.
 

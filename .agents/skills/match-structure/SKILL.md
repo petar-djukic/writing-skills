@@ -3,14 +3,16 @@ name: match-structure
 description: >-
   Paragraph and sentence-level style metrics for a research corpus.
   Computes quantitative profiles (sentence/paragraph distributions,
-  passive voice, hedging, word/phrase/idiom frequencies, per-section
+  burstiness as coefficient of variation of sentence length, passive
+  voice, hedging, word/phrase/idiom frequencies, per-section
   metrics), corpus aggregation, term over/underuse comparison, and a
   plagiarism similarity guard (n-gram shingling with baseline exclusion).
   Provides voice anchor retrieval from writing-voice exemplars via tf-idf.
   The section-level driver (compare, blueprint, rewrite) moved to
   match-outline. Triggers: style profile, quantitative metrics, sentence
   stats, frequency tables, plagiarism check, similarity check, voice
-  anchors, corpus profile, word frequency.
+  anchors, corpus profile, word frequency, burstiness, sentence length
+  variance.
 ---
 
 *Split from the original match-structure (GH-291, 2026-07): the
@@ -57,7 +59,41 @@ $RUN <skill>/scripts/style.py --db <db-path> corpus                # aggregate, 
 $RUN <skill>/scripts/style.py --db <db-path> compare <draft.md>    # metric deltas vs corpus
 $RUN <skill>/scripts/style.py freq <paper.md>                      # frequency tables only
 $RUN <skill>/scripts/style.py similarity <file> --against <sources> [--baseline <draft>]
+$RUN <skill>/scripts/style.py burstiness <draft.md> [--baseline <before.md>] [--per-paragraph] [--text]
 ```
+
+### `burstiness` — sentence-length dispersion
+
+`profile` already carries every burstiness field; `burstiness` is the compact
+view of the same numbers, for the places a report wants one line rather than a
+page of JSON. It prints sentence count, mean, stdev, CV, min, max, median,
+p10, p90, and a word-length histogram.
+
+CV — stdev over mean — is the scale-free form, and the one to quote. Stdev
+alone conflates dispersion with register: a paper averaging 28-word sentences
+carries a larger stdev than a newsletter averaging 14 without being any less
+uniform. The percentiles and the histogram say *where* the variance sits,
+which is what a rewrite pass needs, since a document can hit a CV target by
+growing one 60-word sentence and that is not the same prose as one that
+alternates.
+
+`--baseline <before.md>` adds a `delta` block over every scalar, which is the
+before/after column in the humanize report. `--per-paragraph` adds a row per
+multi-sentence paragraph so a rewrite can find the flat stretches instead of
+reshaping prose that already varies. `--text` renders one line per document
+instead of JSON.
+
+Which fields aggregate: `sentence_length_cv`, `_median`, `_p10`, and `_p90`
+are in `METRIC_KEYS`, so they appear in corpus profiles, `compare` deltas, and
+venue `targets`. Min and max are not — a sample's extrema move with sample
+size rather than with style, and averaging them across a corpus produces a
+number that means nothing. The histogram is a dict and does not average at
+all.
+
+filter-tells reports its own `sentence_length_cv` in the structural scan. It
+runs slightly lower than this one, because that script drops sentence
+fragments under four words and those are exactly the ones that widen the
+spread. For a before/after comparison, keep both sides on one tool.
 
 ## voice_anchors.py subcommands
 

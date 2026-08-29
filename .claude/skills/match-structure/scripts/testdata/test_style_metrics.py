@@ -162,6 +162,175 @@ class TestParagraphCohesion(unittest.TestCase):
         self.assertGreater(mr["paragraph_cohesion"], mu["paragraph_cohesion"])
 
 
+class TestPercentileAndHistogram(unittest.TestCase):
+    def test_percentile_endpoints_and_median(self):
+        vals = [1, 2, 3, 4, 5]
+        self.assertEqual(style._percentile(vals, 0.0), 1)
+        self.assertEqual(style._percentile(vals, 1.0), 5)
+        self.assertEqual(style._percentile(vals, 0.5), 3)
+
+    def test_percentile_interpolates(self):
+        # halfway between 10 and 20
+        self.assertAlmostEqual(style._percentile([10, 20], 0.5), 15.0)
+
+    def test_percentile_empty_and_single(self):
+        self.assertEqual(style._percentile([], 0.5), 0)
+        self.assertEqual(style._percentile([7], 0.9), 7.0)
+
+    def test_histogram_bucket_boundaries(self):
+        h = style._histogram([1, 5, 6, 10, 11, 41, 500])
+        self.assertEqual(h["1-5"], 2)
+        self.assertEqual(h["6-10"], 2)
+        self.assertEqual(h["11-15"], 1)
+        self.assertEqual(h["41+"], 2)
+
+    def test_histogram_counts_every_sentence(self):
+        lengths = [3, 8, 17, 22, 29, 35, 60]
+        self.assertEqual(sum(style._histogram(lengths).values()), len(lengths))
+
+
+class TestBurstinessStats(unittest.TestCase):
+    def test_none_on_empty(self):
+        self.assertIsNone(style.burstiness_stats([]))
+
+    def test_cv_is_stdev_over_mean(self):
+        lengths = [5, 10, 15, 20]
+        s = style.burstiness_stats(lengths)
+        self.assertAlmostEqual(s["cv"], s["stdev"] / s["mean"], places=3)
+
+    def test_uniform_text_has_zero_cv(self):
+        s = style.burstiness_stats([12, 12, 12, 12])
+        self.assertEqual(s["cv"], 0)
+        self.assertEqual(s["stdev"], 0)
+
+    def test_extremes_and_percentiles(self):
+        s = style.burstiness_stats([2, 4, 6, 8, 40])
+        self.assertEqual(s["min"], 2)
+        self.assertEqual(s["max"], 40)
+        self.assertEqual(s["median"], 6)
+        self.assertEqual(s["sentences"], 5)
+
+    def test_cv_separates_uniform_from_varied_prose(self):
+        """The discriminative property the burstiness pass exists to move."""
+        uniform = ("The system reads the file and writes the result. "
+                   "The parser walks the tree and emits the nodes. "
+                   "The driver loads the model and returns the text. "
+                   "The gate checks the numbers and keeps the draft.")
+        varied = ("The system reads the file. It works. "
+                  "The parser walks the tree and emits the nodes it finds "
+                  "along the way, which is more work than it sounds. Done. "
+                  "The gate checks numbers.")
+        flat = style.burstiness_stats(style.sentence_lengths(uniform))
+        bursty = style.burstiness_stats(style.sentence_lengths(varied))
+        self.assertLess(flat["cv"], bursty["cv"])
+
+
+class TestBurstinessInProfile(unittest.TestCase):
+    PASSAGE = ("The cat sat on the mat by the door. "
+               "It slept. "
+               "The dog ran through the yard and out the gate before anyone "
+               "could stop him or call his name. "
+               "Rain fell.")
+
+    def test_new_fields_present(self):
+        m = style.text_metrics(self.PASSAGE)
+        for key in ("sentence_length_min", "sentence_length_max",
+                    "sentence_length_median", "sentence_length_p10",
+                    "sentence_length_p90", "sentence_length_histogram"):
+            self.assertIn(key, m, f"missing {key}")
+
+    def test_profile_agrees_with_burstiness_stats(self):
+        m = style.text_metrics(self.PASSAGE)
+        s = style.burstiness_stats(style.sentence_lengths(self.PASSAGE))
+        self.assertEqual(m["sentence_length_cv"], s["cv"])
+        self.assertEqual(m["sentence_length_min"], s["min"])
+        self.assertEqual(m["sentence_length_max"], s["max"])
+        self.assertEqual(m["sentence_length_histogram"], s["histogram"])
+
+    def test_aggregatable_keys_in_metric_keys(self):
+        for key in ("sentence_length_cv", "sentence_length_median",
+                    "sentence_length_p10", "sentence_length_p90"):
+            self.assertIn(key, style.METRIC_KEYS)
+
+    def test_extrema_and_histogram_stay_out_of_metric_keys(self):
+        """METRIC_KEYS entries are averaged across a corpus. A sample minimum
+        and maximum move with sample size rather than with style, and the
+        histogram is a dict — neither survives mean_of()."""
+        for key in ("sentence_length_min", "sentence_length_max",
+                    "sentence_length_histogram"):
+            self.assertNotIn(key, style.METRIC_KEYS)
+
+    def test_metric_keys_all_aggregate(self):
+        m = style.text_metrics(self.PASSAGE)
+        for key in style.METRIC_KEYS:
+            v = m.get(key)
+            self.assertNotIsInstance(v, dict, f"{key} is a dict, cannot aggregate")
+
+
+class TestBurstinessDelta(unittest.TestCase):
+    def test_signed_deltas(self):
+        before = style.burstiness_stats([10, 10, 10, 10])
+        after = style.burstiness_stats([4, 8, 12, 24])
+        d = style.burstiness_delta(before, after)
+        self.assertGreater(d["cv"]["delta"], 0)
+        self.assertEqual(d["cv"]["before"], before["cv"])
+        self.assertEqual(d["cv"]["after"], after["cv"])
+        self.assertEqual(d["max"]["delta"], 14)
+
+    def test_covers_every_scalar(self):
+        s = style.burstiness_stats([3, 9, 21])
+        d = style.burstiness_delta(s, s)
+        self.assertEqual(set(d), set(style.BURSTINESS_SCALARS))
+        self.assertTrue(all(v["delta"] == 0 for v in d.values()))
+
+
+class TestBurstinessProfile(unittest.TestCase):
+    TEXT = ("First paragraph runs long and then stops short. Yes.\n\n"
+            "Second paragraph holds a single sentence of moderate length "
+            "that carries on for a while without any real break in it.\n\n"
+            "Third has two. Both of them are short enough to notice.\n")
+
+    def _write(self):
+        import tempfile
+        fd, path = tempfile.mkstemp(suffix=".md")
+        with os.fdopen(fd, "w") as f:
+            f.write(self.TEXT)
+        self.addCleanup(os.unlink, path)
+        return path
+
+    def test_document_view(self):
+        path = self._write()
+        out = style.burstiness_profile(path)
+        self.assertEqual(out["file"], path)
+        self.assertGreater(out["document"]["sentences"], 3)
+        self.assertNotIn("paragraphs", out)
+
+    def test_per_paragraph_rows_carry_index(self):
+        path = self._write()
+        out = style.burstiness_profile(path, per_paragraph=True)
+        self.assertTrue(out["paragraphs"], "expected at least one multi-sentence paragraph")
+        for row in out["paragraphs"]:
+            self.assertIn("index", row)
+            self.assertGreaterEqual(row["sentences"], 2)
+
+    def test_text_rendering_is_one_line_per_document(self):
+        path = self._write()
+        out = style.burstiness_profile(path)
+        rendered = style.format_burstiness(out)
+        lines = rendered.splitlines()
+        self.assertEqual(len(lines), 2)          # document line + histogram
+        self.assertIn("cv=", lines[0])
+        self.assertTrue(lines[1].startswith("histogram"))
+
+    def test_text_rendering_with_baseline_shows_delta(self):
+        path = self._write()
+        out = style.burstiness_profile(path)
+        rendered = style.format_burstiness(out, baseline=out)
+        self.assertIn("before", rendered)
+        self.assertIn("after", rendered)
+        self.assertIn("delta", rendered)
+
+
 class TestExistingMetricsUnchanged(unittest.TestCase):
     """Verify existing fields still appear and behave the same."""
 

@@ -105,19 +105,36 @@ def check_server(endpoint, model):
 
 
 def generate(prompt, endpoint=DEFAULT_ENDPOINT, model=DEFAULT_MODEL,
-             temperature=0.7, timeout=DEFAULT_TIMEOUT):
+             temperature=0.7, timeout=DEFAULT_TIMEOUT, system=None, think=None):
     """One raw generation call. Raises RuntimeError; never falls back.
 
     Factored out of rewrite() (GH-225) so tighten-style's driver shares the
     transport, the timeout guidance, and the no-fallback rule instead of
     growing a second Ollama client.
+
+    ``system`` sends a system prompt alongside the user prompt. ``think``
+    toggles Ollama's reasoning field: pass False for a thinking model whose
+    chain-of-thought would otherwise land in the response. Both are omitted
+    from the body when None, so a server that predates either field sees the
+    request it saw before.
+
+    Why the HTTP API and not `ollama run` (GH-129): gemma4:31b-cloud is a
+    thinking model, and driving it through a captured pipe returned
+    chain-of-thought plus terminal control codes and mid-word backspace
+    artifacts. The corrupted text measured 0.428 on Pangram against 0.259 for
+    the clean rerun, so the transport silently changed the finding.
     """
-    body = json.dumps({
+    payload = {
         "model": model,
         "prompt": prompt,
         "stream": False,
         "options": {"temperature": float(temperature)},
-    }).encode()
+    }
+    if system is not None:
+        payload["system"] = system
+    if think is not None:
+        payload["think"] = bool(think)
+    body = json.dumps(payload).encode()
     req = urllib.request.Request(f"{endpoint}/api/generate", data=body,
                                  headers={"Content-Type": "application/json"})
     try:

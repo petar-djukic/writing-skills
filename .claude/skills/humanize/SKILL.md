@@ -47,7 +47,8 @@ The pipeline is a **cycle**, not a line:
 draft (with declared/locked spans)
   ┌─> generative chain, lock-respecting
   │     structural step -> filter-tells -> match-voice (SEEDED, Phase 3)
-  │     -> tighten-style -> inject-vernacular (terminal for this cycle)
+  │     -> burstiness (optional) -> tighten-style
+  │     -> inject-vernacular (terminal for this cycle)
   │
   ├─> read-only zone
   │     reverse-outline annotate + rank, Pangram, critic-panel, then
@@ -79,6 +80,18 @@ The only generative stage that survived cold review and improved the
 article ran *after* a socratic rewrite, two critic panels and a reverse
 outline. Run before that work, the same recipe gated 0.609 instead of
 0.370.
+
+**The burstiness pass** (GH-129) is an optional pre-terminal stage in the
+same slot as match-voice: match-voice's `burstiness.py` raises
+sentence-length variance through the second model family, behind the same
+gate. It earns its position the same way the seed does — measured only on
+documents already through the chain. On pipeline-state prose it moved
+Pangram 38.1% -> 29.1% (and, at an earlier state of the same article,
+0.445 -> 0.259) with a rhythm-held control within noise both times; run
+on a raw draft it can do nothing (a saturated 100% baseline has no room
+to fall), so running it early wastes a cycle. The CV printed at each
+measurement point is how you see whether it has anything left to do:
+match-voice's SKILL.md carries the invocation and the gate details.
 
 ### The trigger: when to run the chain again
 
@@ -248,11 +261,20 @@ tighten.py command line, or configure them in the venue profile.
 
    # Style baseline
    $RUN <match-structure>/scripts/style.py profile <article.md>
+
+   # Burstiness baseline (one line; the full numbers are in the profile)
+   $RUN <match-structure>/scripts/style.py burstiness <article.md> --text
    ```
 
-   Record the baseline Pangram scores (human %, mean window score, verdict)
-   and the full `text_metrics()` output. These are the "before" column in the
-   final report. With the `skip` choice, capture the baseline and proceed to
+   Record the baseline Pangram scores (human %, mean window score, verdict),
+   the full `text_metrics()` output, and the burstiness line. These are the
+   "before" column in the final report. **Print the CV next to the Pangram
+   score at every measurement point below, not only in the final table** —
+   sentence-length dispersion and AI-phrase density are the two features a
+   plain stylometric model uses, and a step that moves the score without
+   moving CV moved something else (GH-129: a diction-only control arm held
+   CV at 0.621 and Pangram at 0.436, while the same model reshaping rhythm
+   took CV to 0.690 and Pangram to 0.259). With the `skip` choice, capture the baseline and proceed to
    Phase 2. In venue mode, capture the Pangram baseline only when the
    profile's gates include `pangram`.
 
@@ -305,9 +327,12 @@ Measure after the structural step:
 $RUN <agent-dir>/scripts/pangram_report.py scan --article <step1-output.md>
 
 $RUN <match-structure>/scripts/style.py profile <step1-output.md>
+
+$RUN <match-structure>/scripts/style.py burstiness <step1-output.md> \
+  --baseline <article.md> --text
 ```
 
-Record as the "after step 1" column.
+Record as the "after step 1" column, Pangram and CV together.
 
 ### Phase 2: filter-tells semantic cleanup
 
@@ -360,9 +385,12 @@ Measure after filter-tells:
 $RUN <agent-dir>/scripts/pangram_report.py scan --article <step1-output.md>
 
 $RUN <match-structure>/scripts/style.py profile <step1-output.md>
+
+$RUN <match-structure>/scripts/style.py burstiness <step1-output.md> \
+  --baseline <article.md> --text
 ```
 
-Record as the "after-tells" column.
+Record as the "after-tells" column, Pangram and CV together.
 
 ### Phase 3: seeded iteration (seed in a second family, then iterate)
 
@@ -630,6 +658,8 @@ omit the Pangram category entirely when that gate is absent.
 | Sentence length mean | — | — | — | — | — |
 | Sentence length stdev | — | — | — | — | — |
 | Sentence length CV | — | — | — | — | — |
+| Sentence length min / max | — | — | — | — | — |
+| Sentence length p10 / median / p90 | — | — | — | — | — |
 | Mean clause length | — | — | — | — | — |
 | Passive / 100 sentences | — | — | — | — | — |
 | Paragraph cohesion | — | — | — | — | — |

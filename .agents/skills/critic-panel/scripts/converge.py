@@ -16,6 +16,13 @@ forcing one into the other's shape yields a line edit for a conceptual defect.
 
     kind = suggest        kind = verdict
 
+Both kinds may also carry `## Defect classes`, where a critic that named a
+pattern in its diagnosis declares it as a class with the instances it is
+quoting and the scope still to sweep. A diagnosis is prose and nothing reads
+it; the suggestions cover whichever instances the critic happened to quote.
+That gap is what this section closes, by making the class machine-visible and
+per-instance coverage computable (GH-127).
+
 Both kinds store their verbatim field under `quote`, which is the only thing
 grouping reads. That is what lets two diagnosticians quoting one passage
 converge exactly as two adders targeting one sentence do — and lets a
@@ -78,6 +85,18 @@ def parse(path):
         if all(f in fields for f in spec["required"]):
             items.append({"critic": name, "kind": kind,
                           "quote": fields[spec["quote"]], **fields})
+    classes = []
+    for block in re.split(r"^### +\S+\s*$", sect.get("defect classes", ""),
+                          flags=re.M)[1:]:
+        fields = dict(re.findall(r"^(Class|Sweep):\s*(.+?)\s*$", block, re.M))
+        # `Instance:` repeats; dict() would keep only the last, and the last
+        # is not the one that goes unfixed.
+        instances = re.findall(r"^Instance:\s*(.+?)\s*$", block, re.M)
+        if "Class" in fields:
+            classes.append({"critic": name, "class": fields["Class"],
+                            "instances": instances,
+                            "sweep": fields.get("Sweep", "")})
+
     return {"critic": name, "kind": kind, "path": path,
             # What the file actually carried, so a refusal can name it rather
             # than guess. `kind` alone cannot: absent both headings it reads
@@ -89,6 +108,7 @@ def parse(path):
             "move": sect.get("paragraph move", ""),
             "verdict": sect.get("verdict", ""),
             "items": items,
+            "classes": classes,
             # `suggestions` kept as the suggest-kind view; main() counts it
             # and callers predating GH-97 read it.
             "suggestions": [i for i in items if i["kind"] == "suggest"]}
@@ -114,6 +134,38 @@ def group(items_or_reports):
     return groups
 
 
+def covered(instance, items):
+    """Is this instance already the target of a numbered suggestion?
+
+    The whole point of the section: a class the critic named, minus the
+    instances its suggestions happen to quote, is what an author applying the
+    sheet leaves in the draft. On substack GH-235 that residue was the
+    article's first sentence.
+    """
+    return any(difflib.SequenceMatcher(None, norm(instance),
+                                       norm(i["quote"])).ratio() >= THRESHOLD
+               for i in items)
+
+
+def collect_classes(reports):
+    """Every declared class, in report order. Deliberately not grouped.
+
+    Two critics naming one pattern write two paraphrases, not one quote, so
+    the quote matcher does not apply and no cheap one replaces it: measured on
+    real class lines, content-word overlap scores 0.29 for a matching pair
+    ("paragraph opens by labelling its own content" / "a paragraph opener that
+    labels the paragraph's content") and 0.29 for a non-matching one ("a
+    sentence that announces its paragraph" / "a paragraph closer that restates
+    its first sentence"). No threshold separates those, and a false merge
+    hides a class, which is the failure this section exists to prevent.
+
+    Merging paraphrases is a semantic judgment. It belongs to the sweep step,
+    which has a model in it; this script stays deterministic so an author can
+    argue with it.
+    """
+    return [c for r in reports for c in r["classes"]]
+
+
 def order(reports, roster):
     """Reports in roster order; anything unnamed keeps file order, last.
 
@@ -135,7 +187,7 @@ def _body(s):
     return f"{s[spec['body']]} — *{s.get(spec['why'], '')}*"
 
 
-def render(reports, groups):
+def render(reports, groups, classes=None):
     """The sheet.
 
     A suggest-only run renders exactly what it rendered before GH-97 — same
@@ -173,6 +225,8 @@ def render(reports, groups):
         for i, s in enumerate(mine, 1):
             out += [f"{i}. \"{s['quote']}\" → {_body(s)}"]
         out += [""]
+
+    out += _classes_block(reports, classes or [])
 
     moves = [r for r in reports if r["move"]]
     if moves:
@@ -224,6 +278,47 @@ def render(reports, groups):
                 "which fix most changes the draft is the author's call, and "
                 "a two-critic finding may outrank a three-critic one.", ""]
     return "\n".join(out)
+
+
+def _classes_block(reports, classes):
+    """The declared classes, each instance marked against the numbered items.
+
+    Coverage is computed against EVERY critic's items, not the declaring
+    critic's alone: the question an author asks of this section is "if I apply
+    this sheet, what is left", and any critic's suggestion fixes the sentence
+    it quotes.
+
+    Rendered after the numbered sections, so `NOT COVERED` reads against
+    suggestions the author has already seen, and before the paragraph moves,
+    with which it shares an altitude. Roster order within, as everywhere else
+    in the sheet.
+    """
+    if not classes:
+        return []
+    items = [i for r in reports for i in r["items"]]
+    rank = {r["critic"]: i for i, r in enumerate(reports)}
+    marked = [(c, [(inst, covered(inst, items)) for inst in c["instances"]])
+              for c in sorted(classes,
+                              key=lambda c: rank.get(c["critic"], len(rank)))]
+    loose = sum(1 for _, insts in marked for _, ok in insts if not ok)
+    out = [f"## Defect classes ({len(classes)} named, {loose} "
+           f"instance{'' if loose == 1 else 's'} not covered by any numbered "
+           f"suggestion)", ""]
+    for c, insts in marked:
+        out += [f"### \"{c['class']}\"", "", f"- named by: {c['critic']}"]
+        for inst, ok in insts:
+            out += [f"- {'covered' if ok else '**NOT COVERED**'}: "
+                    f"\"{inst}\""]
+        if c["sweep"]:
+            out += [f"- sweep: {c['sweep']}"]
+        out += [""]
+    out += ["Applying the numbered suggestions fixes the instances marked "
+            "covered. The rest stay in the draft, and so does whatever the "
+            "sweep scopes turn up — a class is named once and lives wherever "
+            "it lives, not only where a critic happened to quote it. Classes "
+            "are listed as declared, never merged: two critics naming one "
+            "pattern in different words is for the sweep to recognise.", ""]
+    return out
 
 
 def unparseable(report):
@@ -283,13 +378,26 @@ def main():
     reports = order([parse(p) for p in a.reports],
                     a.roster.split(",") if a.roster else None)
     refuse(reports)
-    sheet = render(reports, group(reports))
+    classes = collect_classes(reports)
+    sheet = render(reports, group(reports), classes)
     with open(a.out, "w", encoding="utf-8") as f:
         f.write(sheet)
     n = sum(len(r["items"]) for r in reports)
     kinds = {r["kind"] for r in reports}
-    print(f"{a.out}: {len(reports)} critics, {n} "
-          f"{'findings' if kinds == {'verdict'} else 'suggestions'}")
+    line = (f"{a.out}: {len(reports)} critics, {n} "
+            f"{'findings' if kinds == {'verdict'} else 'suggestions'}")
+    if classes:
+        items = [i for r in reports for i in r["items"]]
+        loose = sum(1 for c in classes for inst in c["instances"]
+                    if not covered(inst, items))
+        line += (f", {len(classes)} defect class"
+                 f"{'' if len(classes) == 1 else 'es'}"
+                 f" ({loose} instance{'' if loose == 1 else 's'} uncovered)")
+    else:
+        # Silence here is how GH-235 shipped: every suggestion applied, the
+        # class the diagnosis named still in the draft, nothing saying so.
+        line += ", no defect classes declared"
+    print(line)
 
 
 if __name__ == "__main__":

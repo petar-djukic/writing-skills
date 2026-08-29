@@ -219,6 +219,74 @@ def _clause_lengths(sentences):
     return lengths
 
 
+HISTOGRAM_BUCKETS = [
+    ("1-5", 1, 5), ("6-10", 6, 10), ("11-15", 11, 15), ("16-20", 16, 20),
+    ("21-25", 21, 25), ("26-30", 26, 30), ("31-40", 31, 40),
+    ("41+", 41, None),
+]
+
+
+def _percentile(values, q):
+    """Linear-interpolated percentile over an unsorted list of numbers."""
+    if not values:
+        return 0
+    ordered = sorted(values)
+    if len(ordered) == 1:
+        return float(ordered[0])
+    pos = (len(ordered) - 1) * q
+    lo = int(math.floor(pos))
+    hi = int(math.ceil(pos))
+    if lo == hi:
+        return float(ordered[lo])
+    return ordered[lo] + (ordered[hi] - ordered[lo]) * (pos - lo)
+
+
+def _histogram(lengths):
+    counts = {label: 0 for label, _, _ in HISTOGRAM_BUCKETS}
+    for n in lengths:
+        for label, lo, hi in HISTOGRAM_BUCKETS:
+            if n >= lo and (hi is None or n <= hi):
+                counts[label] += 1
+                break
+    return counts
+
+
+def sentence_lengths(text):
+    """Word counts of each sentence in a block of prose."""
+    return [len(words_of(s)) for s in split_sentences(strip_markdown(text))]
+
+
+def burstiness_stats(lengths):
+    """Sentence-length dispersion: the burstiness half of the stylometric pair.
+
+    CV (stdev/mean) is the scale-free form, and the one the burstiness
+    experiment moved (0.621 -> 0.690 at a 0.186 Pangram drop, GH-129). Stdev
+    alone conflates dispersion with register: a paper whose sentences average
+    28 words carries a larger stdev than a newsletter at 14 without being any
+    less uniform. Percentiles and the histogram say WHERE the variance sits,
+    which is what a rewrite pass needs — a document can hit the target CV by
+    growing one 60-word sentence, and that is not the same prose as one that
+    alternates.
+    """
+    n = len(lengths)
+    if n == 0:
+        return None
+    mean = sum(lengths) / n
+    stdev = math.sqrt(sum((x - mean) ** 2 for x in lengths) / n)
+    return {
+        "sentences": n,
+        "mean": round(mean, 2),
+        "stdev": round(stdev, 2),
+        "cv": round(stdev / mean, 4) if mean > 0 else 0,
+        "min": min(lengths),
+        "max": max(lengths),
+        "median": round(_percentile(lengths, 0.5), 2),
+        "p10": round(_percentile(lengths, 0.10), 2),
+        "p90": round(_percentile(lengths, 0.90), 2),
+        "histogram": _histogram(lengths),
+    }
+
+
 def text_metrics(text):
     """Compute style metrics for a block of text."""
     clean = strip_markdown(text)
@@ -231,6 +299,7 @@ def text_metrics(text):
         return None
 
     sent_lengths = [len(words_of(s)) for s in sentences]
+    burst = burstiness_stats(sent_lengths)
     mean_sl = sum(sent_lengths) / n_sent
     var_sl = sum((x - mean_sl) ** 2 for x in sent_lengths) / n_sent
 
@@ -338,6 +407,12 @@ def text_metrics(text):
         "yules_k": round(yules_k, 2),
         # Syntactic
         "sentence_length_cv": round(sent_cv, 4),
+        "sentence_length_min": burst["min"],
+        "sentence_length_max": burst["max"],
+        "sentence_length_median": burst["median"],
+        "sentence_length_p10": burst["p10"],
+        "sentence_length_p90": burst["p90"],
+        "sentence_length_histogram": burst["histogram"],
         "mean_clause_length": round(mean_clause, 2),
         # Stylometrics
         "function_word_ratio": round(func_ratio, 4),
@@ -521,7 +596,9 @@ METRIC_KEYS = [
     "hedges_per_1000_words", "citations_per_paragraph",
     "flesch_reading_ease", "flesch_kincaid_grade", "gunning_fog", "smog_index",
     "type_token_ratio", "corrected_ttr", "hapax_ratio", "yules_k",
-    "sentence_length_cv", "mean_clause_length",
+    "sentence_length_cv", "sentence_length_median",
+    "sentence_length_p10", "sentence_length_p90",
+    "mean_clause_length",
     "function_word_ratio", "paragraph_cohesion",
 ]
 
@@ -747,10 +824,85 @@ def similarity_report(subject_text, against, n=8, baseline_text=None):
 # Subcommands
 # --------------------------------------------------------------------------- #
 
+def burstiness_profile(path, per_paragraph=False, raw=False):
+    """Compact per-document burstiness view: the whole document, optionally
+    each paragraph. Paragraph rows exist so a rewrite pass can find the flat
+    stretches instead of reshaping prose that is already varied."""
+    text = read_prose(path, raw=raw)
+    doc = burstiness_stats(sentence_lengths(text))
+    out = {"file": path, "document": doc}
+    if per_paragraph:
+        rows = []
+        for i, para in enumerate(split_paragraphs(text)):
+            stats = burstiness_stats(sentence_lengths(para))
+            if stats and stats["sentences"] >= 2:
+                stats["index"] = i
+                rows.append(stats)
+        out["paragraphs"] = rows
+    return out
+
+
+BURSTINESS_SCALARS = ["sentences", "mean", "stdev", "cv", "min", "max",
+                      "median", "p10", "p90"]
+
+
+def burstiness_delta(before, after):
+    """Before/after deltas over the scalar burstiness fields."""
+    deltas = {}
+    for k in BURSTINESS_SCALARS:
+        b, a = before.get(k), after.get(k)
+        if b is None or a is None:
+            continue
+        deltas[k] = {"before": b, "after": a, "delta": round(a - b, 4)}
+    return deltas
+
+
+def _burstiness_line(label, stats):
+    return (f"{label}  sentences={stats['sentences']}  mean={stats['mean']}  "
+            f"sd={stats['stdev']}  cv={stats['cv']}  min={stats['min']}  "
+            f"max={stats['max']}  median={stats['median']}  "
+            f"p10={stats['p10']}  p90={stats['p90']}")
+
+
+def format_burstiness(result, baseline=None):
+    """One-line-per-document text rendering, for report tables."""
+    lines = []
+    if baseline:
+        lines.append(_burstiness_line(f"before  {baseline['file']}",
+                                      baseline["document"]))
+        lines.append(_burstiness_line(f"after   {result['file']}",
+                                      result["document"]))
+        d = burstiness_delta(baseline["document"], result["document"])
+        lines.append("delta   " + "  ".join(
+            f"{k}={v['delta']:+g}" for k, v in d.items()))
+    else:
+        lines.append(_burstiness_line(result["file"], result["document"]))
+    hist = result["document"]["histogram"]
+    lines.append("histogram  " + "  ".join(f"{k}={v}" for k, v in hist.items()))
+    for row in result.get("paragraphs", []):
+        lines.append(f"  para {row['index']:>3}  " + _burstiness_line("", row).strip())
+    return "\n".join(lines)
+
+
 def cmd_profile(args):
     profiles = [profile_file(f, raw=args.raw) for f in args.files]
     out = profiles[0] if len(profiles) == 1 else profiles
     print(json.dumps(out, indent=2, ensure_ascii=False))
+
+
+def cmd_burstiness(args):
+    result = burstiness_profile(args.file, per_paragraph=args.per_paragraph,
+                                raw=args.raw)
+    baseline = None
+    if args.baseline:
+        baseline = burstiness_profile(args.baseline, raw=args.raw)
+        result["baseline"] = baseline["file"]
+        result["delta"] = burstiness_delta(baseline["document"],
+                                           result["document"])
+    if args.text:
+        print(format_burstiness(result, baseline))
+    else:
+        print(json.dumps(result, indent=2, ensure_ascii=False))
 
 
 def cmd_corpus(args):
@@ -819,6 +971,19 @@ def main():
     pr.add_argument("--raw", action="store_true",
                     help="include YAML front matter in metrics (default: strip it)")
     pr.set_defaults(func=cmd_profile)
+
+    bu = sub.add_parser("burstiness",
+                        help="sentence-length dispersion (mean, sd, CV, min/max, histogram)")
+    bu.add_argument("file")
+    bu.add_argument("--baseline", default=None,
+                    help="earlier version of the same document; report before/after deltas")
+    bu.add_argument("--per-paragraph", action="store_true",
+                    help="also report per-paragraph dispersion (locates the flat stretches)")
+    bu.add_argument("--raw", action="store_true",
+                    help="include YAML front matter in metrics (default: strip it)")
+    bu.add_argument("--text", action="store_true",
+                    help="one-line text rendering instead of JSON")
+    bu.set_defaults(func=cmd_burstiness)
 
     co = sub.add_parser("corpus", help="aggregate corpus profile, write voice-profile.json")
     co.add_argument("--all", action="store_true",
