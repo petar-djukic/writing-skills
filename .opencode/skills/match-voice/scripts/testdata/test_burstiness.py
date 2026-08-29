@@ -42,12 +42,16 @@ def write(text, suffix=".md"):
     return path
 
 
-def echo(text):
-    """A generator that returns the paragraph unchanged."""
-    def gen(prompt, **kw):
-        return prompt.split("Paragraph:\n", 1)[1].rsplit(
-            "\n\nRewritten paragraph:", 1)[0]
-    return gen
+def para_of(prompt):
+    """The paragraph a prompt carries, minus the conditional lock rule.
+
+    A fake generator that returns the raw slice would hand the driver the
+    rule text as prose and trip the word-count band, which is a property of
+    the test double rather than of the pass.
+    """
+    body = prompt.split("Paragraph:\n", 1)[1].rsplit(
+        "\n\nRewritten paragraph:", 1)[0]
+    return body.split("\n\nThe text contains ", 1)[0].rstrip()
 
 
 # --------------------------------------------------------------------------- #
@@ -189,8 +193,7 @@ def test_run_splits_sentences_and_reports_a_cv_rise():
     out = path.replace(".md", "-out.md")
 
     def splitter(prompt, **kw):
-        para = prompt.split("Paragraph:\n", 1)[1].rsplit(
-            "\n\nRewritten paragraph:", 1)[0]
+        para = para_of(prompt)
         # split on the first "and", producing one short sentence and one long
         return para.replace(" and ", ". ", 1)
 
@@ -207,8 +210,7 @@ def test_a_rejected_paragraph_keeps_its_original_text():
     out = path.replace(".md", "-out.md")
 
     def drops_the_citation(prompt, **kw):
-        para = prompt.split("Paragraph:\n", 1)[1].rsplit(
-            "\n\nRewritten paragraph:", 1)[0]
+        para = para_of(prompt)
         return para.replace("[@djukic-2007] ", "")
 
     report = burstiness.run(path, out_path=out, generate_fn=drops_the_citation)
@@ -227,8 +229,7 @@ def test_control_arm_sends_the_control_prompt():
 
     def capture(prompt, **kw):
         seen.append(kw.get("system"))
-        return prompt.split("Paragraph:\n", 1)[1].rsplit(
-            "\n\nRewritten paragraph:", 1)[0]
+        return para_of(prompt)
 
     report = burstiness.run(path, out_path=out, control=True, generate_fn=capture)
     assert report["arm"] == "control"
@@ -245,8 +246,7 @@ def test_burstiness_arm_sends_the_burstiness_prompt():
 
     def capture(prompt, **kw):
         seen.append(kw)
-        return prompt.split("Paragraph:\n", 1)[1].rsplit(
-            "\n\nRewritten paragraph:", 1)[0]
+        return para_of(prompt)
 
     burstiness.run(path, out_path=out, generate_fn=capture)
     assert all(kw["system"] == burstiness.BURSTINESS_SYSTEM for kw in seen)
@@ -269,8 +269,7 @@ enough that the pass would otherwise rewrite it without a second thought.
 
     def capture(prompt, **kw):
         seen.append(prompt)
-        return prompt.split("Paragraph:\n", 1)[1].rsplit(
-            "\n\nRewritten paragraph:", 1)[0].replace(" and ", ". ", 1)
+        return para_of(prompt).replace(" and ", ". ", 1)
 
     burstiness.run(path, out_path=out, generate_fn=capture)
     assert seen, "no paragraph was sent"
@@ -294,8 +293,7 @@ def test_inline_lock_survives_a_rewrite():
     out = path.replace(".md", "-out.md")
 
     def splitter(prompt, **kw):
-        para = prompt.split("Paragraph:\n", 1)[1].rsplit(
-            "\n\nRewritten paragraph:", 1)[0]
+        para = para_of(prompt)
         return para.replace(" and ", ". ", 1)
 
     report = burstiness.run(path, out_path=out, generate_fn=splitter)
@@ -358,6 +356,54 @@ def test_generate_sends_system_and_think_only_when_asked():
         assert captured["body"]["stream"] is False
     finally:
         rewrite.urllib.request.urlopen = real
+
+
+def test_lock_rule_is_absent_when_the_paragraph_has_no_tokens():
+    """Naming the token unconditionally is what taught the model to invent it."""
+    prompt = burstiness.build_prompt("Plain prose with no tokens at all.",
+                                     SPAN_LOCKS)
+    assert "LOCK" not in prompt, prompt
+    assert "[[LOCK-n]]" not in burstiness.BURSTINESS_SYSTEM
+    assert "[[LOCK-n]]" not in burstiness.CONTROL_SYSTEM
+
+
+def test_lock_rule_appears_with_a_count_when_tokens_are_present():
+    prompt = burstiness.build_prompt("Before [[LOCK-1]] and after [[LOCK-2]].",
+                                     SPAN_LOCKS)
+    assert "2 token(s)" in prompt, prompt
+    assert prompt.rstrip().endswith("Rewritten paragraph:")
+
+
+def test_an_invented_lock_token_is_still_rejected():
+    """The prompt no longer invites it; the gate still refuses it."""
+    ok, status = judge("Plain prose with no tokens at all in it anywhere.",
+                       "Plain prose [[LOCK-1]] with no tokens in it anywhere.")
+    assert not ok and status["reason"] == "lock-token", status
+
+
+def test_cv_is_measured_on_prose_not_on_the_raw_file():
+    """Headings and code fences are not sentences."""
+    noisy = ARTICLE + """
+## A heading that is not a sentence
+
+```python
+x = 1
+```
+
+| a | b |
+|---|---|
+| 1 | 2 |
+"""
+    plain = write(ARTICLE)
+    loud = write(noisy)
+    def explode(*a, **kw):
+        raise AssertionError("dry run called the model")
+    a = burstiness.run(plain, dry_run=True, generate_fn=explode)
+    b = burstiness.run(loud, dry_run=True, generate_fn=explode)
+    assert a["burstiness"]["before"] == b["burstiness"]["before"], (
+        "markup changed the burstiness reading")
+    os.unlink(plain)
+    os.unlink(loud)
 
 
 def main():

@@ -79,7 +79,6 @@ Rules, all mandatory:
 - Split some long sentences into a long one plus a short punchy one. Occasionally use a deliberate short fragment.
 - Keep at least one genuinely long sentence per paragraph so the contrast is real.
 {BAN_RULES} Only reshape sentence boundaries and length.
-- Keep every [[LOCK-n]] token exactly as it appears, once each. They are not words.
 - Output ONLY the rewritten paragraph. No preamble, no quotes, no explanation."""
 
 CONTROL_SYSTEM = f"""You are an editor lightly copyediting a paragraph. Your ONLY job is to fix any awkwardness while keeping the meaning and sentence structure essentially the same.
@@ -89,8 +88,17 @@ Rules, all mandatory:
 - Do not add or remove information. Do not summarize.
 - Do not change the sentence lengths or rhythm. Keep the same number of sentences.
 {BAN_RULES}
-- Keep every [[LOCK-n]] token exactly as it appears, once each. They are not words.
 - Output ONLY the rewritten paragraph. No preamble, no quotes, no explanation."""
+
+# Appended only to paragraphs that actually carry an anchor token. Naming the
+# token unconditionally teaches the model to produce one: on the first
+# validation run, 6 of 21 paragraphs were rejected for inventing [[LOCK-n]] in
+# a draft with zero locked spans (GH-129). A rule about a thing the text does
+# not contain is an instruction to add it.
+LOCK_RULE = ("\n\nThe text contains {n} token(s) of the form [[LOCK-n]]. Reproduce "
+             "each one exactly as it appears, once each, in the same order. "
+             "They are markers, not words: do not translate, rename, or "
+             "invent them.")
 
 LEAD_IN = re.compile(
     r"^\s*(?:rewritten paragraph|rewrite|output|paragraph|result|here(?:'s| is)"
@@ -141,6 +149,28 @@ def _style():
         return style
     except ImportError as e:
         sys.exit(f"could not import style.py from {sibling}: {e}")
+
+
+def _prose_burstiness(style_mod, doc):
+    """CV over the paragraphs the pass can touch, never the raw file.
+
+    A document's headings, code fences, and table rows are not sentences, and
+    counting them buries the number this pass exists to move: the first
+    validation draft measured CV 1.399 whole-file against 0.503 prose-only.
+    This is the same view pangram_report builds its payload from, so the two
+    measurements compare.
+    """
+    prose = "\n\n".join(p.text for p in doc.paragraphs)
+    return style_mod.burstiness_stats(style_mod.sentence_lengths(prose))
+
+
+def build_prompt(paragraph, span_locks):
+    prompt = f"Paragraph:\n{paragraph}\n\nRewritten paragraph:"
+    n = len(span_locks.tokens_in(paragraph))
+    if n:
+        prompt = (f"Paragraph:\n{paragraph}" + LOCK_RULE.format(n=n)
+                  + "\n\nRewritten paragraph:")
+    return prompt
 
 
 def normalize(text):
@@ -241,8 +271,7 @@ def run(article, out_path=None, control=False, model=DEFAULT_MODEL,
     generate_fn = generate_fn or _rw.generate
 
     doc = pd.ProseDocument.open(article)
-    before_text = doc.text()
-    before = style_mod.burstiness_stats(style_mod.sentence_lengths(before_text))
+    before = _prose_burstiness(style_mod, doc)
 
     paragraphs = []
     for para in doc.paragraphs:
@@ -277,7 +306,7 @@ def run(article, out_path=None, control=False, model=DEFAULT_MODEL,
         if row["verdict"] != "eligible":
             continue
         try:
-            raw = generate_fn(f"Paragraph:\n{para.text}\n\nRewritten paragraph:",
+            raw = generate_fn(build_prompt(para.text, span_locks),
                               endpoint=endpoint, model=model,
                               temperature=temperature, timeout=timeout,
                               system=system, think=False)
@@ -304,8 +333,7 @@ def run(article, out_path=None, control=False, model=DEFAULT_MODEL,
         sys.exit(f"locked spans lost in {out_path}: {lost}. "
                  "The output is on disk and must not be used.")
 
-    after = style_mod.burstiness_stats(
-        style_mod.sentence_lengths(pd.ProseDocument.open(out_path).text()))
+    after = _prose_burstiness(style_mod, pd.ProseDocument.open(out_path))
     counts = {}
     for row in paragraphs:
         counts[row["verdict"]] = counts.get(row["verdict"], 0) + 1
