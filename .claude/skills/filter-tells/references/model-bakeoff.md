@@ -49,6 +49,14 @@ analytical detect-and-fix that the large gpt-oss model does best, whereas Cohere
 on filter-tells' rules-heavy rewrite prompt (4 meta-leak lines). Cohere is NOT a
 filter-tells default candidate.
 
+Refinement (GH-156): those meta-leak lines are not a Cohere trait. A 76-call
+sweep found the same rule-echo on 4 of 19 paragraphs for *both* Cohere families,
+and the other 15 clean for both — it is triggered by the paragraph, not the
+model. The incumbents were not run against those four items, so this bake-off
+does not establish that they survive them. See
+[cohere-bakeoff.md](../../match-voice/references/cohere-bakeoff.md), "Where the
+leak actually lives".
+
 Voice note: gpt-oss's output drifted toward generic register ("Massive churn
 makes any meaningful review impossible"). That is acceptable HERE and only here —
 filter-tells deliberately produces neutral prose ("no tells, but no voice

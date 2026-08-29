@@ -398,18 +398,28 @@ Ollama path stays the default, and nothing routes to Cohere unless the model id
 asks for it. Because the transport lives in `generate()`, the same prefix works
 from `drive.py`, filter-tells, and burstiness — no stage grows its own client.
 
-- **Non-reasoning variants only, and `command-a-plus` is denylisted.**
-  `cohere:command-a-reasoning-*` is refused (chain-of-thought lands in the
-  captured text, GH-129). `command-a-plus-05-2026` is also refused: on the long
-  match-voice prompt it leaks reasoning and echoes the prompt's own rules into
-  the output (GH-138), which the name-based reasoning guard misses. Use
-  `command-a-03-2025`. Output is sanitized of stray instruction-echo lines as
-  defense in depth.
+- **Reasoning variants are allowed; do not starve the thinking budget.**
+  Cohere returns reasoning in its own `type: "thinking"` content block, and the
+  backend reads blocks by type, so a scratchpad cannot reach the prose whatever
+  the model is called (GH-154). The refusals this replaces — a `"reasoning"`
+  name substring and a denylist naming `command-a-plus` — rested on the opposite
+  belief and are gone (GH-155). What does put a scratchpad in the answer is a
+  thinking budget too small to finish inside: `token_budget: 1` produced a
+  2-character thinking block and a 6590-character answer opening
+  `<EOS_TOKEN>We need to rewrite the passage:`. The default sends no `thinking`
+  field, and a configured `COHERE_THINKING_BUDGET` is clamped up to
+  `COHERE_MIN_THINKING_BUDGET`. Output is still sanitized of stray
+  instruction-echo lines as defense in depth.
+- **`COHERE_THINKING=disabled` is opt-in and usually wrong.** Disabling thinking
+  on a reasoning model gives a deterministic 422 `INVALID_TOOL_GENERATION` on a
+  prompt the size of match-voice's (7/7 measured; 4/4 clean on a short prompt).
+  That 422 is not retried — it fails identically every time — and `check_server`
+  warns when the variable is set.
 - **Its critic defaults to a non-Cohere model.** Cohere critiques itself into
   unparsable verdicts (GH-138: 9 of 24), so a `cohere:` rewrite model defaults
   its critic to `gemma4:31b-cloud` (override with `--critic-model` or
-  `COHERE_CRITIC_MODEL`). Transient API errors (429/5xx/timeout) are retried
-  (`COHERE_MAX_RETRIES`, default 3).
+  `COHERE_CRITIC_MODEL`). Transient API errors (429/5xx/timeout, and 422s other
+  than `INVALID_TOOL_GENERATION`) are retried (`COHERE_MAX_RETRIES`, default 3).
 - **Key** comes from `COHERE_API_KEY`, or from the JSON file named by
   `COHERE_SECRETS_FILE` (key `cohere`). Never hardcoded, never committed. The
   no-Claude-fallback contract holds: a missing key or an unreachable endpoint

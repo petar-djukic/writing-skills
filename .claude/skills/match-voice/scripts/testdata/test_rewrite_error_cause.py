@@ -30,9 +30,13 @@ class ClassifyRewriteError(unittest.TestCase):
             "timeout")
 
     def test_refused_model(self):
+        # The denylist that used to produce this bucket is gone (GH-155). Its
+        # replacement is the one refusal that still recurs for every paragraph:
+        # a request configuration Cohere rejects deterministically.
         self.assertEqual(
             drive.classify_rewrite_error(
-                "refusing denylisted Cohere model 'command-a-plus-05-2026'."),
+                "Cohere is refusing this request: HTTP 422 "
+                "INVALID_TOOL_GENERATION on 'command-a-plus-05-2026'."),
             "refused-model")
 
     def test_other_and_empty(self):
