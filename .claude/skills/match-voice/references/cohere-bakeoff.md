@@ -153,11 +153,15 @@ incumbents for score at equal reliability.
 What remains before flipping the match-voice **default** to it is not quality
 but **operational and the author's call**: it is a hosted API (per-token cost
 across many paragraph calls; draft text leaves the machine under Cohere's terms),
-where the incumbents include local options. Recommendation: promote
-command-a-03-2025 from "additive backend" to the **recommended cross-family
-model for score-sensitive drafts**, and put the default-flip decision to the
-author with the cost/egress tradeoff stated. The command-a-plus tier stays
-denylisted (CoT leak).
+where the incumbents include local options.
+
+**Decision (GH-145, 2026-08-29): the author accepted the tradeoff and flipped
+the match-voice default to `cohere:command-a-03-2025`.** `MATCH_VOICE_MODEL` and
+`--model` still override; a keyless or keep-local machine sets `--model
+gemma4:12b`, the local GH-163 winner (no silent fallback — a cohere: default
+with no key stops with remediation). Scope is match-voice's rewrite default
+only; filter-tells and burstiness keep their own model defaults. The
+command-a-plus tier stays denylisted (CoT leak).
 
 ## Caveats
 

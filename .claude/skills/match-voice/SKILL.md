@@ -89,13 +89,18 @@ strengthen a claim. Nothing is spliced into a draft until the gate passes.
   `python3 <agent-dir>/scripts/credentials.py` reports which services are
   configured, printing names and never values.
 
-**Model choice.** Default `gemma4:12b` — the best local model in the GH-163
-bake-off that runs anywhere. On a 32 GB Apple Silicon machine, `gemma4:31b-mlx`
-reaches the top tier without sending drafts off the machine; `gemma4:31b-cloud`
-when the memory is not there. **Prefer local when the machine can hold the
-model**: this operates on unpublished prose, and the cloud rows buy quality a
-big-memory Mac already has. Sizes, the full ranking, and the reasoning are in
-[model-choice.md](./references/model-choice.md).
+**Model choice.** Default `cohere:command-a-03-2025` — the GH-138/142 bake-off
+winner: it drives a draft toward human where the gemma family *raises* the
+Pangram score, and runs clean through the gate. It needs `COHERE_API_KEY` or
+`COHERE_SECRETS_FILE`, sends the paragraph to Cohere's API, and bills per token.
+**A keyless machine, or one where the draft must not leave it, sets `--model
+gemma4:12b`** (or `MATCH_VOICE_MODEL`) — the local GH-163 winner that runs
+anywhere; `gemma4:31b-mlx` reaches the top tier on a 32 GB Apple Silicon box
+without egress, `gemma4:31b-cloud` when the memory is not there. There is no
+silent fallback: a `cohere:` default with no key stops with remediation. Sizes,
+the full ranking, and the Cohere decision are in
+[model-choice.md](./references/model-choice.md) and
+[cohere-bakeoff.md](./references/cohere-bakeoff.md).
 
 Check the endpoint before starting:
 
@@ -373,7 +378,7 @@ stay verbatim in the draft, and are counted in the manifest.
 | Setting | Flag | Default |
 |---|---|---|
 | Endpoint | `--endpoint` / `OLLAMA_ENDPOINT` | `http://localhost:11434` |
-| Model | `--model` / `MATCH_VOICE_MODEL` | `gemma4:12b` |
+| Model | `--model` / `MATCH_VOICE_MODEL` | `cohere:command-a-03-2025` (local fallback `gemma4:12b`) |
 | Temperature | `--temperature` | 0.7 |
 | Timeout (s) | `--timeout` / `MATCH_VOICE_TIMEOUT` | 300 (cold loads are slow) |
 | Anchors per paragraph | `-k` | 3 |
