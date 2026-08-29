@@ -113,9 +113,9 @@ alone" is not measurable at n=1.
    carries almost no information either way.
 2. **Burstiness metric — PASS.** CV moved in arm B and held in arm C on both
    drafts, so the tool is controllable and the control attributes cleanly.
-3. **Author's ear — PENDING, with concerns listed below.** Not
-   self-adjudicable, and the concerns are the reason to read arm B closely
-   rather than skim it.
+3. **Author's ear — PASS.** The author read arm B on both informative
+   documents and signed it ("B looks fine to me", 2026-08-28), with the
+   regression list below on the table when they did.
 
 **The letter of the two-fresh-drafts requirement stays unmet.** Draft 2 was
 uninformative and draft 3 is the gain article, which the criterion excluded by
@@ -224,14 +224,18 @@ pipeline, and judging the pass against one was a category error.
 
 The true-slot run has since been done (draft 3 above): the pass works in the
 position proposed for it, at a magnitude proportional to the room the baseline
-leaves, with a null control. What remains before the decision is closed rather
-than conditional:
+leaves, with a null control. The author read arm B on both informative
+documents and signed it, closing criterion 3.
 
-- **The author's read of arm B** — draft 1 and draft 3. Criterion 3 is not
-  self-adjudicable, and the regression list above (the reattributed judgment
-  especially) is the reason to read closely.
-- **A contraction gate.** Draft 3 lost none, so this is insurance for rawer
-  inputs rather than a known need in the slot — cheap either way.
+**Decision (GH-133):** standalone pre-terminal pass, home in match-voice,
+run inside the GH-57 cycle — optional, author-in-the-loop, regressions
+caught by the read-only zone downstream like every other generative
+stage's. The measurement half lives where GH-130 put it: the profile and
+`burstiness` subcommand in match-structure, the CV line in filter-tells'
+structural metrics, and the before/after CV at every humanize measurement
+point. A contraction gate on the model pass remains open as cheap
+insurance for rawer inputs (draft 3 lost none; draft 1 lost half) —
+follow-up, not blocker.
 
 On the GH-133 question as posed — filter-tells sub-check or standalone stage —
 this evidence points at the split that in fact already happened: the

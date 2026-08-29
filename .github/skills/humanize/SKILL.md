@@ -47,7 +47,8 @@ The pipeline is a **cycle**, not a line:
 draft (with declared/locked spans)
   ┌─> generative chain, lock-respecting
   │     structural step -> filter-tells -> match-voice (SEEDED, Phase 3)
-  │     -> tighten-style -> inject-vernacular (terminal for this cycle)
+  │     -> burstiness (optional) -> tighten-style
+  │     -> inject-vernacular (terminal for this cycle)
   │
   ├─> read-only zone
   │     reverse-outline annotate + rank, Pangram, critic-panel, then
@@ -79,6 +80,18 @@ The only generative stage that survived cold review and improved the
 article ran *after* a socratic rewrite, two critic panels and a reverse
 outline. Run before that work, the same recipe gated 0.609 instead of
 0.370.
+
+**The burstiness pass** (GH-129) is an optional pre-terminal stage in the
+same slot as match-voice: match-voice's `burstiness.py` raises
+sentence-length variance through the second model family, behind the same
+gate. It earns its position the same way the seed does — measured only on
+documents already through the chain. On pipeline-state prose it moved
+Pangram 38.1% -> 29.1% (and, at an earlier state of the same article,
+0.445 -> 0.259) with a rhythm-held control within noise both times; run
+on a raw draft it can do nothing (a saturated 100% baseline has no room
+to fall), so running it early wastes a cycle. The CV printed at each
+measurement point is how you see whether it has anything left to do:
+match-voice's SKILL.md carries the invocation and the gate details.
 
 ### The trigger: when to run the chain again
 

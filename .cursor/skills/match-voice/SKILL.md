@@ -474,13 +474,23 @@ $RUN <skill>/scripts/burstiness.py --article draft.md --control  # arm C
 $RUN <skill>/scripts/burstiness.py --article draft.md --dry-run  # no model call
 ```
 
-Measured on one article, three arms, prose-only on Pangram 3.3.2 (GH-129):
+Measured across three documents, three arms each, prose-only on Pangram
+3.3.2 (GH-129; full report in
+[references/burstiness-validation.md](./references/burstiness-validation.md)):
 
-| arm | what changed | CV | Pangram AI |
-|---|---|---|---:|
-| A baseline | — | 0.621 | 0.445 |
-| B burstiness | sentence-length variance up | 0.690 | **0.259** |
-| C control | model pass, rhythm held | 0.621 | 0.436 |
+| document | arm B | arm C (control) |
+|---|---|---|
+| gain article, original state (0.445 baseline) | **0.259** | 0.436 |
+| gain article, pipeline state (0.381 baseline) | **0.291** | 0.411 |
+| raw-ish fresh draft (0.744 baseline) | **0.324** | 1.000 |
+| raw draft at the ceiling (1.000 baseline) | 1.000 | 1.000 |
+
+CV rose in arm B and held in arm C on every document. Two patterns worth
+knowing before running it: a saturated baseline has no room to fall, so the
+pass does nothing measurable on a raw 100% draft — run it on documents
+already through the chain; and the control's own effect sorts by input,
+near-null on pipeline-state prose and harmful on raw prose, so the
+attribution only reads cleanly where the pass belongs anyway.
 
 **`--control` is not an option, it is the method.** Arm C is what licenses the
 claim that the drop is burstiness rather than a second model's diction; run it
@@ -501,11 +511,20 @@ business removing the author's own. Em-dashes are normalized to the sentence
 break they were imitating before the gate runs, since that is the edit the
 pass wanted anyway.
 
-Placement is pre-terminal, the slot match-voice occupies (GH-57). Locked spans
-are excised before the model sees a paragraph and spliced back byte-identical,
-and the written file is re-checked against the manifest before the run reports
-success. Whether this ends up a stage of its own or a filter-tells sub-check is
-GH-133.
+**Placement (GH-133, decided 2026-08-28):** a standalone pre-terminal pass in
+this skill, run inside the GH-57 cycle like every other generative stage —
+optional, author-in-the-loop, its regressions caught by the read-only zone and
+the author's picks downstream. The filter-tells-sub-check half of the question
+resolved by function: the *measurement* is a filter-tells/humanize report line
+and a match-structure subcommand (GH-130), and the *generation* cannot live in
+filter-tells at all, because filter-tells is Claude-side detection and prose
+generation is cross-family by the pipeline's own rule. Locked spans are
+excised before the model sees a paragraph and spliced back byte-identical, and
+the written file is re-checked against the manifest before the run reports
+success. The author read arm B on both informative documents and signed it
+(GH-132) — with the note that the gate cannot see reattributed judgment
+("He called the request very dumb" returning as "It was very dumb"), which is
+one more reason the read-only zone downstream is not optional.
 
 Measure the effect with match-structure:
 
