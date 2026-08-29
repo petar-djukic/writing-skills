@@ -45,8 +45,10 @@ what it says, and the control is a real control.
 **The Pangram effect showed on draft 1 and could not show on draft 2.** Draft 1
 fell 74.4% to 32.4%, mean window 0.789 to 0.517 — the same direction as the
 gain article and a larger move. Draft 2 was already at 100% and a 0.9929 mean
-window before the pass ran. A score at the ceiling has no room to fall, so that
-arm tests nothing; see the selection note below, which is a flaw in this
+window before the pass ran. At that ceiling the fraction cannot fall and the
+windows barely can: each sits near 0.99, where even a real shift in the
+underlying signal moves the score by almost nothing. The arm carries almost no
+information either way; see the selection note below, which is a flaw in this
 experiment rather than a property of the pass.
 
 **The control made draft 1 worse, and that strengthens the attribution.** A
@@ -65,15 +67,21 @@ together:
   attribution is cleaner than the gain article's, where it rested on the
   control being null.
 
-Isolated (B minus C), burstiness is worth 67.6 points on this draft against
-17.7 on the gain article. Beating a harmful control is a stronger result than
-beating an inert one, not a weaker one.
+The subtraction B minus C (67.6 points here, 17.7 on the gain article) is
+worth writing down and not worth trusting. It assumes the touch's effect adds
+the same way in both arms, and it rests on one document with no error bars —
+while the control's own effect swung from -0.9 on the gain article to +25.6
+here, a 26-point spread across two documents. A gemma pass does very different
+things to different prose. What the control supports is the qualitative claim
+only: the touch is not where the gain came from. The magnitude of "burstiness
+alone" is not measurable at n=1.
 
 ## Three-criteria verdict
 
 1. **Pangram delta — PASS on the one draft that could test it.** 42.0 points
-   down against do-nothing, 67.6 against the model touch. Draft 2 began at the
-   ceiling and tests nothing either way.
+   down against do-nothing, with the control ruling out the model touch as the
+   source. Draft 2 began at the ceiling and carries almost no information
+   either way.
 2. **Burstiness metric — PASS.** CV moved in arm B and held in arm C on both
    drafts, so the tool is controllable and the control attributes cleanly.
 3. **Author's ear — PENDING, with concerns listed below.** Not
@@ -83,7 +91,7 @@ beating an inert one, not a weaker one.
 **The two-draft requirement is not met.** One informative document is what this
 run produced, and the reason is the selection below, not the result.
 
-## The selection was wrong, and it cost the second data point
+## The selection was wrong twice, and it cost the second data point
 
 Both drafts were chosen as the flattest in `drafted/` by prose-only CV, on the
 reasoning that a flatter draft has more rhythm to gain. That criterion is
@@ -92,9 +100,19 @@ detector score. Draft 2 came in at 100% and 0.9929, and a score at the ceiling
 cannot fall. The arm ran, the CV rose as instructed, and the measurement was
 uninformative before the first paragraph was sent.
 
-Screening baselines first — one scan per candidate, arms only on a document
-with room to move — is what this run should have done, and what the next one
-should do.
+The deeper version of the same mistake: the proposed placement is
+**pre-terminal**, and a document reaching that slot has already been through
+the structural step, filter-tells, and seeded match-voice — it is off the
+ceiling by construction. The gain article was exactly such a document: gated
+prose, baseline 0.445. Raw drafts are not; 100% is what a raw draft looks
+like. So this run tested the pass in a position nobody proposed for it, and
+the one draft that happened to resemble the intended input (draft 1, 74.4%)
+is the one where the effect showed. The experiment disagreed with its own
+question.
+
+The next run should select for the intended condition directly: a document
+that has been through the chain, screened with one baseline scan, arms only
+if it has room to move.
 
 A tempting story is that flat rhythm is itself an AI signal, so selecting on
 flatness selects for saturation. These two points run the other way: draft 1 at
@@ -135,6 +153,14 @@ better than the original. "For an agent, that surface is the harness. All of
 it." earns its short sentence. The pass is not uniformly bad — it is
 unsupervised, and roughly one edit in five needs reverting.
 
+For scale: match-voice, the sitting tenant of the pre-terminal slot, survives
+cold review at 51% on mid-edit text and 33-35% on well-edited text — half to
+two-thirds of its rewrites get reverted, and the pipeline absorbs that by
+design, because the GH-57 cycle puts a read-only zone and the author's picks
+after every generative chain. One-in-five is in family, on the better end of
+it. The regressions above are an argument for keeping the pass inside that
+cycle, not an argument that it fails a bar the existing stages meet.
+
 ## Two defects this run found in the pass itself
 
 Both fixed before the numbers above were taken; both are in the test suite.
@@ -150,27 +176,31 @@ Both fixed before the numbers above were taken; both are in the test suite.
 
 ## Recommendation
 
-**The detector case is good and the prose case is not, so placement waits on
-one more run.** Where it could be measured the effect was large and cleanly
-attributed. What argues against an unattended stage is the prose: meaning
-drift, a broken parallel series, a lost colon, and roughly one edit in five
-wanting a revert. A stage that runs unattended has to be right more often than
-that.
+**The evidence is consistent with the proposed placement.** Where the pass was
+measured in something like its intended condition, the effect was large and
+the control attributed it to burstiness rather than to the model touch. The
+prose regression rate sits inside what the pipeline's existing generative
+stages produce and what its cycle exists to absorb. The first version of this
+report recommended against an "unattended stage"; no such stage exists in this
+pipeline, and judging the pass against one was a category error.
 
-What the evidence supports:
+What remains before the decision is closed rather than conditional:
 
-- Keep the tool. The mechanism is real, controllable, and now measured.
-- Run it **by hand with the control alongside**, and read the diff before
-  accepting. That is a working practice, not a placement.
-- Add a contraction gate before further use. The loss belongs to the model
-  pass, not the instruction, so any stage on this model needs one.
-- Get the second informative document: screen candidate baselines one scan at
-  a time, then run three arms on one that has room to move. Three or four
-  scans, and it is what turns this into the two-draft result the issue asked
-  for.
+- **One run in the true slot.** A document that has been through the chain,
+  baseline-screened, three arms. The gain article was one such document and it
+  worked there; this run adds a raw-ish second (draft 1). A pipeline-state
+  third makes the placement claim on its own terms. Three or four scans.
+- **The author's read of arm B.** Criterion 3 is not self-adjudicable, and
+  the regression list above is the reason to read closely.
+- **A contraction gate.** The loss belongs to the model pass, not the
+  instruction, so any stage on this model needs one.
 
-A placement decision on one document would be a decision on one document,
-whichever way it went.
+On the GH-133 question as posed — filter-tells sub-check or standalone stage —
+this evidence points at the split that in fact already happened: the
+*measurement* became a filter-tells/humanize report line (GH-130), and the
+*generation* cannot live in filter-tells at all, because filter-tells is
+Claude-side detection and generation is cross-family by the pipeline's own
+rule. The generation half is a standalone pre-terminal pass or it is nothing.
 
 Standing caveat carried from GH-129: 32.4% is "Mixed", not "Human", the venue's
 detector is not Pangram, and the durable reason to want burstiness is that
