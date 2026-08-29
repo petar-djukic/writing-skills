@@ -29,7 +29,26 @@ meta:
 """
 
 
+def _skip_without_ruamel(name):
+    """False (and a legible skip) when ruamel.yaml is unavailable — it is a
+    pixi-env dependency, and the docstring above says so; this makes the
+    interpreter say it too instead of a bare ModuleNotFoundError (GH-158)."""
+    try:
+        import ruamel.yaml  # noqa: F401
+        return True
+    except ImportError:
+        msg = (f"{name}: ruamel.yaml not installed — run under the pixi env "
+               "(scripts/run-tests.sh)")
+        if "pytest" in sys.modules:
+            import pytest
+            pytest.skip(msg)
+        print(f"  SKIP  {msg}")
+        return False
+
+
 def test_yaml_assemble_round_trip():
+    if not _skip_without_ruamel("yaml_assemble_round_trip"):
+        return
     from ruamel.yaml import YAML
     with tempfile.TemporaryDirectory() as tmp:
         art = os.path.join(tmp, "spec.yaml")
