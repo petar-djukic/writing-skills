@@ -42,40 +42,65 @@ same settings, rhythm held). Six Pangram scans, consented per document.
 0.068; arm C held it to within 0.002 in both directions. The instruction does
 what it says, and the control is a real control.
 
-**The Pangram effect replicated on one draft of two.** Draft 1 fell 74.4% to
-32.4%, mean window 0.789 to 0.517 — the same direction and a larger move than
-the gain article. Draft 2 did not move at all: 100% before, 100% after, mean
-window 0.9929 to 0.9927 against a CV rise of comparable size.
+**The Pangram effect showed on draft 1 and could not show on draft 2.** Draft 1
+fell 74.4% to 32.4%, mean window 0.789 to 0.517 — the same direction as the
+gain article and a larger move. Draft 2 was already at 100% and a 0.9929 mean
+window before the pass ran. A score at the ceiling has no room to fall, so that
+arm tests nothing; see the selection note below, which is a flaw in this
+experiment rather than a property of the pass.
 
-**The control got worse on draft 1.** A gemma pass that held rhythm took the
-score from 74.4% to 100% and the mean window from 0.789 to 0.914. On the gain
-article the same arm sat within noise (0.445 to 0.436). So a model pass is not
-neutral: its own diction can add detector signal, and on this draft it did.
-Read against that, draft 1's burstiness arm did not beat a null intervention by
-0.42 — it beat a harmful one, which is a weaker claim than the headline row
-suggests.
+**The control made draft 1 worse, and that strengthens the attribution.** A
+gemma pass holding rhythm took the score from 74.4% to 100% and the mean window
+from 0.789 to 0.914. On the gain article the same arm sat within noise (0.445
+to 0.436).
+
+Two questions come apart here, and the first draft of this report ran them
+together:
+
+- *Does the pass help?* Arm B against arm A, which is the do-nothing
+  alternative: 42.0 points down. What arm C did leaves that untouched, and it
+  is the number a placement decision turns on.
+- *Is the gain the burstiness or the model touch?* Arm C against arm A: the
+  touch alone is 25.6 points **up**. So the touch is not what helped. The
+  attribution is cleaner than the gain article's, where it rested on the
+  control being null.
+
+Isolated (B minus C), burstiness is worth 67.6 points on this draft against
+17.7 on the gain article. Beating a harmful control is a stronger result than
+beating an inert one, not a weaker one.
 
 ## Three-criteria verdict
 
-1. **Pangram delta — FAIL as stated.** The criterion was "does CV rise and
-   Pangram fall" on both drafts. It rose on both and fell on one.
+1. **Pangram delta — PASS on the one draft that could test it.** 42.0 points
+   down against do-nothing, 67.6 against the model touch. Draft 2 began at the
+   ceiling and tests nothing either way.
 2. **Burstiness metric — PASS.** CV moved in arm B and held in arm C on both
    drafts, so the tool is controllable and the control attributes cleanly.
 3. **Author's ear — PENDING, with concerns listed below.** Not
    self-adjudicable, and the concerns are the reason to read arm B closely
    rather than skim it.
 
-## Why draft 2 did not move (a hypothesis, not a finding)
+**The two-draft requirement is not met.** One informative document is what this
+run produced, and the reason is the selection below, not the result.
 
-Draft 2 started saturated: 100% AI, mean window 0.9929. There is no room in
-that number for a single-feature edit to show. The gain article started at
-0.445 and draft 1 at 74.4%, both mid-range, and both moved.
+## The selection was wrong, and it cost the second data point
 
-If that is right, burstiness is a **finishing lever, not a first one**: it
-would run late in the pipeline, after filter-tells and match-voice have brought
-a document off the ceiling, and it would do nothing measurable when run first.
-One draft is not enough to establish this. It is the cheapest next experiment —
-run the pass on a document that has already been through the chain.
+Both drafts were chosen as the flattest in `drafted/` by prose-only CV, on the
+reasoning that a flatter draft has more rhythm to gain. That criterion is
+unrelated to the one that decides whether an arm can be measured: the baseline
+detector score. Draft 2 came in at 100% and 0.9929, and a score at the ceiling
+cannot fall. The arm ran, the CV rose as instructed, and the measurement was
+uninformative before the first paragraph was sent.
+
+Screening baselines first — one scan per candidate, arms only on a document
+with room to move — is what this run should have done, and what the next one
+should do.
+
+A tempting story is that flat rhythm is itself an AI signal, so selecting on
+flatness selects for saturation. These two points run the other way: draft 1 at
+CV 0.503 scored 74.4%, draft 2 at CV 0.523 scored 100%. Two points support
+nothing, and the story is left here as the guess it is rather than carried into
+the recommendation.
 
 ## Prose regressions found by reading arm B
 
@@ -125,21 +150,27 @@ Both fixed before the numbers above were taken; both are in the test suite.
 
 ## Recommendation
 
-**Do not promote this to an always-on pipeline stage on this evidence.** One
-replication of two, a control that harmed the score on the draft where the
-burstiness helped, and a prose defect rate around one edit in five is not the
-profile of a stage that runs unattended.
+**The detector case is good and the prose case is not, so placement waits on
+one more run.** Where it could be measured the effect was large and cleanly
+attributed. What argues against an unattended stage is the prose: meaning
+drift, a broken parallel series, a lost colon, and roughly one edit in five
+wanting a revert. A stage that runs unattended has to be right more often than
+that.
 
-What the evidence does support:
+What the evidence supports:
 
-- Keep the tool. The mechanism is real and controllable, and the measurement
-  is now in place.
-- Run it **late and by hand**, on documents already off the detector ceiling,
-  with the control arm alongside and the diff read before acceptance.
-- Add a contraction gate before any further use, since the loss is a property
-  of the model pass rather than of the instruction.
-- Test the saturation hypothesis before deciding placement. That experiment
-  costs one document and two scans.
+- Keep the tool. The mechanism is real, controllable, and now measured.
+- Run it **by hand with the control alongside**, and read the diff before
+  accepting. That is a working practice, not a placement.
+- Add a contraction gate before further use. The loss belongs to the model
+  pass, not the instruction, so any stage on this model needs one.
+- Get the second informative document: screen candidate baselines one scan at
+  a time, then run three arms on one that has room to move. Three or four
+  scans, and it is what turns this into the two-draft result the issue asked
+  for.
+
+A placement decision on one document would be a decision on one document,
+whichever way it went.
 
 Standing caveat carried from GH-129: 32.4% is "Mixed", not "Human", the venue's
 detector is not Pangram, and the durable reason to want burstiness is that
