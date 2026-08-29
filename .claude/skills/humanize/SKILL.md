@@ -248,11 +248,20 @@ tighten.py command line, or configure them in the venue profile.
 
    # Style baseline
    $RUN <match-structure>/scripts/style.py profile <article.md>
+
+   # Burstiness baseline (one line; the full numbers are in the profile)
+   $RUN <match-structure>/scripts/style.py burstiness <article.md> --text
    ```
 
-   Record the baseline Pangram scores (human %, mean window score, verdict)
-   and the full `text_metrics()` output. These are the "before" column in the
-   final report. With the `skip` choice, capture the baseline and proceed to
+   Record the baseline Pangram scores (human %, mean window score, verdict),
+   the full `text_metrics()` output, and the burstiness line. These are the
+   "before" column in the final report. **Print the CV next to the Pangram
+   score at every measurement point below, not only in the final table** —
+   sentence-length dispersion and AI-phrase density are the two features a
+   plain stylometric model uses, and a step that moves the score without
+   moving CV moved something else (GH-129: a diction-only control arm held
+   CV at 0.621 and Pangram at 0.436, while the same model reshaping rhythm
+   took CV to 0.690 and Pangram to 0.259). With the `skip` choice, capture the baseline and proceed to
    Phase 2. In venue mode, capture the Pangram baseline only when the
    profile's gates include `pangram`.
 
@@ -305,9 +314,12 @@ Measure after the structural step:
 $RUN <agent-dir>/scripts/pangram_report.py scan --article <step1-output.md>
 
 $RUN <match-structure>/scripts/style.py profile <step1-output.md>
+
+$RUN <match-structure>/scripts/style.py burstiness <step1-output.md> \
+  --baseline <article.md> --text
 ```
 
-Record as the "after step 1" column.
+Record as the "after step 1" column, Pangram and CV together.
 
 ### Phase 2: filter-tells semantic cleanup
 
@@ -360,9 +372,12 @@ Measure after filter-tells:
 $RUN <agent-dir>/scripts/pangram_report.py scan --article <step1-output.md>
 
 $RUN <match-structure>/scripts/style.py profile <step1-output.md>
+
+$RUN <match-structure>/scripts/style.py burstiness <step1-output.md> \
+  --baseline <article.md> --text
 ```
 
-Record as the "after-tells" column.
+Record as the "after-tells" column, Pangram and CV together.
 
 ### Phase 3: seeded iteration (seed in a second family, then iterate)
 
@@ -630,6 +645,8 @@ omit the Pangram category entirely when that gate is absent.
 | Sentence length mean | — | — | — | — | — |
 | Sentence length stdev | — | — | — | — | — |
 | Sentence length CV | — | — | — | — | — |
+| Sentence length min / max | — | — | — | — | — |
+| Sentence length p10 / median / p90 | — | — | — | — | — |
 | Mean clause length | — | — | — | — | — |
 | Passive / 100 sentences | — | — | — | — | — |
 | Paragraph cohesion | — | — | — | — | — |

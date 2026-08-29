@@ -34,6 +34,7 @@ change what voice-critic would audit.
 ```
 terminal stage (inject-vernacular)
   -> critic-panel (this)          read-only: diagnosis + suggestions
+  -> class sweep                  read-only: every instance of a named class
   -> author picks -> new author-directed cycle (the only way text changes)
   -> voice-critic                  read-only: stance, snark, ToM audit
   -> author gate
@@ -55,7 +56,17 @@ terminal stage (inject-vernacular)
    [--roster <names>]` — findings targeting the same passage across critics
    are listed first, whichever kind produced them; agreement between
    independent critics is the headline signal. `--roster` sets sheet order.
-4. Hand the sheet to the author. Picks by critic and number become a
+4. **Sweep the classes.** The sheet's `## Defect classes` section marks each
+   declared instance covered or `NOT COVERED` against the numbered
+   suggestions. Read the class lines first and merge the ones that name one
+   pattern in different words — the script never does this, see
+   [Why classes are not merged](#why-classes-are-not-merged). Then spawn one
+   fresh-context agent per merged class, each given the class line, its sweep
+   scope, and the full draft, returning **every** instance in that scope as
+   `Original:` / `Replacement:` blocks in the suggest format. Merge those into
+   the sheet with `converge.py` alongside the critic reports. Skip only when
+   no class was declared, and note that the summary line says so.
+5. Hand the sheet to the author. Picks by critic and number become a
    loop-workflow issue; apply them as an author-directed cycle, then
    rescan and run voice-critic on the result.
 
@@ -107,6 +118,12 @@ Original: <the exact sentence, verbatim, so it can be found>
 Replacement: <proposed sentence, or CUT>
 Buys: <one line on what it buys>
 …
+## Defect classes
+### A
+Class: <the pattern, named once — not the sentence>
+Instance: <verbatim quote>
+Instance: <verbatim quote>
+Sweep: <the scope the author must check for more>
 ## Paragraph move
 <the single cut, reorder, or added scene, described — not rewritten>
 ```
@@ -122,6 +139,11 @@ Passage: <the exact passage, verbatim, so it can be found>
 Finding: <what is wrong with it, in this critic's terms>
 Fix: <what would fix it, described — never written as replacement prose>
 …
+## Defect classes
+### A
+Class: <the pattern, named once — not the passage>
+Instance: <verbatim quote>
+Sweep: <the scope the author must check for more>
 ## Verdict
 <the persona's own verdict format, from references/personas.md>
 ```
@@ -150,6 +172,12 @@ in the Summary block reports. Write `## Findings` with nothing under it.
   quoted phrases untouchable. Blockquoted specimens are exhibits.
 - Quote what you judge. A finding the author cannot locate is a finding
   they cannot act on.
+- **Name a pattern, declare it.** A diagnosis that says "every", "three
+  times", "throughout", or otherwise describes a class rather than a sentence
+  must carry that class in `## Defect classes`, with every instance you can
+  find and the scope you did not have room to check. A class named only in
+  the diagnosis is prose nothing reads; the numbered suggestions are what get
+  applied, and whatever the class covers beyond them stays in the draft.
 - Make no judgment a machine already makes. Forbidden terms, missing
   apparatus, unresolved citations, and figures never referenced from the
   prose belong to the repository's own checker, to
@@ -200,6 +228,46 @@ The author answers in writing. The answers are the edit plan; the critic
 never supplies one. Maieutic by design — maximize author output, minimize
 system output — and the right mode when the author can feel a draft is
 only fine but cannot yet say where.
+
+## Why classes are not merged
+
+`converge.py` lists classes as declared and never merges them, which is a
+choice and not an omission. Two critics naming one pattern write two
+paraphrases, not one quote, so the quote matcher does not apply. Measured on
+real class lines, content-word overlap gives 0.29 to a matching pair
+("paragraph opens by labelling its own content" against "a paragraph opener
+that labels the paragraph's content") and 0.29 to a non-matching one ("a
+sentence that announces its paragraph" against "a paragraph closer that
+restates its first sentence"). No threshold separates those, and a false
+merge hides a class — the exact failure the section exists to prevent.
+
+So the script computes only what is objective: does this instance match a
+numbered suggestion, yes or no. Recognising that two class lines are one
+class is a semantic judgment and belongs to the sweep, which has a model in
+it. The script stays deterministic so an author can argue with it.
+
+## What the sweep buys, measured
+
+substack GH-235, 2026-08-23. The article roster ran on a how-to draft and
+Didion's diagnosis read: "Every opening paragraph closes by restating its
+first sentence... the reader is told three times that the agent must be
+told." Hemingway, independently, cut `They point in different directions.`
+because "the next sentence shows the two directions; this one announces
+them." One class, named twice: **a sentence that announces its paragraph
+instead of being it.**
+
+Their numbered suggestions quoted the closing halves. The author said "use
+all of it", every suggestion was applied, and the class survived in the two
+paragraph openers nobody had quoted — one of them the article's first
+sentence. The author found them by reading, which is what the panel is meant
+to save. Under this section those two render as `NOT COVERED` under the class
+that named them, and the summary line counts them.
+
+`filter-tells` does not cover this class and points the other way: its
+`topic-sentence-weak` check flags paragraphs whose opener has *low* overlap
+with the body, so a sentence that labels its own paragraph scores well.
+Critics defer to the machine on machine-owned judgments (see Constraints), so
+nothing else in the pipeline was looking.
 
 ## What the panel buys, measured
 

@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import os
 import re
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -461,6 +462,95 @@ class VerdictTest(unittest.TestCase):
         self.assertLess(sheet.index("C diagnosis."), sheet.index("F diagnosis."))
 
 
+CLASSES = os.path.join(os.path.dirname(os.path.abspath(__file__)), "testdata")
+SCRIPT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "converge.py")
+
+
+class DefectClassTest(unittest.TestCase):
+    """The GH-235 regression: a class named, half its instances fixed.
+
+    Didion named "a sentence that announces its paragraph instead of being
+    it" and quoted the two closers in her suggestions. The author applied
+    every suggestion. The two paragraph openers carrying the same defect —
+    one of them the article's first sentence — stayed in the draft, and the
+    sheet said nothing.
+    """
+
+    def sheet(self, *names, roster=None):
+        reports = [converge.parse(os.path.join(CLASSES, n)) for n in names]
+        reports = converge.order(reports, roster)
+        classes = converge.collect_classes(reports)
+        return reports, classes, converge.render(reports, converge.group(reports),
+                                                 classes)
+
+    def test_repeated_instance_lines_all_survive_parse(self):
+        r = converge.parse(os.path.join(CLASSES, "classes-didion.md"))
+        self.assertEqual(len(r["classes"]), 1)
+        # dict() over the field pattern would keep only the last Instance,
+        # and the last is not the one that goes unfixed.
+        self.assertEqual(len(r["classes"][0]["instances"]), 4)
+        self.assertIn("every paragraph opening", r["classes"][0]["sweep"])
+
+    def test_uncovered_instances_are_marked(self):
+        _, _, sheet = self.sheet("classes-didion.md")
+        block = sheet.split("## Defect classes")[1]
+        self.assertIn('covered: "Different seats, one claim."', block)
+        self.assertIn('**NOT COVERED**: "The tool makers agree on the need '
+                      'before they agree on much else."', block)
+        self.assertIn('**NOT COVERED**: "The same people name the gap."', block)
+        self.assertIn("2 instances not covered", block)
+
+    def test_coverage_counts_every_critics_suggestions(self):
+        """Hemingway's suggestion covers the instance Didion only declared."""
+        items = [{"quote": "They point in different directions."}]
+        self.assertTrue(converge.covered("They point in different directions.",
+                                         items))
+        self.assertFalse(converge.covered("The same people name the gap.",
+                                          items))
+
+    def test_classes_are_listed_in_roster_order_never_merged(self):
+        _, classes, sheet = self.sheet("classes-didion.md",
+                                       "classes-hemingway.md",
+                                       roster=["classes-didion",
+                                               "classes-hemingway"])
+        self.assertEqual(len(classes), 3)
+        block = sheet.split("## Defect classes")[1]
+        # The two near-identical class lines stay separate: no threshold
+        # separates a matching paraphrase pair from a non-matching one, so
+        # merging is the sweep's judgment, not the script's.
+        self.assertIn("announces its paragraph instead of being it", block)
+        self.assertIn("announcing its paragraph rather than being it", block)
+        self.assertLess(block.index("announces its paragraph"),
+                        block.index("scaffold verb"))
+
+    def test_absent_section_renders_exactly_as_before(self):
+        reports = [converge.parse(os.path.join(CLASSES, n))
+                   for n in ("levine.md", "didion.md")]
+        self.assertEqual(converge.collect_classes(reports), [])
+        groups = converge.group(reports)
+        self.assertEqual(converge.render(reports, groups),
+                         converge.render(reports, groups, []))
+        self.assertNotIn("## Defect classes", converge.render(reports, groups, []))
+
+    def test_summary_line_names_the_silence(self):
+        out = subprocess.run(
+            [sys.executable, SCRIPT,
+             os.path.join(CLASSES, "levine.md"),
+             os.path.join(CLASSES, "didion.md"),
+             "--out", os.path.join(tempfile.mkdtemp(), "s.md")],
+            capture_output=True, text=True)
+        self.assertIn("no defect classes declared", out.stdout)
+
+    def test_summary_line_counts_uncovered(self):
+        out = subprocess.run(
+            [sys.executable, SCRIPT,
+             os.path.join(CLASSES, "classes-didion.md"),
+             os.path.join(CLASSES, "classes-hemingway.md"),
+             "--out", os.path.join(tempfile.mkdtemp(), "s.md")],
+            capture_output=True, text=True)
+        self.assertIn("3 defect classes (3 instances uncovered)", out.stdout)
+
+
 class ContractTest(unittest.TestCase):
     """SKILL.md prints both report formats and the critics are told to follow
     them. Nothing made the printed format and the parser agree — and a spec
@@ -489,10 +579,25 @@ class ContractTest(unittest.TestCase):
             self.assertIn("Replacement", r["items"][0])
             self.assertEqual(r["items"][0]["quote"], r["items"][0]["Original"])
             self.assertTrue(r["move"], "the paragraph move section")
+            self._class_section_parses(r)
+
+    def _class_section_parses(self, report):
+        """The documented `## Defect classes` block reaches the parser intact.
+
+        Same contract as the two item formats, for the same reason: a section
+        the printed spec carries and the parser drops is a section critics
+        fill in and nothing reads.
+        """
+        self.assertTrue(report["classes"], "the defect-classes section")
+        c = report["classes"][0]
+        self.assertTrue(c["class"], "the Class line")
+        self.assertTrue(c["sweep"], "the Sweep line")
+        self.assertGreaterEqual(len(c["instances"]), 1)
 
     def test_the_documented_verdict_format_parses(self):
         with tempfile.TemporaryDirectory() as tmp:
             r = self._parses_as("**`verdict`**", "verdict", tmp)
+            self._class_section_parses(r)
             self.assertIn("Finding", r["items"][0])
             self.assertIn("Fix", r["items"][0])
             self.assertEqual(r["items"][0]["quote"], r["items"][0]["Passage"])

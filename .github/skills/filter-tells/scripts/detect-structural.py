@@ -1069,9 +1069,15 @@ def voice_distance(file_proses: list, profile_path: str) -> dict:
     draft = {}
     if sent_lens:
         m = sum(sent_lens) / len(sent_lens)
+        sd = (sum((v - m) ** 2 for v in sent_lens) / len(sent_lens)) ** 0.5
         draft["sentence_length_mean"] = round(m, 2)
-        draft["sentence_length_stdev"] = round(
-            (sum((v - m) ** 2 for v in sent_lens) / len(sent_lens)) ** 0.5, 2)
+        draft["sentence_length_stdev"] = round(sd, 2)
+        # CV compares across registers where stdev does not: a corpus averaging
+        # 28-word sentences carries a larger stdev than one averaging 14 without
+        # being any less uniform, so the z-score on stdev alone reads register
+        # difference as rhythm difference.
+        if m:
+            draft["sentence_length_cv"] = round(sd / m, 4)
     if para_sents:
         draft["paragraph_length_mean_sentences"] = round(
             sum(para_sents) / len(para_sents), 2)
@@ -1420,6 +1426,16 @@ def analyze(text: str, threshold_name: str = "medium",
         mean = statistics.mean(lengths)
         metrics["sentence_length_mean"] = round(mean, 1)
         metrics["sentence_length_std"] = round(std, 1)
+        # CV is the scale-free form of the same dispersion, and the number the
+        # burstiness experiment moved (GH-129). Reported, not thresholded: the
+        # flags above stay on std so their calibration is untouched. It runs
+        # slightly BELOW match-structure's `style.py burstiness` because
+        # split_sentences() drops fragments under 4 words, which are exactly
+        # the ones that widen the spread — for a before/after number, use that
+        # subcommand and keep both sides of the comparison on one tool.
+        metrics["sentence_length_cv"] = round(std / mean, 4) if mean else 0
+        metrics["sentence_length_min"] = min(lengths)
+        metrics["sentence_length_max"] = max(lengths)
 
         if std < thresholds["sentence_length_std_min"]:
             issues.append({

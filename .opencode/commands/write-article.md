@@ -932,11 +932,15 @@ After saving, provide this checklist:
 ```markdown
 ## Paste checklist additions
 
-- **Strip reverse-outline `rst:` markers** before pasting. They live in the
-  article as HTML comments so they survive rewrite passes and feed the
-  `audit` mode; they must not reach Substack. `reverse-outline strip` does
-  it, and the marker tree can be re-annotated later.
-- Strip the `<!-- SUBSCRIBE BLOCK -->` and lock comments as usual.
+- **HTML comments need no stripping.** Substack drops them on paste —
+  measured 2026-08-23 on a full paste-over of an article carrying 83
+  reverse-outline `rst:` markers and 6 lock spans. Leave them in; the
+  markers then survive in the repo copy to feed `reverse-outline audit`
+  after the next revision, which is the point of persisting them.
+- **The `<!-- SUBSCRIBE BLOCK -->` comment is different**: it is a cue to
+  the author, marking where to insert the subscribe-button block by hand
+  in the editor. Act on it, then it disappears with the rest of the
+  comments.
 
 ## Draft Checklist
 

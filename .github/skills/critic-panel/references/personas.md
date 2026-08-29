@@ -13,8 +13,13 @@ edit for a conceptual defect.
 
 | Kind | Report | What the critic returns |
 |---|---|---|
-| `suggest` | `## Diagnosis` / `## Suggestions` / `## Paragraph move` | An adder. Names the exact sentence, proposes the replacement, says what it buys. |
-| `verdict` | `## Diagnosis` / `## Findings` / `## Verdict` | A diagnostician. Quotes the passage, states the finding, describes the fix without writing it. |
+| `suggest` | `## Diagnosis` / `## Suggestions` / `## Defect classes` / `## Paragraph move` | An adder. Names the exact sentence, proposes the replacement, says what it buys. |
+| `verdict` | `## Diagnosis` / `## Findings` / `## Defect classes` / `## Verdict` | A diagnostician. Quotes the passage, states the finding, describes the fix without writing it. |
+
+Both kinds carry `## Defect classes`: a critic whose diagnosis names a pattern
+rather than a sentence declares it there, with the instances it found and the
+scope still to check, so the sweep can find what its numbered items missed.
+See [SKILL.md](../SKILL.md).
 
 `suggest` critics write prose that could reach the draft, so the prose
 constraints in [SKILL.md](../SKILL.md) bind them. `verdict` critics write no
