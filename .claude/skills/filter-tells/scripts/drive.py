@@ -433,6 +433,34 @@ def rewrite_passage(passage: str, issue_report: str,
     return generate(prompt, endpoint=endpoint, model=model, timeout=timeout)
 
 
+def _rewrite_error_cause(msg: str) -> str:
+    """Bucket a rewrite error into a cause, mirroring match-voice's
+    classify_rewrite_error so the two skills report failures in the same
+    vocabulary. Local rather than imported: match-voice's copy lives in its
+    driver script, and importing a driver for one dictionary couples the
+    skills at the wrong joint."""
+    m = (msg or "").lower()
+    if "empty output" in m:
+        return "empty/sanitized-to-empty"
+    if "refusing" in m or "denylist" in m:
+        return "refused-model"
+    if "api key" in m:
+        return "no-api-key"
+    if "unreachable" in m:
+        return "server-unreachable"
+    if "timed out" in m or "timeout" in m:
+        return "timeout"
+    if "http" in m or "request failed" in m:
+        return "api-error"
+    return "other"
+
+
+# Causes that will recur identically for every paragraph: a refused model, a
+# missing key, an unreachable server. One of these stops the run; anything
+# else costs only its own paragraph (GH-157).
+RUN_FATAL_CAUSES = frozenset({"refused-model", "no-api-key", "server-unreachable"})
+
+
 def run_rewrite(article_path: str, scan: dict, semantic: dict | None,
                 endpoint: str, model: str, timeout: int,
                 voice_profile: str | None = None,
@@ -486,13 +514,26 @@ def run_rewrite(article_path: str, scan: dict, semantic: dict | None,
         # Read the current draft fresh so splice indices match `targets`.
         current_lines = open(draft_path).read().split("\n")
         rewrites_applied = 0
+        # One paragraph's failure costs that paragraph, not the pass: before
+        # GH-157 a single RuntimeError broke out of this loop and silently
+        # left every remaining paragraph unprocessed, with one bare error
+        # string in the pass record. match-voice already isolates failures
+        # per paragraph; this matches it. Only a cause that must recur for
+        # every paragraph (RUN_FATAL_CAUSES) stops the run.
+        errors = []
+        fatal = None
         for start, end, text, issues in reversed(targets):
             try:
                 rewritten = rewrite_passage(text, issues,
                                             endpoint, model, timeout)
             except RuntimeError as e:
-                passes.append({"pass": pass_num, "error": str(e)})
-                break
+                cause = _rewrite_error_cause(str(e))
+                errors.append({"line": start, "cause": cause,
+                               "error": str(e)[:200]})
+                if cause in RUN_FATAL_CAUSES:
+                    fatal = cause
+                    break
+                continue
             if rewritten and rewritten.strip() != text.strip():
                 # Expand a multi-line rewrite into multiple list elements, or
                 # current_lines stops being one-line-per-element. reversed()
@@ -517,8 +558,15 @@ def run_rewrite(article_path: str, scan: dict, semantic: dict | None,
             "prev_issue_count": prev_issue_count,
             "verdict": val["verdict"],
         }
+        if errors:
+            pass_record["errors"] = errors
         passes.append(pass_record)
 
+        if fatal:
+            # The paragraphs already rewritten this pass are kept — the draft
+            # was written above — but nothing further can succeed.
+            pass_record["stopped"] = f"fatal: {fatal}"
+            break
         if val["verdict"] == "clean":
             break
         if new_count >= prev_issue_count:
