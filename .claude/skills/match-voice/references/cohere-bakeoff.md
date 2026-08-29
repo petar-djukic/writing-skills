@@ -86,9 +86,54 @@ backend (GH-137). Concrete follow-ups (GH-140):
 
 Then re-decide the default with a clean reliability number beside the score win.
 
+## Hardening + re-test (GH-140)
+
+Three fixes landed and the reliability arm re-ran (command-a-03-2025, same
+non-saturated draft, hardened pipeline):
+
+- **CoT-leak guard:** `command-a-plus` denylisted in generate() and check_server(),
+  plus a `_sanitize_cohere_output()` that strips instruction-echo / reasoning
+  lines as defense in depth. command-a-03-2025 stays allowed.
+- **Non-Cohere critic:** a `cohere:` rewrite model now defaults its critic to
+  gemma4:31b-cloud (env `COHERE_CRITIC_MODEL`), since Cohere critiqued itself
+  into 9 unparsable verdicts.
+- **Retry/backoff:** 3 attempts on 429/5xx/timeout in the Cohere path.
+
+Re-test result, before → after hardening:
+
+| metric | before | after |
+|---|---|---|
+| unparsed critiques | 9 | **0** |
+| rejected | 1 | **0** |
+| rewrite-errors | 6 | 6 (unchanged) |
+| meta-leak lines | — | 0 (clean output) |
+| Pangram AI | 0.246 | **0.489** |
+
+The non-Cohere critic fixed the unparsed critiques outright (9 → 0) and the
+rejections went to 0. The retry did **not** move the 6 rewrite-errors, so those
+are not network transients; the driver's summary logging does not surface their
+nature per paragraph (a follow-up: per-paragraph error logging).
+
+**The Pangram number rose, and that is the honest correction.** The pre-hardening
+0.246 was partly an artifact of the broken run — unparsed critiques and errored
+paragraphs left much of the draft unprocessed. With the pipeline working, and 21
+of 22 paragraphs going through a real repair pass against the gemma critic,
+Cohere command-a-03-2025 measures **0.489 (Mixed)** — still well under gemma's
+1.000, but a more modest win than 0.246 suggested.
+
+### Go/no-go
+
+**No default change; Cohere command-a-03-2025 stays the additive backend, now
+hardened and more usable.** It keeps a real Pangram advantage over the incumbents
+(0.489 vs gemma's 1.000, which *raised* the score), the CoT-leak and
+unparsed-critique failure modes are closed, and its output is clean. What still
+blocks a default swap is the 6 rewrite-errors (~27% of paragraphs fall back to
+original), whose cause is undiagnosed pending per-paragraph error logging. Reach
+for it deliberately on a score-sensitive draft; the incumbents remain the
+default for their perfect gate reliability.
+
 ## Caveats
 
 Pangram-human is not an HN pass (HN detector unknown). The score is a proxy; a
 draft still needs the meaning-entailment review and the author's read. The
-diction Cohere produces was not voice-graded here beyond the mechanical gate —
-that read is part of the GH-140 re-test.
+diction Cohere produces was graded only by the mechanical gate, not a voice read.

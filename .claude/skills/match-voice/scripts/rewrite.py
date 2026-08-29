@@ -26,8 +26,10 @@ Usage:
 import argparse
 import json
 import os
+import re
 import socket
 import sys
+import time
 import urllib.error
 import urllib.request
 
@@ -57,6 +59,34 @@ DEFAULT_TIMEOUT = int(os.environ.get("MATCH_VOICE_TIMEOUT", "300"))
 # (writing-skills GH-138).
 COHERE_PREFIX = "cohere:"
 COHERE_ENDPOINT = os.environ.get("COHERE_ENDPOINT", "https://api.cohere.com/v2/chat")
+# Denylisted Cohere families: they leak chain-of-thought and echo the prompt's
+# own rules into the output on the long match-voice prompt (GH-138 bake-off:
+# command-a-plus-05-2026 ballooned 1386 -> 2086 words of meta-commentary, and
+# its low Pangram was a garbage-text artifact). The name-based reasoning guard
+# does not catch them ("plus", not "reasoning"), so they are named here.
+# command-a-03-2025 is NOT listed — it produced clean output.
+COHERE_DENYLIST = ("command-a-plus",)
+COHERE_MAX_RETRIES = int(os.environ.get("COHERE_MAX_RETRIES", "3"))
+# Lines a leak-prone model emits instead of, or around, the rewrite: prompt-rule
+# echoes and reasoning narration. Stripped as defense in depth even for allowed
+# models; if stripping leaves nothing, the caller treats it as a failed rewrite.
+_COHERE_META = re.compile(
+    r"^\s*(?:"
+    r"(?:is|here is|this is) the rewritten paragraph\b"
+    r"|(?:now,?|okay,?|ok,?|so,?|let me|let's|we need to|we should|we must|"
+    r"i (?:will|need to|should)|first,?|next,?|finally,?)\b"
+    r"|(?:rewritten paragraph|output|paragraph|note|explanation)\s*:"
+    r"|no preamble\b"
+    r").*$",
+    re.IGNORECASE)
+
+
+def _sanitize_cohere_output(text):
+    """Strip instruction-echo / reasoning-narration lines a leak-prone model
+    mixes into the response (GH-138/GH-140). Defense in depth beside the
+    denylist: keeps a stray meta line from a clean model out of the splice."""
+    kept = [ln for ln in text.splitlines() if not _COHERE_META.match(ln)]
+    return "\n".join(kept).strip()
 
 
 def _cohere_key():
@@ -99,6 +129,12 @@ def _cohere_generate(prompt, model, temperature, timeout, system=None):
             f"refusing Cohere reasoning model '{name}': thinking-model "
             "chain-of-thought contaminates the captured text (GH-129). Use a "
             "non-reasoning variant such as command-a-03-2025.")
+    if any(bad in name for bad in COHERE_DENYLIST):
+        raise RuntimeError(
+            f"refusing denylisted Cohere model '{name}': it leaks reasoning and "
+            "echoes the prompt's rules into the output on the match-voice prompt "
+            "(GH-138), which the name-based reasoning guard does not catch. Use "
+            "command-a-03-2025.")
     key = _cohere_key()
     if not key:
         raise RuntimeError(
@@ -114,24 +150,50 @@ def _cohere_generate(prompt, model, temperature, timeout, system=None):
         "messages": messages,
         "temperature": float(temperature),
     }).encode()
-    req = urllib.request.Request(
-        COHERE_ENDPOINT, data=body,
-        headers={"Authorization": f"Bearer {key}",
-                 "Content-Type": "application/json"})
-    try:
-        with urllib.request.urlopen(req, timeout=timeout) as r:
-            data = json.loads(r.read())
-    except socket.timeout:
-        raise RuntimeError(
-            f"Cohere timed out after {timeout}s on model '{name}'. Raise the "
-            "timeout or try again. No Claude fallback, by design.")
-    except urllib.error.URLError as e:
-        if isinstance(getattr(e, "reason", None), socket.timeout):
-            raise RuntimeError(f"Cohere timed out after {timeout}s on '{name}'.")
-        raise RuntimeError(f"Cohere request failed: {e.reason}. "
-                           "No Claude fallback, by design.")
+
+    # Bounded retry with backoff for transient failures (429, 5xx, timeout).
+    # A rewrite-error dropped a paragraph to its original on the first hiccup in
+    # the GH-138 run; retrying recovers those. Non-transient errors (400/401)
+    # raise immediately. No Claude fallback, by design.
+    last = None
+    for attempt in range(COHERE_MAX_RETRIES):
+        req = urllib.request.Request(
+            COHERE_ENDPOINT, data=body,
+            headers={"Authorization": f"Bearer {key}",
+                     "Content-Type": "application/json"})
+        try:
+            with urllib.request.urlopen(req, timeout=timeout) as r:
+                data = json.loads(r.read())
+            break
+        except urllib.error.HTTPError as e:
+            if e.code in (429, 500, 502, 503, 504) and attempt < COHERE_MAX_RETRIES - 1:
+                last = f"HTTP {e.code}"
+                time.sleep(2 ** attempt)
+                continue
+            raise RuntimeError(f"Cohere request failed: HTTP {e.code} on "
+                               f"'{name}'. No Claude fallback, by design.")
+        except socket.timeout:
+            last = "timeout"
+            if attempt < COHERE_MAX_RETRIES - 1:
+                time.sleep(2 ** attempt)
+                continue
+            raise RuntimeError(
+                f"Cohere timed out after {timeout}s on model '{name}' "
+                f"({COHERE_MAX_RETRIES} attempts). Raise the timeout or retry.")
+        except urllib.error.URLError as e:
+            if isinstance(getattr(e, "reason", None), socket.timeout) \
+                    and attempt < COHERE_MAX_RETRIES - 1:
+                last = "timeout"
+                time.sleep(2 ** attempt)
+                continue
+            raise RuntimeError(f"Cohere request failed: {e.reason}. "
+                               "No Claude fallback, by design.")
+    else:  # pragma: no cover - loop always breaks or raises
+        raise RuntimeError(f"Cohere failed after {COHERE_MAX_RETRIES} attempts "
+                           f"on '{name}' ({last}).")
+
     parts = (data.get("message") or {}).get("content") or []
-    return "".join(p.get("text", "") for p in parts).strip()
+    return _sanitize_cohere_output("".join(p.get("text", "") for p in parts).strip())
 
 PROMPT = """You are rewriting one paragraph so it sounds like the author of the anchor passages below. The anchors are the author's own published prose.
 
@@ -196,10 +258,15 @@ def check_server(endpoint, model):
 def _check_cohere(model):
     """Return (ok, message) for a cohere: model — key present and not a
     reasoning variant. Does not spend a request. Never falls back."""
+    name = model[len(COHERE_PREFIX):]
     if _cohere_reasoning(model):
-        return False, (f"refusing Cohere reasoning model "
-                       f"'{model[len(COHERE_PREFIX):]}': its chain-of-thought "
-                       "contaminates captured text (GH-129). Use command-a-03-2025.")
+        return False, (f"refusing Cohere reasoning model '{name}': its "
+                       "chain-of-thought contaminates captured text (GH-129). "
+                       "Use command-a-03-2025.")
+    if any(bad in name for bad in COHERE_DENYLIST):
+        return False, (f"refusing denylisted Cohere model '{name}': it leaks "
+                       "reasoning / prompt-rule echoes into the output on the "
+                       "match-voice prompt (GH-138). Use command-a-03-2025.")
     if not _cohere_key():
         return False, ("no Cohere API key. Set COHERE_API_KEY, or "
                        "COHERE_SECRETS_FILE to a JSON file with a 'cohere' key.")

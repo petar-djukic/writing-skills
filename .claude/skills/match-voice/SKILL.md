@@ -393,9 +393,18 @@ Ollama path stays the default, and nothing routes to Cohere unless the model id
 asks for it. Because the transport lives in `generate()`, the same prefix works
 from `drive.py`, filter-tells, and burstiness — no stage grows its own client.
 
-- **Non-reasoning variants only.** `cohere:command-a-reasoning-*` is refused:
-  a thinking model's chain-of-thought lands in the captured text (the GH-129
-  lesson). Use `command-a-03-2025` or `command-a-plus-05-2026`.
+- **Non-reasoning variants only, and `command-a-plus` is denylisted.**
+  `cohere:command-a-reasoning-*` is refused (chain-of-thought lands in the
+  captured text, GH-129). `command-a-plus-05-2026` is also refused: on the long
+  match-voice prompt it leaks reasoning and echoes the prompt's own rules into
+  the output (GH-138), which the name-based reasoning guard misses. Use
+  `command-a-03-2025`. Output is sanitized of stray instruction-echo lines as
+  defense in depth.
+- **Its critic defaults to a non-Cohere model.** Cohere critiques itself into
+  unparsable verdicts (GH-138: 9 of 24), so a `cohere:` rewrite model defaults
+  its critic to `gemma4:31b-cloud` (override with `--critic-model` or
+  `COHERE_CRITIC_MODEL`). Transient API errors (429/5xx/timeout) are retried
+  (`COHERE_MAX_RETRIES`, default 3).
 - **Key** comes from `COHERE_API_KEY`, or from the JSON file named by
   `COHERE_SECRETS_FILE` (key `cohere`). Never hardcoded, never committed. The
   no-Claude-fallback contract holds: a missing key or an unreachable endpoint
