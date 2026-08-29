@@ -470,11 +470,21 @@ def run_rewrite(article_path: str, scan: dict, semantic: dict | None,
     base = os.path.splitext(os.path.basename(article_path))[0]
     draft_path = os.path.join(out_dir, f"{base}.ft-draft.md")
     passes = []
-    current_lines = list(lines)
     prev_issue_count = (scan["lexical"]["issue_count"] +
                         scan["structural"]["issue_count"])
+    # Seed the draft with the original. Every pass then reads and writes THIS
+    # file, so the paragraph positions in `targets` (re-derived from the same
+    # file each pass) always match the buffer being spliced. The prior version
+    # carried a stale in-memory `current_lines` across passes and spliced a
+    # multi-line rewrite in as a single list element, so after pass 1 the list
+    # was no longer one-line-per-element and every later index was wrong —
+    # progressive corruption that ballooned the draft (GH-147).
+    with open(draft_path, "w") as f:
+        f.write(original_text)
 
     for pass_num in range(1, max_passes + 1):
+        # Read the current draft fresh so splice indices match `targets`.
+        current_lines = open(draft_path).read().split("\n")
         rewrites_applied = 0
         for start, end, text, issues in reversed(targets):
             try:
@@ -484,17 +494,17 @@ def run_rewrite(article_path: str, scan: dict, semantic: dict | None,
                 passes.append({"pass": pass_num, "error": str(e)})
                 break
             if rewritten and rewritten.strip() != text.strip():
-                current_lines[start - 1:end] = [rewritten]
+                # Expand a multi-line rewrite into multiple list elements, or
+                # current_lines stops being one-line-per-element. reversed()
+                # (bottom-up) keeps earlier indices valid even when a rewrite
+                # changes the paragraph's line count.
+                current_lines[start - 1:end] = rewritten.split("\n")
                 rewrites_applied += 1
 
-        # Write draft
-        draft_text = "\n".join(current_lines)
-        if front_matter and not draft_text.startswith("---"):
-            draft_text = front_matter + draft_text
         with open(draft_path, "w") as f:
-            f.write(draft_text)
+            f.write("\n".join(current_lines))
 
-        # Validate by re-running Steps 1-2
+        # Validate by re-running Steps 1-2 on the written draft.
         lex = run_lexical(draft_path)
         struct = run_structural(draft_path, voice_profile)
         val = combine(lex, struct)
@@ -516,7 +526,7 @@ def run_rewrite(article_path: str, scan: dict, semantic: dict | None,
             break
 
         prev_issue_count = new_count
-        # Re-parse for next pass
+        # Re-parse + re-target from the written draft for the next pass.
         try:
             paras = parse_paragraphs(draft_path)
         except RuntimeError:
