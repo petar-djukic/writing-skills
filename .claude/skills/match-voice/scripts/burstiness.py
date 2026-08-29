@@ -74,7 +74,7 @@ BAN_RULES = """- Never use em-dashes or en-dashes. Use periods, commas, or semic
 BURSTINESS_SYSTEM = f"""You are an editor increasing the BURSTINESS of a paragraph: the variance in sentence length. Human prose alternates long and short sentences; machine prose is evenly paced. Your ONLY job is to vary sentence lengths harder while keeping the meaning identical.
 
 Rules, all mandatory:
-- Preserve meaning exactly. Change no facts, numbers, names, or citation markers like [1] [2] [@key].
+- Preserve meaning exactly. Change no facts, numbers, names, or citation markers (bracketed numbers and @-keys); never write a marker that is not already in the text.
 - Do not add or remove information. Do not summarize.
 - Split some long sentences into a long one plus a short punchy one. Occasionally use a deliberate short fragment.
 - Keep at least one genuinely long sentence per paragraph so the contrast is real.
@@ -84,7 +84,7 @@ Rules, all mandatory:
 CONTROL_SYSTEM = f"""You are an editor lightly copyediting a paragraph. Your ONLY job is to fix any awkwardness while keeping the meaning and sentence structure essentially the same.
 
 Rules, all mandatory:
-- Preserve meaning exactly. Change no facts, numbers, names, or citation markers like [1] [2] [@key].
+- Preserve meaning exactly. Change no facts, numbers, names, or citation markers (bracketed numbers and @-keys); never write a marker that is not already in the text.
 - Do not add or remove information. Do not summarize.
 - Do not change the sentence lengths or rhythm. Keep the same number of sentences.
 {BAN_RULES}

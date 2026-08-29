@@ -426,6 +426,30 @@ def _issues_for_lines(scan: dict, start: int, end: int) -> str:
     return "\n".join(hits) if hits else "(general AI patterns detected)"
 
 
+# Pandoc [@key], numbered [1], and \citep{...}/\citet{...} markers. The gate
+# compares multisets by identity: a rewrite that swaps [@park2024] for any
+# other key — including a plausible-looking one — is damage, not preservation.
+# match-voice's verify.py has enforced this per paragraph all along; the
+# filter-tells splice had no citation check at all (GH-159).
+_CITE_MARKERS = re.compile(r"\[@[^\]\s]+\]|\[\d+\]|\\cite[pt]?\{[^}]*\}")
+
+
+def _citation_damage(original: str, rewritten: str) -> str | None:
+    """A sentence naming what changed, or None when the markers survive."""
+    from collections import Counter
+    o, r = Counter(_CITE_MARKERS.findall(original)), Counter(_CITE_MARKERS.findall(rewritten))
+    if o == r:
+        return None
+    lost = sorted((o - r).elements())
+    invented = sorted((r - o).elements())
+    parts = []
+    if lost:
+        parts.append(f"lost {', '.join(lost)}")
+    if invented:
+        parts.append(f"invented {', '.join(invented)}")
+    return "citation markers damaged: " + "; ".join(parts)
+
+
 def rewrite_passage(passage: str, issue_report: str,
                     endpoint: str, model: str, timeout: int) -> str:
     """Send a passage through the rewrite prompt via Ollama."""
@@ -535,6 +559,12 @@ def run_rewrite(article_path: str, scan: dict, semantic: dict | None,
                     break
                 continue
             if rewritten and rewritten.strip() != text.strip():
+                damage = _citation_damage(text, rewritten)
+                if damage:
+                    # The rewrite is refused, the original paragraph stays.
+                    errors.append({"line": start, "cause": "citation-damage",
+                                   "error": damage})
+                    continue
                 # Expand a multi-line rewrite into multiple list elements, or
                 # current_lines stops being one-line-per-element. reversed()
                 # (bottom-up) keeps earlier indices valid even when a rewrite
