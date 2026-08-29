@@ -70,13 +70,17 @@ COHERE_MAX_RETRIES = int(os.environ.get("COHERE_MAX_RETRIES", "3"))
 # Lines a leak-prone model emits instead of, or around, the rewrite: prompt-rule
 # echoes and reasoning narration. Stripped as defense in depth even for allowed
 # models; if stripping leaves nothing, the caller treats it as a failed rewrite.
+# Deliberately NARROW: it must not touch legitimate prose that merely opens with
+# a transition word ("Now the engine reads…", "So the validator runs…"). It
+# matches only genuine meta — instruction echoes and first-person deliberation.
 _COHERE_META = re.compile(
     r"^\s*(?:"
-    r"(?:is|here is|this is) the rewritten paragraph\b"
-    r"|(?:now,?|okay,?|ok,?|so,?|let me|let's|we need to|we should|we must|"
-    r"i (?:will|need to|should)|first,?|next,?|finally,?)\b"
-    r"|(?:rewritten paragraph|output|paragraph|note|explanation)\s*:"
+    r"(?:is|here is|this is|below is) the rewritten paragraph\b"
+    r"|(?:rewritten paragraph|output|note|explanation)\s*:"
     r"|no preamble\b"
+    r"|(?:now,?\s+|so,?\s+)?we (?:need to|should|must|will|have to)\b"
+    r"|let me\b|let's\b"
+    r"|i (?:will|need to|should|have) \w"
     r").*$",
     re.IGNORECASE)
 
@@ -166,12 +170,26 @@ def _cohere_generate(prompt, model, temperature, timeout, system=None):
                 data = json.loads(r.read())
             break
         except urllib.error.HTTPError as e:
-            if e.code in (429, 500, 502, 503, 504) and attempt < COHERE_MAX_RETRIES - 1:
+            # 422 is included empirically (GH-142): Cohere returns it
+            # intermittently on the long match-voice prompt, and retrying the
+            # identical request succeeds — so here it behaves as transient, not
+            # as a permanent "unprocessable" verdict. 400/401 stay non-retryable.
+            if e.code in (422, 429, 500, 502, 503, 504) and attempt < COHERE_MAX_RETRIES - 1:
                 last = f"HTTP {e.code}"
                 time.sleep(2 ** attempt)
                 continue
+            # Surface the response body: a 422 (Unprocessable Entity) carries
+            # Cohere's reason (content filter, payload issue), which is what
+            # tells a non-retryable content rejection apart from a format bug.
+            detail = ""
+            try:
+                body_txt = e.read().decode("utf-8", "replace")
+                msg = (json.loads(body_txt).get("message") if body_txt else "") or ""
+                detail = f" ({msg[:120]})" if msg else ""
+            except Exception:  # noqa: BLE001
+                pass
             raise RuntimeError(f"Cohere request failed: HTTP {e.code} on "
-                               f"'{name}'. No Claude fallback, by design.")
+                               f"'{name}'{detail}. No Claude fallback, by design.")
         except socket.timeout:
             last = "timeout"
             if attempt < COHERE_MAX_RETRIES - 1:
