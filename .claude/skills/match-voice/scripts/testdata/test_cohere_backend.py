@@ -231,5 +231,118 @@ class CohereHardening(unittest.TestCase):
         self.assertIn("400", str(ctx.exception))
 
 
+class CohereContentBlocks(unittest.TestCase):
+    """Cohere v2 returns typed content blocks; only `text` is prose (GH-154).
+
+    Shapes here are copied from a live probe on 2026-08-29: command-a-plus-05-2026
+    answered with a 6541-character thinking block beside a 195-character text
+    block.
+    """
+
+    def test_split_separates_thinking_from_text(self):
+        parts = [{"type": "thinking", "thinking": "We need to preserve [2]."},
+                 {"type": "text", "text": "The scheduler runs once per frame."}]
+        text, thinking, other = rewrite._cohere_blocks(parts)
+        self.assertEqual(text, "The scheduler runs once per frame.")
+        self.assertEqual(thinking, "We need to preserve [2].")
+        self.assertEqual(other, [])
+
+    def test_thinking_never_reaches_the_returned_prose(self):
+        payload = {"message": {"content": [
+            {"type": "thinking", "thinking": "Let me check the citation first."},
+            {"type": "text", "text": "The validator runs first."}]}}
+        with mock.patch.dict(os.environ, {"COHERE_API_KEY": "k"}, clear=False):
+            with mock.patch.object(rewrite.urllib.request, "urlopen",
+                                   lambda req, timeout=None: _fake_response(payload)):
+                out = rewrite.generate("p", model="cohere:command-a-03-2025")
+        self.assertEqual(out, "The validator runs first.")
+        self.assertNotIn("Let me", out)
+
+    def test_thinking_out_receives_the_scratchpad(self):
+        payload = {"message": {"content": [
+            {"type": "thinking", "thinking": "Deliberating."},
+            {"type": "text", "text": "The engine reads the table."}]}}
+        sink = []
+        with mock.patch.dict(os.environ, {"COHERE_API_KEY": "k"}, clear=False):
+            with mock.patch.object(rewrite.urllib.request, "urlopen",
+                                   lambda req, timeout=None: _fake_response(payload)):
+                out = rewrite.generate("p", model="cohere:command-a-03-2025",
+                                       thinking_out=sink)
+        self.assertEqual(out, "The engine reads the table.")
+        self.assertEqual(sink, ["Deliberating."])
+
+    def test_unknown_block_type_is_ignored_not_fatal(self):
+        # Forward compatibility: a block kind added after this code was written
+        # must not join the prose and must not kill the call.
+        parts = [{"type": "tool_call", "tool_call": {"name": "search"}},
+                 {"type": "text", "text": "The queue drains in order."}]
+        text, thinking, other = rewrite._cohere_blocks(parts)
+        self.assertEqual(text, "The queue drains in order.")
+        self.assertEqual(thinking, "")
+        self.assertEqual(other, ["tool_call"])
+
+    def test_malformed_block_counted_not_raised(self):
+        text, thinking, other = rewrite._cohere_blocks(["not a dict", None])
+        self.assertEqual(text, "")
+        self.assertEqual(other, ["str", "NoneType"])
+
+    def test_text_key_on_a_thinking_block_is_not_read(self):
+        # The old parser read `text` off every block regardless of type. If a
+        # future thinking block ever carries one, it stays out of the prose.
+        text, _, _ = rewrite._cohere_blocks(
+            [{"type": "thinking", "thinking": "scratch", "text": "leaked"}])
+        self.assertEqual(text, "")
+
+
+class CohereEmptyOutput(unittest.TestCase):
+    """Empty output is a failed rewrite; the message says which kind.
+
+    Every message keeps the phrase "empty output" so drive.py's
+    classify_rewrite_error() still buckets it as empty/sanitized-to-empty.
+    """
+
+    def _raise_on(self, payload):
+        with mock.patch.dict(os.environ, {"COHERE_API_KEY": "k"}, clear=False):
+            with mock.patch.object(rewrite.urllib.request, "urlopen",
+                                   lambda req, timeout=None: _fake_response(payload)):
+                with self.assertRaises(RuntimeError) as ctx:
+                    rewrite.generate("p", model="cohere:command-a-03-2025")
+        return str(ctx.exception)
+
+    def test_reasoned_but_answered_nothing(self):
+        msg = self._raise_on({"message": {"content": [
+            {"type": "thinking", "thinking": "x" * 4000}]}})
+        self.assertIn("empty output", msg)
+        self.assertIn("4000 characters of reasoning", msg)
+        self.assertIn("token_budget", msg)
+
+    def test_meta_only_answer_sanitized_to_nothing(self):
+        msg = self._raise_on({"message": {"content": [
+            {"type": "text", "text": "Let me rewrite this.\nWe need to keep [2]."}]}})
+        self.assertIn("empty output", msg)
+        self.assertIn("meta-commentary", msg)
+
+    def test_no_text_blocks_at_all(self):
+        msg = self._raise_on({"message": {"content": []}})
+        self.assertIn("empty output", msg)
+        self.assertIn("no text blocks", msg)
+
+    def test_unread_block_types_named_in_the_error(self):
+        msg = self._raise_on({"message": {"content": [
+            {"type": "tool_call", "tool_call": {}}]}})
+        self.assertIn("unread block types: tool_call", msg)
+
+    def test_messages_stay_in_the_existing_error_bucket(self):
+        sys.path.insert(0, os.path.normpath(os.path.join(SCRIPTS)))
+        import drive as mv_drive
+        for payload in (
+                {"message": {"content": [{"type": "thinking", "thinking": "z" * 50}]}},
+                {"message": {"content": [{"type": "text", "text": "Let me try."}]}},
+                {"message": {"content": []}}):
+            self.assertEqual(
+                mv_drive.classify_rewrite_error(self._raise_on(payload)),
+                "empty/sanitized-to-empty")
+
+
 if __name__ == "__main__":
     unittest.main()
