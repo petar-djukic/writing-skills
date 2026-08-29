@@ -95,9 +95,35 @@ def test_para_index_in_issues():
     print("  para_index_in_issues: ok")
 
 
+def _skip_without_ruamel(name):
+    """False (and a legible skip) when ruamel.yaml is unavailable.
+
+    ruamel is a pixi-env dependency — run-tests.sh always has it. Under a bare
+    interpreter, pytest gets a real skip and the standalone runner prints one
+    and moves on; both beat the JSONDecodeError this replaced (GH-158)."""
+    try:
+        import ruamel.yaml  # noqa: F401
+        return True
+    except ImportError:
+        msg = (f"{name}: ruamel.yaml not installed — YAML prose-view tests "
+               "run under the pixi env (scripts/run-tests.sh)")
+        if "pytest" in sys.modules:
+            import pytest
+            pytest.skip(msg)
+        print(f"  SKIP  {msg}")
+        return False
+
+
 def test_yaml_directory_and_file_input():
     """YAML files are collected and analyzed through the aligned prose view
     (GH-345): metrics see prose scalar content only, never keys or comments."""
+    # The YAML prose view needs ruamel.yaml, a pixi-env dependency. Outside
+    # that env the subprocess dies with a ModuleNotFoundError traceback and
+    # exit 1 — the same exit code as "issues found" — so before GH-158 this
+    # test accepted the crash and then failed parsing empty stdout as a bare
+    # JSONDecodeError that pointed nowhere. Skip legibly instead.
+    if not _skip_without_ruamel("yaml_directory_and_file_input"):
+        return
     import subprocess
     sample = os.path.normpath(os.path.join(
         HERE, "..", "..", "..", "scripts", "testdata_prose_sample.yaml"))
@@ -105,6 +131,9 @@ def test_yaml_directory_and_file_input():
     r = subprocess.run([sys.executable, script, sample, "--json"],
                        capture_output=True, text=True)
     assert r.returncode in (0, 1), r.stderr
+    assert r.stdout.strip(), (
+        f"detect-structural.py exited {r.returncode} with no JSON on stdout; "
+        f"stderr:\n{r.stderr}")
     import json as _json
     result = _json.loads(r.stdout)
     assert result["file"].endswith("testdata_prose_sample.yaml")
