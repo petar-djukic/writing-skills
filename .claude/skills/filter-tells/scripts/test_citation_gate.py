@@ -79,7 +79,31 @@ def test_damaging_rewrite_is_refused_at_the_splice():
     print("  damaging_rewrite_is_refused_at_the_splice: ok")
 
 
+
+def test_structural_issues_scoped_to_their_paragraph():
+    """GH-171: an issue quoting another paragraph's prose must not reach this
+    paragraph's rewrite prompt — models spliced the quoted sentence in."""
+    scan = {"lexical": {"issues": [
+                {"line": 5, "category": "banned-word", "text": "in this one"},
+                {"line": 90, "category": "banned-word", "text": "elsewhere"}]},
+            "structural": {"issues": [
+                {"type": "antithesis-fragment", "position": "sentence pair 4-5",
+                 "detail": 'Pair: "Consider two runners chasing the same bus."'},
+                {"type": "antithesis-fragment", "position": "sentence pair 90-91",
+                 "detail": 'Pair: "A sentence living in a distant paragraph."'},
+                {"type": "dash-heavy",
+                 "detail": "3.9 per 500w across the document"}]}}
+    passage = "Consider two runners chasing the same bus. Only one of them makes it."
+    out = drive._issues_for_lines(scan, 1, 10, passage)
+    assert "two runners" in out, out
+    assert "distant paragraph" not in out, "other paragraph's quote leaked in"
+    assert "dash-heavy" in out, "quote-less document-level issue must survive"
+    assert "L5" in out and "L90" not in out
+    print("  structural_issues_scoped_to_their_paragraph: ok")
+
+
 def main():
+    test_structural_issues_scoped_to_their_paragraph()
     test_swapped_key_is_damage()
     test_preserved_markers_pass()
     test_dropped_and_duplicated_are_damage()
