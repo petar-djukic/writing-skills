@@ -50,8 +50,10 @@ MODELS = ("cohere:command-a-03-2025", "cohere:command-a-plus-05-2026")
 # per-minute cap, but generate() paces nothing for it either — the PACE sleep
 # is applied uniformly, which is harmless and keeps the loop simple.
 BAKEOFF_MODELS = MODELS + ("gemma4:31b-cloud", "gpt-oss:120b-cloud")
-# 20 calls/minute on a trial key. 3.2s leaves headroom for jitter.
-PACE_SECONDS = float(os.environ.get("COHERE_AB_PACE", "3.2"))
+# Written for a trial key's 20-call/minute cap; the account moved to a
+# production key (2026-08-29), so the default is now a light courtesy gap.
+# Raise it via COHERE_AB_PACE if a run ever sees sustained 429s.
+PACE_SECONDS = float(os.environ.get("COHERE_AB_PACE", "0.5"))
 
 CITE = re.compile(r"\[@[A-Za-z0-9_:-]+\]|\[\d+\]")
 # Trailing punctuation is not part of the number: "43," and "43" are the same
