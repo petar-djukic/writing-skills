@@ -515,6 +515,32 @@ magnitude does not.
   only marker-bearing paragraphs, so each document is partly original. Read the
   per-article spread, not the pooled mean alone.
 
+## Seed variance null (GH-178, 2026-08-31)
+
+Hypothesis (operator's): generate N seeded variants, keep the one Pangram
+scores lowest — `seed` (GH-176) makes the pick reproducible. Gated on a
+variance experiment, which returned a null:
+
+Five seeds, the full filter-tells rewrite path, `command-a-03-2025`, one pass
+over `the-loop-is-the-easy-part` (baseline 0.913). All five variants textually
+distinct (3,512–3,644 words, five distinct hashes):
+
+| seed | fraction_ai |
+|---|--:|
+| 1–5 | 0.083 / 0.082 / 0.080 / 0.082 / 0.080 |
+
+Range **0.003**. Best-of-5 beats the mean by 0.001. Selection over seeds buys
+nothing: Pangram reads the model's register, not the sampling path — five
+different phrasings of the same register score identically. The feature is not
+built.
+
+Limits of the null: one article, one model, whole-draft granularity, and a
+draft that lands far from the detector's decision boundary after one pass. A
+borderline draft might spread more; nothing here justifies spending uploads to
+find out. What the experiment does establish is worth keeping: seeded runs are
+cheap to produce and fully replayable, which makes A/Bs auditable even though
+best-of-N is dead.
+
 ## Caveats
 
 Pangram-human is not an HN pass (HN detector unknown). The score is a proxy; a
