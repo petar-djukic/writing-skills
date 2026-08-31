@@ -29,8 +29,24 @@ import re
 import sys
 import urllib.request
 
-OLLAMA_URL = "http://localhost:11434/api/chat"
-DEFAULT_MODEL = "gemma4:31b-cloud"
+# Shared transport from match-voice (GH-184): every stage that goes through
+# generate() gets the cohere: routing, the retry/backoff, and the typed-block
+# parsing for free — the GH-137 rationale this script had missed by carrying
+# its own /api/chat client.
+_MV = os.path.normpath(os.path.join(os.path.dirname(os.path.realpath(__file__)),
+                                    "..", "..", "match-voice", "scripts"))
+if _MV not in sys.path:
+    sys.path.insert(0, _MV)
+from rewrite import generate as _generate  # noqa: E402
+
+DEFAULT_ENDPOINT = os.environ.get("OLLAMA_ENDPOINT", "http://localhost:11434")
+# Deliberately NOT the Cohere default the other stages converged on (GH-184):
+# the 2026-08-21 A/B measured a stronger return-leg translator polishing the
+# accent away (gpt-oss L2 composite -0.009 vs gemma +0.726), and injecting
+# accent is this skill's entire job. ACCENT_DIAL_MODEL (or --model) selects
+# cohere:command-a-03-2025 when wanted — the shared transport routes it — but
+# the default follows the measurement.
+DEFAULT_MODEL = os.environ.get("ACCENT_DIAL_MODEL", "gemma4:31b-cloud")
 CHUNK = 6
 
 # Serbian-L1 calque patterns, mirrored from paper-stash
@@ -54,23 +70,14 @@ QUOTED = re.compile(r"\"([^\"]{2,})\"|“([^”]{2,})”")
 
 
 def chat(prompt, model, temperature=0.2, retries=3):
-    body = json.dumps({
-        "model": model,
-        "messages": [{"role": "user", "content": prompt}],
-        "stream": False,
-        "options": {"temperature": temperature},
-    }).encode()
-    err = None
-    for _ in range(retries):
-        try:
-            req = urllib.request.Request(
-                OLLAMA_URL, data=body,
-                headers={"Content-Type": "application/json"})
-            with urllib.request.urlopen(req, timeout=600) as r:
-                return json.load(r)["message"]["content"].strip()
-        except Exception as e:  # noqa: BLE001 — retry any transport failure
-            err = e
-    raise SystemExit(f"ollama unreachable after retries: {err}")
+    """One generation through the shared transport. `retries` is honored by
+    generate()'s own bounded retry; the parameter stays for call-site
+    compatibility."""
+    try:
+        return _generate(prompt, endpoint=DEFAULT_ENDPOINT, model=model,
+                         temperature=temperature, timeout=600).strip()
+    except RuntimeError as e:
+        raise SystemExit(str(e))
 
 
 SR_PROMPT = ("Prevedi sledeci tekst na srpski jezik (latinica). Sacuvaj podelu "
