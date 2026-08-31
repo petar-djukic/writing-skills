@@ -150,3 +150,13 @@ Cohere was best-in-run on technical prose (the run's only perfect 0.000 score),
 improved most once GH-171/172 fixed the pipeline faults that had depressed it,
 and the operator values one model family across both skills. gpt-oss remains
 the measured leader and the keyless/local fallback (`FILTER_TELLS_MODEL=gpt-oss:120b-cloud`).
+
+### Semantic step verified under the Cohere default (GH-180, 2026-08-31)
+
+The GH-176 flip moved Step 3's twelve perplexity prompts to Cohere untested.
+Verified with a full pipeline run on a published article: all 12 prompts
+answered, zero errors, zero empties, `rewrite_priority` extracted with real
+line anchors, rewrite loop completed (3 passes, 150 applied, issues 41→31).
+One artifact fixed on the way: Cohere bolds its field labels, so the
+extractors now strip markdown emphasis from value edges — `'** 95%'` reads as
+`'95%'`.

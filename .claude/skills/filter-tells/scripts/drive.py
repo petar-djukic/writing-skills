@@ -344,7 +344,11 @@ def _extract_priority(text: str) -> list[str]:
     if not m:
         return []
     block = m.group(1).strip()
-    lines = [ln.strip().lstrip("0123456789.-) ") for ln in block.split("\n")
+    # Cohere bolds its labels, leaving "**" residue on the values and a bare
+    # "**" line where the label's own bold closed (GH-180). Strip markdown
+    # emphasis from the edges and drop lines that were only emphasis.
+    lines = [ln.strip().lstrip("0123456789.-) ").strip("*").strip()
+             for ln in block.split("\n")
              if ln.strip() and not ln.strip().startswith("---")]
     return [ln for ln in lines if ln]
 
@@ -354,7 +358,7 @@ def _extract_field(text: str, field: str) -> str:
     if not text:
         return ""
     m = re.search(rf"{field}[:\s]+(.+?)(?:\n|$)", text, re.IGNORECASE)
-    return m.group(1).strip() if m else ""
+    return m.group(1).strip().strip("*").strip() if m else ""
 
 
 # ---------------------------------------------------------------------------

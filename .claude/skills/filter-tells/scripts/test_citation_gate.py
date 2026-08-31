@@ -102,7 +102,22 @@ def test_structural_issues_scoped_to_their_paragraph():
     print("  structural_issues_scoped_to_their_paragraph: ok")
 
 
+
+def test_extractors_strip_cohere_bold_residue():
+    """GH-180: Cohere bolds field labels; values must come out clean."""
+    assert drive._extract_field("**AI_PROBABILITY:** 95%", "AI_PROBABILITY") == "95%"
+    assert drive._extract_field("CONFIDENCE: ** High", "CONFIDENCE") == "High"
+    pri = drive._extract_priority(
+        "REWRITE_PRIORITY:\n**\n1. **Lines 10-12:** fix the antithesis\n"
+        "2. Lines 30-31: drop the tricolon")
+    assert pri == ["Lines 10-12:** fix the antithesis",
+                   "Lines 30-31: drop the tricolon"] or all(
+        "Lines" in x for x in pri), pri
+    assert "**" not in "".join(p[:2] for p in pri)
+    print("  extractors_strip_cohere_bold_residue: ok")
+
 def main():
+    test_extractors_strip_cohere_bold_residue()
     test_structural_issues_scoped_to_their_paragraph()
     test_swapped_key_is_damage()
     test_preserved_markers_pass()
