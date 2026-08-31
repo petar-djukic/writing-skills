@@ -451,42 +451,57 @@ same cold-review standard:
 The unseeded pass is retained below as a named ablation. Choosing it is a
 deviation a run has to state and justify.
 
-#### 3.1 Seed — a different family, anchored
+#### 3.1 Seed — Cohere, anchored (the GH-194 default)
 
 ```bash
 $RUN <match-voice>/scripts/drive.py \
   --article <cleaned.md> \
-  --model gemma4:31b-cloud \
-  --anchor-tags <tags that select one author's exemplars> \
+  --model cohere:command-a-03-2025 \
+  --author <the author whose register fits> \
   --voice-dir <repo>/writing-voice \
+  --pangram \
   --out <seed.md>
 ```
 
-Anchor by **tags**, not `--author`: the corpus carries no author field, so
-`--author` selects an empty pool and aborts (writing-skills GH-98). Pick
-tags exclusive to the author you want — `parable,ledger-read` selects the
-22 Krugman exemplars and nothing else. Verify the pool size before
-trusting the run:
+`--author` works by filename inference where the manifest carries no author
+field — the anchor pool line reports `(inferred from filenames)` — so the
+old anchor-by-tags-only guidance (GH-98 era) is superseded; tags remain the
+tool when no single author fits. Verify the pool either way:
 
 ```bash
 $RUN <match-structure>/scripts/voice_anchors.py tags --voice-dir <repo>/writing-voice
 ```
 
-The seed is expected to score badly on its own. That is not failure; a
-seed that scores well has not changed the fingerprint.
+**With a Cohere seed, the seed is usually the result** (GH-194: every
+Cohere arm's floor was the seed itself). Measure it; that score is your
+baseline for 3.2.
 
-#### 3.2 Iterate — the first family, no anchors, stop at the upturn
+#### 3.2 Iterate — only while the score still falls
 
 ```bash
 PREV=<seed.md>
 for i in 01 02 03 04; do
   $RUN <match-voice>/scripts/drive.py --article $PREV \
-    --model gpt-oss:120b-cloud --no-anchors --pangram \
+    --model cohere:command-a-03-2025 --no-anchors --pangram \
     --canonical-blocks <repo>/writing-voice/canonical-blocks.txt \
     --out pass$i.md
   PREV=pass$i.md   # read the score; STOP at the first upturn
 done
 ```
+
+Expect this loop to stop at pass 1 — iteration earned nothing in any
+GH-194 Cohere arm. It stays in the recipe because stop-on-upturn makes a
+zero-gain loop cost exactly one pass, and a payload that does respond gets
+its passes.
+
+**Recorded July configuration (alternative).** The pre-GH-194 pinned
+recipe — anchored `gemma4:31b-cloud` seed, then a `gpt-oss:120b-cloud`
+no-anchors iterator — is the arm the results tables below measured through
+July. It is iterator-driven where the Cohere strategy is seed-driven, lost
+the GH-194 head-to-head (mean 0.867 vs 0.768), and a gpt-oss pass after a
+Cohere seed actively undoes the seed (0.896 -> 0.996) — never mix them in
+that order. Reach for it when an iterator-grind on an already-clean draft
+is specifically wanted; substitute the model names into the commands above.
 
 Three rules, all load-bearing:
 
