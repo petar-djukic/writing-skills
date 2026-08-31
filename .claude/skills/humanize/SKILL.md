@@ -159,7 +159,20 @@ Pangram catches. See calibration data at the end.
 
 ## Prerequisites
 
-- Ollama endpoint reachable with `kimi-k2.6:cloud` and `gpt-oss:120b-cloud`
+- A Cohere key (`COHERE_API_KEY` / `COHERE_SECRETS_FILE`) — every stage's
+  *default* model is `cohere:command-a-03-2025` since GH-176–190
+- Ollama endpoint reachable with `kimi-k2.6:cloud` and `gpt-oss:120b-cloud` —
+  required by the **pinned recipes below** and by the keyless fallbacks
+
+### Model pins vs stage defaults (GH-193)
+
+The commands in this SKILL pin `--model` explicitly (kimi for match-outline,
+an anchored gemma seed, a gpt-oss no-anchors iterator). Those pins are the
+calibrated multi-family strategy — the July 2026 runs whose Pangram outcomes
+the results tables record — and they deliberately override the stage
+defaults, which have since converted to Cohere. Do not "fix" a pinned command
+to the default: the pin is the experiment. Whether Cohere arms beat the pins
+is GH-194, a measured recalibration, and the pins move only on its numbers.
 - A `writing-voice/` directory with exemplars and at least one blueprint
   under `writing-voice/blueprints/`
 - For Pangram measurement: an API key configured per the match-voice

@@ -44,7 +44,7 @@ transformations — they show wordy phrasing beside its tight form:
 {pairs}
 
 Rules for the rewrite:
-- Preserve every number, citation (like [3] or [@key]), and technical term exactly.
+- Preserve every number, citation marker (bracketed numbers and @-keys), and technical term exactly; never write a marker that is not already in the paragraph.
 - Do not add information, opinions, or transitions.
 - Do not shorten for its own sake: if a sentence is already tight, keep it.
 - Output only the rewritten paragraph, nothing else.
@@ -201,7 +201,13 @@ def tighten_paragraph(text, fired_rules, model, endpoint, temperature, timeout):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--article", required=True)
-    ap.add_argument("--model", default=os.environ.get("MATCH_VOICE_MODEL", "gemma4:12b"))
+    # TIGHTEN_STYLE_MODEL, not MATCH_VOICE_MODEL: this driver borrowed the
+    # neighbor's env var along with its transport, which meant configuring
+    # match-voice silently reconfigured tighten-style too. Cohere default per
+    # the pipeline conversion (GH-193); gemma4:12b is the keyless/local
+    # fallback.
+    ap.add_argument("--model", default=os.environ.get(
+        "TIGHTEN_STYLE_MODEL", "cohere:command-a-03-2025"))
     ap.add_argument("--endpoint", default=os.environ.get("OLLAMA_ENDPOINT",
                                                          "http://localhost:11434"))
     ap.add_argument("--out", help="default: <article>.tight.md")
