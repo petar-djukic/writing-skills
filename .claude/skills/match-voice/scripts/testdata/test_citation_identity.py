@@ -46,6 +46,17 @@ def test_prompt_rule_carries_no_copyable_key():
     print("  prompt_rule_carries_no_copyable_key: ok")
 
 
+def test_tighten_prompt_carries_no_copyable_key():
+    import os, sys
+    ts = os.path.normpath(os.path.join(HERE, "..", "..", "..",
+                                       "tighten-style", "scripts"))
+    sys.path.insert(0, ts)
+    import tighten
+    assert "[@key]" not in tighten.PROMPT
+    assert "[3]" not in tighten.PROMPT, "numbered literal is copyable too"
+    print("  tighten_prompt_carries_no_copyable_key: ok")
+
+
 def test_burstiness_prompts_carry_no_copyable_key():
     import burstiness
     for name in ("BURSTINESS_SYSTEM", "CONTROL_SYSTEM"):
@@ -58,6 +69,7 @@ def main():
     test_swapped_key_is_two_fatal_findings()
     test_identical_keys_pass()
     test_prompt_rule_carries_no_copyable_key()
+    test_tighten_prompt_carries_no_copyable_key()
     test_burstiness_prompts_carry_no_copyable_key()
     print("test_citation_identity: all assertions passed")
 
