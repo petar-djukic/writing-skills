@@ -409,6 +409,12 @@ CONSTRAINTS:
 8. Plain sentences are allowed and required
 9. Do NOT close every paragraph on a flourish
 10. Prefer the boring accurate sentence over the clever compressed one
+11. Copy every bracketed citation marker (a number or an @-key in square \
+brackets) into the rewrite verbatim, attached to the same claim; never add \
+one that is not already there
+12. The rewrite must not be longer than the original passage — cutting is \
+allowed, adding is not
+13. Preserve every bold, italic, and backtick code span in place
 
 OUTPUT: The rewritten passage only. No commentary."""
 
