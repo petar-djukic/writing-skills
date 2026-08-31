@@ -95,6 +95,22 @@ COHERE_MIN_THINKING_BUDGET = int(os.environ.get("COHERE_MIN_THINKING_BUDGET", "8
 # Unset sends no field, which is what every measured-clean run above did.
 COHERE_THINKING = os.environ.get("COHERE_THINKING", "").strip().lower()
 COHERE_THINKING_BUDGET = os.environ.get("COHERE_THINKING_BUDGET", "").strip()
+# Doc audit (GH-176, docs.cohere.com 2026-08-31): temperature defaults to 0.3,
+# p to 0.75, k to 0; safety_mode defaults to CONTEXTUAL; `seed` gives
+# deterministic sampling. The documented reasoning guidance is "leave at least
+# 1K tokens for the response" and 31K for reason-to-the-limit — our 8000 floor
+# is empirical and stricter, kept because token_budget=1 measurably spilled
+# the scratchpad into the answer. The 422 error_types this module classifies
+# (INVALID_TOOL_GENERATION deterministic, NO_VALID_RESPONSE_GENERATED
+# transient) are NOT in Cohere's documented error list — both are empirical,
+# and the docs do not document 422 for chat at all.
+# COHERE_SEED, when set to an integer, is sent as `seed` — a documented
+# parameter that makes bake-off arms reproducible.
+COHERE_SEED = os.environ.get("COHERE_SEED", "").strip()
+# finish_reason values the docs enumerate. Only COMPLETE is a finished answer
+# for this pipeline: we send no stop_sequences and no tools, so every other
+# value means the text is truncated or absent and must not be spliced.
+COHERE_FINISH_OK = ("COMPLETE",)
 # Lines a leak-prone model emits instead of, or around, the rewrite: prompt-rule
 # echoes and reasoning narration. Stripped as defense in depth even for allowed
 # models; if stripping leaves nothing, the caller treats it as a failed rewrite.
@@ -243,6 +259,11 @@ def _cohere_generate(prompt, model, temperature, timeout, system=None,
     thinking = _cohere_thinking()
     if thinking is not None:
         payload["thinking"] = thinking
+    if COHERE_SEED:
+        try:
+            payload["seed"] = int(COHERE_SEED)
+        except ValueError:
+            raise RuntimeError(f"COHERE_SEED must be an integer, got {COHERE_SEED!r}.")
     body = json.dumps(payload).encode()
 
     # Bounded retry with backoff for transient failures (429, 5xx, timeout).
@@ -279,7 +300,8 @@ def _cohere_generate(prompt, model, temperature, timeout, system=None,
                     f"so this is not retried. Unset COHERE_THINKING (the default "
                     f"sends no thinking field and does not hit this), or shorten "
                     f"the prompt. No Claude fallback, by design.")
-            if e.code in (422, 429, 500, 502, 503, 504) and attempt < COHERE_MAX_RETRIES - 1:
+            # 499 (request cancelled) is documented "try the request again".
+            if e.code in (422, 429, 499, 500, 502, 503, 504) and attempt < COHERE_MAX_RETRIES - 1:
                 last = f"HTTP {e.code}{'/' + error_type if error_type else ''}"
                 time.sleep(2 ** attempt)
                 continue
@@ -308,6 +330,17 @@ def _cohere_generate(prompt, model, temperature, timeout, system=None,
         raise RuntimeError(f"Cohere failed after {COHERE_MAX_RETRIES} attempts "
                            f"on '{name}' ({last}).")
 
+    finish = data.get("finish_reason")
+    if finish is not None and finish not in COHERE_FINISH_OK:
+        # MAX_TOKENS means a truncated rewrite; ERROR/TIMEOUT mean no answer.
+        # Splicing any of them corrupts the draft, so all are failed rewrites.
+        # The docs enumerate COMPLETE, STOP_SEQUENCE, MAX_TOKENS, TOOL_CALL,
+        # ERROR, TIMEOUT; this pipeline sends no stop sequences and no tools,
+        # so nothing but COMPLETE is expected (GH-176).
+        raise RuntimeError(
+            f"Cohere '{name}' finished with {finish!r}, not COMPLETE — the "
+            f"text would be truncated or absent, so it is not spliced. "
+            f"MAX_TOKENS means the model hit its output cap on this paragraph.")
     parts = (data.get("message") or {}).get("content") or []
     raw, thinking, other = _cohere_blocks(parts)
     if thinking_out is not None:

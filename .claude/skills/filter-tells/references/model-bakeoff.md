@@ -140,3 +140,13 @@ the GH-170 run archive.
 Pangram-human is not an HN pass. filter-tells output is neutral by design — not
 voice-graded. Cohere is a hosted API (cost/egress); the incumbent gpt-oss and
 gemma are Ollama-cloud.
+
+## Default change (GH-176, 2026-08-31) — operator decision
+
+`FILTER_TELLS_MODEL` now defaults to `cohere:command-a-03-2025`, overriding
+this bake-off's verdict. Recorded as an operator decision, not a measurement:
+the GH-170 post-fix means had gpt-oss ahead (0.114 vs 0.279). The grounds:
+Cohere was best-in-run on technical prose (the run's only perfect 0.000 score),
+improved most once GH-171/172 fixed the pipeline faults that had depressed it,
+and the operator values one model family across both skills. gpt-oss remains
+the measured leader and the keyless/local fallback (`FILTER_TELLS_MODEL=gpt-oss:120b-cloud`).

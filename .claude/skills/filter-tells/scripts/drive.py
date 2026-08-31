@@ -31,7 +31,15 @@ _PROMPTS_PATH = os.path.join(_SKILL, "references", "perplexity-prompts.md")
 _FM = re.compile(r"\A---\s*\n.*?\n(?:---|\.\.\.)\s*\n", re.DOTALL)
 
 DEFAULT_ENDPOINT = os.environ.get("OLLAMA_ENDPOINT", "http://localhost:11434")
-DEFAULT_MODEL = os.environ.get("FILTER_TELLS_MODEL", "gpt-oss:120b-cloud")
+# Operator decision (GH-176, 2026-08-31): default is Cohere, overriding the
+# GH-170 post-fix mean where gpt-oss led (0.114 vs 0.279). Recorded as a
+# choice, not a measurement: Cohere was best-in-run on technical prose
+# (including the run's only perfect 0.000/0.931 score) and improved most once
+# GH-171/172 fixed the pipeline faults that had depressed it. It is a hosted
+# API — needs a key, bills per token, sends the draft off the machine; a
+# keyless machine sets FILTER_TELLS_MODEL=gpt-oss:120b-cloud, the GH-170
+# incumbent, and check_server names that remediation rather than crashing.
+DEFAULT_MODEL = os.environ.get("FILTER_TELLS_MODEL", "cohere:command-a-03-2025")
 DEFAULT_TIMEOUT = int(os.environ.get("FILTER_TELLS_TIMEOUT", "600"))
 
 
