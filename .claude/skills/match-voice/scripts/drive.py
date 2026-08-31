@@ -1024,13 +1024,16 @@ def main():
     if a.critic_model:
         critic_model = a.critic_model
     elif rwm_early._is_cohere(a.model):
-        # A Cohere run already needs network, so default its critic to a reliable
-        # cloud Ollama model rather than the local default (which may be unpulled).
-        # Env-overridable; falls back to mechanical-only if unreachable.
-        critic_model = os.environ.get("COHERE_CRITIC_MODEL", "gemma4:31b-cloud")
-        print(f"critique: rewrite model is Cohere; defaulting critic to "
-              f"{critic_model} (Cohere critiques itself poorly, GH-140). "
-              f"Override with --critic-model or COHERE_CRITIC_MODEL.")
+        # The critic defaults to the rewrite model, restoring the pre-GH-140
+        # behavior. GH-140 forced gemma here because Cohere critiqued itself
+        # into 9/24 unparsable verdicts — retested on the corrected pipeline
+        # (post GH-154/155/171/172): 12/12 parsed (GH-181). The unparsable
+        # critiques were that era's pipeline faults, not a model property.
+        # COHERE_CRITIC_MODEL still overrides, and a pure-Cohere run now has
+        # no Ollama dependency at all.
+        critic_model = os.environ.get("COHERE_CRITIC_MODEL", a.model)
+        if critic_model != a.model:
+            print(f"critique: COHERE_CRITIC_MODEL overrides critic to {critic_model}.")
     else:
         critic_model = a.model
     if not a.no_critique:
