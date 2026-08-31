@@ -413,16 +413,41 @@ CONSTRAINTS:
 OUTPUT: The rewritten passage only. No commentary."""
 
 
-def _issues_for_lines(scan: dict, start: int, end: int) -> str:
-    """Collect scan issues that fall within a line range."""
+_QUOTED = re.compile(r'[\u201c"]([^\u201c\u201d"]{12,})[\u201d"]')
+
+
+def _issues_for_lines(scan: dict, start: int, end: int, passage: str = "") -> str:
+    """Collect scan issues that belong to THIS passage.
+
+    Lexical issues carry line numbers and filter by range. Structural issues
+    carry sentence-pair positions that do not map to lines, so they are kept
+    only when the verbatim prose their detail quotes appears in the passage;
+    a quote-less detail (a document-level rhythm stat like dash-heavy) is kept
+    everywhere.
+
+    Before GH-171 the structural list was appended to EVERY paragraph's
+    rewrite prompt, quotes and all — 26 issues, 2,815 characters of other
+    paragraphs' sentences, injected into each of ~70 rewrites of one essay.
+    An instruction-literal model then "fixes" prose that is not in its
+    passage: one bake-off draft came back with a sentence quoted in an issue
+    detail spliced into six different paragraphs, and a vocabulary the issue
+    blob converged every paragraph onto. Models that ignore prompt noise hid
+    the bug; models that obey exposed it."""
     hits = []
     for h in scan.get("lexical", {}).get("issues", []):
         ln = h.get("line", 0)
         if start <= ln <= end:
             hits.append(f"L{ln} [{h.get('category','')}] {h.get('text','')[:100]}")
+    passage_flat = " ".join(passage.split()).lower()
     for h in scan.get("structural", {}).get("issues", []):
-        pos = h.get("position", "")
-        hits.append(f"[{h.get('type','')}] {h.get('detail','')[:100]}")
+        detail = h.get("detail", "")
+        quotes = _QUOTED.findall(detail)
+        if quotes:
+            if not passage_flat:
+                continue
+            if not any(" ".join(q.split()).lower() in passage_flat for q in quotes):
+                continue
+        hits.append(f"[{h.get('type','')}] {detail[:100]}")
     return "\n".join(hits) if hits else "(general AI patterns detected)"
 
 
@@ -508,7 +533,7 @@ def run_rewrite(article_path: str, scan: dict, semantic: dict | None,
     # Identify which paragraphs to rewrite based on scan issues
     targets = []
     for start, end, text in paras:
-        issues = _issues_for_lines(scan, start, end)
+        issues = _issues_for_lines(scan, start, end, text)
         if issues != "(general AI patterns detected)" or \
                 scan.get("verdict") in ("likely-ai", "suspicious",
                                         "suspicious-overshoot"):
@@ -611,7 +636,7 @@ def run_rewrite(article_path: str, scan: dict, semantic: dict | None,
             break
         targets = []
         for start, end, text in paras:
-            issues = _issues_for_lines(val, start, end)
+            issues = _issues_for_lines(val, start, end, text)
             if issues != "(general AI patterns detected)":
                 targets.append((start, end, text, issues))
         if not targets:
