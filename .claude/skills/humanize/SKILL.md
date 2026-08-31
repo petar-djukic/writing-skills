@@ -172,7 +172,33 @@ calibrated multi-family strategy — the July 2026 runs whose Pangram outcomes
 the results tables record — and they deliberately override the stage
 defaults, which have since converted to Cohere. Do not "fix" a pinned command
 to the default: the pin is the experiment. Whether Cohere arms beat the pins
-is GH-194, a measured recalibration, and the pins move only on its numbers.
+was GH-194, and the numbers are in (2026-08-31, two published payloads,
+seed+iterator isolated on raw articles, prose-only Pangram):
+
+| arm (seed -> iterator) | loop (base 1.000) | prompts (base 0.913) | mean |
+|---|--:|--:|--:|
+| pinned: gemma-anchored -> gpt-oss | 1.000 (never moved) | 0.734 (3 passes) | 0.867 |
+| cohere-anchored -> gpt-oss | 0.896 | 0.913 | 0.904 |
+| gemma-anchored -> cohere | 1.000 | 0.909 | 0.955 |
+| **cohere -> cohere** | **0.802** | **0.735** | **0.768** |
+
+**The recommended strategy is now a single Krugman-anchored Cohere seed
+pass** (`--model cohere:command-a-03-2025 --author Krugman`), measured, with
+further no-anchor passes only if the score still falls: it tied the pinned
+recipe's 3-pass endpoint on one payload in ONE pass, was the only arm to
+move the other payload at all, and needs no Ollama. Two different mechanisms
+showed up: the pinned recipe is iterator-driven (gpt-oss grinding over
+passes), the Cohere strategy is seed-driven (the anchored pass does the work
+and iteration adds nothing — every Cohere arm upturned at p1). The
+multi-family "foreign fingerprint" thesis did not replicate: both mixed arms
+were worse than either pure arm, and a gpt-oss pass after a Cohere seed
+actively destroyed the seed's gain (0.896 -> 0.996).
+
+Limits: n=2 payloads, arms isolated on raw articles (the July pins ran after
+outline+filter-tells cleanup), stop-on-upturn sampled once per pass. The
+pinned recipe stays documented below as the recorded July configuration; it
+remains the choice when an iterator-driven grind is wanted on an
+already-clean draft.
 - A `writing-voice/` directory with exemplars and at least one blueprint
   under `writing-voice/blueprints/`
 - For Pangram measurement: an API key configured per the match-voice
