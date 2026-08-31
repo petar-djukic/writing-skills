@@ -51,6 +51,13 @@ import sys
 import urllib.error
 import urllib.request
 
+_MV = os.path.normpath(os.path.join(os.path.dirname(os.path.realpath(__file__)),
+                                    "..", "..", "match-voice", "scripts"))
+if _MV not in sys.path:
+    sys.path.insert(0, _MV)
+from rewrite import generate as _generate  # noqa: E402
+from critique import parse_model as _parse_model  # noqa: E402
+
 SK = os.path.dirname(os.path.realpath(__file__))
 SHARED = os.path.normpath(os.path.join(SK, "..", "..", "..", "scripts"))
 if SHARED not in sys.path:
@@ -62,7 +69,12 @@ from idiolect import (TOLERANCE, compile_marker, discover_voice_dir,  # noqa: E4
 DENSITY_CAPS = {"how-to": 1.0, "essay": 2.0, "polemic": 3.0}
 SAFE_TARGETS = {"artifact", "institution", "category", "dead", "past-self"}
 DEFAULT_ENDPOINT = os.environ.get("OLLAMA_ENDPOINT", "http://localhost:11434")
-DEFAULT_MODEL = "gemma4:12b"
+# Judge default is Cohere (GH-190), joining the pipeline-wide conversion; no
+# measured rationale pinned the old gemma4:12b beyond "cheap local judge",
+# and judging is what Cohere proved strongest at (GH-181: 12/12 critique
+# parses). VOICE_CRITIC_MODEL overrides; gemma4:12b remains the keyless/local
+# fallback.
+DEFAULT_MODEL = os.environ.get("VOICE_CRITIC_MODEL", "cohere:command-a-03-2025")
 
 # A receipt, mechanically: a number, a percentage, a citation, or quoted
 # material — the evidence classes §3/§4 accept ahead of a verdict.
@@ -100,18 +112,26 @@ class OllamaJudge:
         self.model = model
 
     def _ask(self, prompt):
-        body = json.dumps({"model": self.model, "prompt": prompt,
-                           "stream": False, "format": "json"}).encode()
-        req = urllib.request.Request(
-            f"{self.endpoint}/api/generate", data=body,
-            headers={"Content-Type": "application/json"})
+        # Shared transport (GH-190): cohere: model ids route with retries and
+        # key handling. Ollama's format=json crutch is gone with the private
+        # client; the tolerant extractor from match-voice's critique module
+        # does the same job for every backend, and an answer with no JSON
+        # object in it is the same hard stop the old client had.
         try:
-            with urllib.request.urlopen(req, timeout=180) as r:
-                return json.loads(json.loads(r.read())["response"])
-        except (urllib.error.URLError, OSError, ValueError, KeyError) as e:
-            sys.exit(f"voice-critic: judge requested but Ollama at "
-                     f"{self.endpoint} failed ({e}). Run without --judge "
-                     "or fix the server; there is no silent fallback.")
+            raw = _generate(prompt + "\n\nReturn ONLY the JSON object.",
+                            endpoint=self.endpoint, model=self.model,
+                            temperature=0.0, timeout=180)
+        except RuntimeError as e:
+            sys.exit(f"voice-critic: judge requested but the model call "
+                     f"failed ({e}). Run without --judge, fix the server or "
+                     "key, or set VOICE_CRITIC_MODEL=gemma4:12b for a local "
+                     "judge; there is no silent fallback.")
+        data = _parse_model(raw)
+        if data is None:
+            sys.exit("voice-critic: judge answered without a parseable JSON "
+                     f"object (model {self.model}); head: {raw[:120]!r}. "
+                     "There is no silent fallback.")
+        return data
 
     def stance(self, text):
         """-> {"verdict": "PASS|FLAG", "note": str, "quotes": [str]}"""
