@@ -61,6 +61,12 @@ import sys
 import urllib.error
 import urllib.request
 
+_MV = os.path.normpath(os.path.join(os.path.dirname(os.path.realpath(__file__)),
+                                    "..", "..", "match-voice", "scripts"))
+if _MV not in sys.path:
+    sys.path.insert(0, _MV)
+from rewrite import generate as _generate  # noqa: E402
+
 SK = os.path.dirname(os.path.realpath(__file__))
 SHARED = os.path.normpath(os.path.join(SK, "..", "..", "..", "scripts"))
 if SHARED not in sys.path:
@@ -72,7 +78,11 @@ import idiolect  # noqa: E402
 
 SPLIT_WORDS = 30  # sentence-length operator: split threshold from the bank
 DEFAULT_ENDPOINT = os.environ.get("OLLAMA_ENDPOINT", "http://localhost:11434")
-DEFAULT_MODEL = "gemma4:12b"
+# Verifier default is Cohere (GH-190); INJECT_VERNACULAR_MODEL overrides,
+# gemma4:12b remains the keyless/local fallback. The verifier only ever
+# answers KEEP or DROP — the non-generative contract is about what the judge
+# may do, not which model judges.
+DEFAULT_MODEL = os.environ.get("INJECT_VERNACULAR_MODEL", "cohere:command-a-03-2025")
 
 
 # --- idiolect bank -----------------------------------------------------------
@@ -673,19 +683,15 @@ def ollama_judge(endpoint, model):
             f"AFTER:\n{after}\n\n"
             "Answer KEEP if the edit preserves meaning and reads as "
             "grammatical English. Answer DROP otherwise. One word only.")
-        body = json.dumps({"model": model, "prompt": prompt,
-                           "stream": False}).encode()
-        req = urllib.request.Request(
-            f"{endpoint}/api/generate", data=body,
-            headers={"Content-Type": "application/json"})
         try:
-            with urllib.request.urlopen(req, timeout=120) as r:
-                resp = json.loads(r.read())
-        except (urllib.error.URLError, OSError) as e:
-            sys.exit(f"inject-vernacular: verifier requested but Ollama at "
-                     f"{endpoint} is unreachable ({e}). No silent skip: run "
-                     "without --verify or start the server.")
-        return "KEEP" in resp.get("response", "").strip().upper()[:8]
+            resp = _generate(prompt, endpoint=endpoint, model=model,
+                             temperature=0.0, timeout=120)
+        except RuntimeError as e:
+            sys.exit(f"inject-vernacular: verifier requested but the model "
+                     f"call failed ({e}). No silent skip: run without "
+                     "--verify, fix the server or key, or set "
+                     "INJECT_VERNACULAR_MODEL=gemma4:12b for a local judge.")
+        return "KEEP" in resp.strip().upper()[:8]
     return judge
 
 
