@@ -53,7 +53,9 @@ if HERE not in sys.path:
 import rewrite as _rw          # noqa: E402  shared Ollama transport
 import verify as _vf           # noqa: E402  the acceptance gate
 
-DEFAULT_MODEL = os.environ.get("BURSTINESS_MODEL", "gemma4:31b-cloud")
+# Cohere default (GH-184, completing the GH-176 conversion). BURSTINESS_MODEL
+# overrides; gemma4:31b-cloud is the keyless/local fallback.
+DEFAULT_MODEL = os.environ.get("BURSTINESS_MODEL", "cohere:command-a-03-2025")
 DEFAULT_TIMEOUT = int(os.environ.get("BURSTINESS_TIMEOUT", "300"))
 
 # Paragraphs below this have no rhythm to reshape: a two-sentence aside cannot
@@ -296,9 +298,13 @@ def run(article, out_path=None, control=False, model=DEFAULT_MODEL,
             "burstiness": {"before": before},
         }
 
-    ok, message = _rw.check_server(endpoint, model)
-    if not ok:
-        sys.exit(message)
+    # An injected generate_fn IS the transport — checking the real server or
+    # key behind its back couples offline tests to ambient credentials, which
+    # surfaced the moment the default became a keyed backend (GH-184).
+    if generate_fn is (_rw.generate):
+        ok, message = _rw.check_server(endpoint, model)
+        if not ok:
+            sys.exit(message)
 
     by_index = {r["index"]: r for r in paragraphs}
     for para in doc.paragraphs:
