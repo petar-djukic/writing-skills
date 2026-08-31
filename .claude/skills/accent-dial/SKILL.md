@@ -55,6 +55,15 @@ python3 <skill>/scripts/accent_dial.py --article draft.md --dial 0.4
   free). `--roundtrip` points at an existing cache.
 - Output: `<stem>.dial<p>.md` + `<out>.log.json` (per-candidate gate
   verdict, score, applied flag — the survival-analysis surface).
+- **Fluency dial (GH-188).** `--fluency {fresh,settled,native}` (or
+  `--fluency-years N`, mapped <=8 / <=22 / else) gives the return leg an
+  immersion persona, dialing the accent between the mechanical round trip's
+  total-beginner sound and polished-away. Measured on the way in: a bare
+  years number in the prompt is a null — four levels produced identical
+  fluent output — so years only select a *described feature band* (fronted
+  adverbs and dropped articles at fresh, faint formality at settled,
+  idiomatic at native). Absent, the blind return leg is byte-identical to
+  the calibration.
 - **Two dials since GH-186.** `--model-return` (env
   `ACCENT_DIAL_MODEL_RETURN`) splits the legs: the 2026-08-21 A/B located the
   accent effect on the return leg, so the productive pairing is a strong

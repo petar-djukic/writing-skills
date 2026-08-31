@@ -145,17 +145,69 @@ def run_leg(paras, prompt, model):
     return out
 
 
-def roundtrip(paras, model, model_return=None, language="serbian"):
+# The fluency dial (GH-188). A bare immersion-years number is a NULL — four
+# levels (5/10/20/30) produced near-identical fluent output; the model cannot
+# calibrate fluency to a number. Describing what each level SOUNDS like works:
+# the 2026-08-31 experiment got a visible, subtle gradient (fronted adverbs
+# and dropped articles at fresh, faint formality at settled, idiomatic at
+# native). The bands name concrete features; l2-markers.yaml is the canonical
+# bank to grow them from.
+FLUENCY_BANDS = {
+    "fresh": (
+        "Their English carries visible {l1} traces: articles (a/the) "
+        "occasionally dropped or misplaced, present tense where English "
+        "wants perfect, direct {l1} phrasings translated word-for-word where "
+        "a native would use an idiom, slightly formal word choice where "
+        "natives go casual. Grammatical, understandable, but recognizably "
+        "L2."),
+    "settled": (
+        "Their English is fluent and comfortable but not native: an "
+        "occasional slightly-off idiom or article, a preference for direct "
+        "statement over English hedging, sentence rhythm a touch more even "
+        "than a native's. One subtle trace per few sentences, no more."),
+    "native": (
+        "Their English is fully idiomatic after decades of immersion; at "
+        "most one faint trace of directness per paragraph survives."),
+}
+
+
+def fluency_band(years):
+    """Immersion years -> band name. The cutoffs are coarse on purpose: the
+    experiment showed the model only distinguishes described bands, so finer
+    year granularity would imply a precision the mechanism does not have."""
+    return "fresh" if years <= 8 else ("settled" if years <= 22 else "native")
+
+
+def fluency_return_prompt(language, band):
+    """Return-leg prompt carrying a fluency persona. Separate from
+    prompts_for(): the blind mechanical return leg stays byte-identical to
+    the calibration when no fluency is requested."""
+    l1 = language.strip().title()
+    features = FLUENCY_BANDS[band].replace("{l1}", l1)
+    return ("Translate the following " + l1 + " text into English as written "
+            "by a native " + l1 + " speaker. " + features + " Keep the "
+            "paragraph structure: paragraphs are separated by a blank line, "
+            "and the translation must have the same number of paragraphs. "
+            "Copy numbers, names, and bracketed citations like [7] exactly. "
+            "Output ONLY the translation, no commentary.\n\n")
+
+
+def roundtrip(paras, model, model_return=None, language="serbian",
+              fluency=None):
     """EN -> pivot -> EN. The 2026-08-21 A/B located the accent effect on the
     RETURN leg — a strong translator polishes it away there — so the legs
     take separate models (GH-186): a strong outbound translator buys fidelity
     into the pivot without costing accent, as long as the return leg stays
     weak. model_return defaults to model, keeping single-model calls exact."""
     out_prompt, back_prompt = prompts_for(language)
+    mode = "blind"
+    if fluency:
+        back_prompt = fluency_return_prompt(language, fluency)
+        mode = f"fluency={fluency}"
     label = language.strip().title()
     print(f"leg 1: EN -> {label} ({model})", file=sys.stderr)
     mid = run_leg(paras, out_prompt, model)
-    print(f"leg 2: {label} -> EN (blind, {model_return or model})", file=sys.stderr)
+    print(f"leg 2: {label} -> EN ({mode}, {model_return or model})", file=sys.stderr)
     return run_leg(mid, back_prompt, model_return or model)
 
 
@@ -282,6 +334,14 @@ def main():
                     help="return-leg translator; the accent is made or "
                          "destroyed on this leg, keep it weak "
                          "(env ACCENT_DIAL_MODEL_RETURN)")
+    ap.add_argument("--fluency", choices=sorted(FLUENCY_BANDS),
+                    help="return-leg persona band; absent = the blind "
+                         "mechanical return leg (today's behavior)")
+    ap.add_argument("--fluency-years", type=int,
+                    help="immersion years, mapped to a band (<=8 fresh, "
+                         "<=22 settled, else native); a bare number in the "
+                         "prompt is a measured null, so years only select "
+                         "a described band")
     ap.add_argument("--language", default="serbian",
                     help="pivot language for the round trip (default: "
                          "serbian, the only pivot the calque gate is "
@@ -305,7 +365,13 @@ def main():
             print(f"note: pivot '{args.language}' is outside the calque "
                   "gate's calibration — score() ranks by restructuring "
                   "distance alone for this run.", file=sys.stderr)
-        rt = roundtrip(paras, args.model, args.model_return, args.language)
+        fluency = args.fluency
+        if fluency is None and args.fluency_years is not None:
+            fluency = fluency_band(args.fluency_years)
+            print(f"fluency: {args.fluency_years} years -> band '{fluency}'",
+                  file=sys.stderr)
+        rt = roundtrip(paras, args.model, args.model_return, args.language,
+                       fluency)
         with open(rt_path, "w", encoding="utf-8") as f:
             f.write("\n\n".join(rt))
         print(f"round-trip cached: {rt_path}", file=sys.stderr)
