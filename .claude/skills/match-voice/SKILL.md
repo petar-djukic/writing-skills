@@ -415,10 +415,12 @@ from `drive.py`, filter-tells, and burstiness — no stage grows its own client.
   prompt the size of match-voice's (7/7 measured; 4/4 clean on a short prompt).
   That 422 is not retried — it fails identically every time — and `check_server`
   warns when the variable is set.
-- **Its critic defaults to a non-Cohere model.** Cohere critiques itself into
-  unparsable verdicts (GH-138: 9 of 24), so a `cohere:` rewrite model defaults
-  its critic to `gemma4:31b-cloud` (override with `--critic-model` or
-  `COHERE_CRITIC_MODEL`). Transient API errors (429/5xx/timeout, and 422s other
+- **Its critic defaults to the rewrite model.** GH-140 had forced a gemma
+  critic because Cohere critiqued itself into unparsable verdicts (GH-138: 9 of
+  24); retested on the corrected pipeline, 12/12 parse (GH-181), so the
+  pre-GH-140 default is restored and a pure-Cohere run needs no Ollama at all.
+  `--critic-model` / `COHERE_CRITIC_MODEL` still override.
+  Transient API errors (429/5xx/timeout, and 422s other
   than `INVALID_TOOL_GENERATION`) are retried (`COHERE_MAX_RETRIES`, default 3).
 - **Key** comes from `COHERE_API_KEY`, or from the JSON file named by
   `COHERE_SECRETS_FILE` (key `cohere`). Never hardcoded, never committed. The

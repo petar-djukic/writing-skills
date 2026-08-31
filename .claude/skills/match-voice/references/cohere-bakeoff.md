@@ -98,7 +98,9 @@ non-saturated draft, hardened pipeline):
   actually was" below. The sanitizer stayed.)*
 - **Non-Cohere critic:** a `cohere:` rewrite model now defaults its critic to
   gemma4:31b-cloud (env `COHERE_CRITIC_MODEL`), since Cohere critiqued itself
-  into 9 unparsable verdicts.
+  into 9 unparsable verdicts. *(Reverted in GH-181: on the corrected pipeline
+  Cohere critiques itself 12/12 parseable, so the critic defaults to the
+  rewrite model again.)*
 - **Retry/backoff:** 3 attempts on 429/5xx/timeout in the Cohere path.
 
 Re-test result, before → after hardening:

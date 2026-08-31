@@ -51,5 +51,17 @@ class ClassifyRewriteError(unittest.TestCase):
             "refused-model")
 
 
+class CriticDefault(unittest.TestCase):
+    """GH-181: for a cohere: rewrite model the critic defaults to the rewrite
+    model itself; COHERE_CRITIC_MODEL remains the override."""
+
+    def test_source_carries_no_forced_gemma_default(self):
+        import inspect
+        src = inspect.getsource(drive)
+        self.assertNotIn('os.environ.get("COHERE_CRITIC_MODEL", "gemma4', src,
+                         "GH-140's forced gemma critic default is back")
+        self.assertIn('os.environ.get("COHERE_CRITIC_MODEL", a.model)', src)
+
+
 if __name__ == "__main__":
     unittest.main()
