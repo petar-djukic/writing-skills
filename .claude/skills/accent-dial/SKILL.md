@@ -55,6 +55,16 @@ python3 <skill>/scripts/accent_dial.py --article draft.md --dial 0.4
   free). `--roundtrip` points at an existing cache.
 - Output: `<stem>.dial<p>.md` + `<out>.log.json` (per-candidate gate
   verdict, score, applied flag — the survival-analysis surface).
+- **Two dials since GH-186.** `--model-return` (env
+  `ACCENT_DIAL_MODEL_RETURN`) splits the legs: the 2026-08-21 A/B located the
+  accent effect on the return leg, so the productive pairing is a strong
+  outbound translator (fidelity into the pivot) with the weak return one
+  (where the accent is born) — e.g. `--model cohere:command-a-03-2025
+  --model-return gemma4:31b-cloud`. `--language` swaps the pivot (default
+  serbian); any other pivot produces its own accent flavor but sits outside
+  the calque gate's calibration — score() then ranks by restructuring
+  distance alone, and the run says so on stderr. Per-language marker banks
+  (l2-markers.yaml is the canonical home) are the eventual fix.
 - `--model` (or `ACCENT_DIAL_MODEL`) overrides the translator, and since
   GH-184 the script rides match-voice's shared transport, so
   `cohere:command-a-03-2025` routes with key handling and retries for free.

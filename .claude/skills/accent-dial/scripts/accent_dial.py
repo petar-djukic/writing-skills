@@ -91,6 +91,38 @@ EN_PROMPT = ("Translate the following Serbian text into English. Keep the "
              "Copy numbers, names, and bracketed citations like [7] exactly. "
              "Output ONLY the translation, no commentary.\n\n")
 
+# The language dial (GH-186). Serbian is the calibrated default and keeps its
+# native-language outbound prompt above; any other pivot gets these
+# English-phrased templates. The calque gate below stays Serbian-calibrated
+# either way — see prompts_for().
+OUT_TEMPLATE = ("Translate the following text into {language}. Keep the "
+                "paragraph structure: paragraphs are separated by a blank "
+                "line, and the translation must have the same number of "
+                "paragraphs. Copy numbers, names, and bracketed citations "
+                "like [7] exactly. Output ONLY the translation, no "
+                "commentary.\n\n")
+BACK_TEMPLATE = ("Translate the following {language} text into English. Keep "
+                 "the paragraph structure: paragraphs are separated by a "
+                 "blank line, and the translation must have the same number "
+                 "of paragraphs. Copy numbers, names, and bracketed citations "
+                 "like [7] exactly. Output ONLY the translation, no "
+                 "commentary.\n\n")
+
+
+def prompts_for(language):
+    """(outbound, back) prompts for a pivot language.
+
+    Serbian — the default, and the language the scoring gate is calibrated
+    for — keeps the prompts the 2026-08-21 calibration ran with, byte for
+    byte. Any other pivot produces its own accent flavor, but score()'s
+    calque term is a Serbian-L1 pattern bank and contributes nothing there:
+    ranking degrades to restructuring distance alone. Reduced gate fidelity,
+    not breakage; the caller prints the caveat."""
+    if language.strip().lower() == "serbian":
+        return SR_PROMPT, EN_PROMPT
+    name = language.strip().title()
+    return OUT_TEMPLATE.format(language=name), BACK_TEMPLATE.format(language=name)
+
 
 def split_paras(text):
     return [p.strip() for p in re.split(r"\n\s*\n", text) if p.strip()]
@@ -113,11 +145,18 @@ def run_leg(paras, prompt, model):
     return out
 
 
-def roundtrip(paras, model):
-    print("leg 1: EN -> SR", file=sys.stderr)
-    sr = run_leg(paras, SR_PROMPT, model)
-    print("leg 2: SR -> EN (blind)", file=sys.stderr)
-    return run_leg(sr, EN_PROMPT, model)
+def roundtrip(paras, model, model_return=None, language="serbian"):
+    """EN -> pivot -> EN. The 2026-08-21 A/B located the accent effect on the
+    RETURN leg — a strong translator polishes it away there — so the legs
+    take separate models (GH-186): a strong outbound translator buys fidelity
+    into the pivot without costing accent, as long as the return leg stays
+    weak. model_return defaults to model, keeping single-model calls exact."""
+    out_prompt, back_prompt = prompts_for(language)
+    label = language.strip().title()
+    print(f"leg 1: EN -> {label} ({model})", file=sys.stderr)
+    mid = run_leg(paras, out_prompt, model)
+    print(f"leg 2: {label} -> EN (blind, {model_return or model})", file=sys.stderr)
+    return run_leg(mid, back_prompt, model_return or model)
 
 
 def is_prose(p):
@@ -235,7 +274,18 @@ def main():
     ap.add_argument("--max-per-para", type=int, default=2,
                     help="sentence grain: cap of swapped sentences per "
                          "paragraph (the anti-wall mechanism)")
-    ap.add_argument("--model", default=DEFAULT_MODEL)
+    ap.add_argument("--model", default=DEFAULT_MODEL,
+                    help="outbound-leg translator (and return leg unless "
+                         "--model-return is given)")
+    ap.add_argument("--model-return",
+                    default=os.environ.get("ACCENT_DIAL_MODEL_RETURN") or None,
+                    help="return-leg translator; the accent is made or "
+                         "destroyed on this leg, keep it weak "
+                         "(env ACCENT_DIAL_MODEL_RETURN)")
+    ap.add_argument("--language", default="serbian",
+                    help="pivot language for the round trip (default: "
+                         "serbian, the only pivot the calque gate is "
+                         "calibrated for)")
     ap.add_argument("--out", help="default <stem>.dial<p><ext>")
     ap.add_argument("--log", help="default <out>.log.json")
     args = ap.parse_args()
@@ -251,7 +301,11 @@ def main():
         with open(rt_path, encoding="utf-8") as f:
             rt = split_paras(f.read())
     else:
-        rt = roundtrip(paras, args.model)
+        if args.language.strip().lower() != "serbian":
+            print(f"note: pivot '{args.language}' is outside the calque "
+                  "gate's calibration — score() ranks by restructuring "
+                  "distance alone for this run.", file=sys.stderr)
+        rt = roundtrip(paras, args.model, args.model_return, args.language)
         with open(rt_path, "w", encoding="utf-8") as f:
             f.write("\n\n".join(rt))
         print(f"round-trip cached: {rt_path}", file=sys.stderr)
