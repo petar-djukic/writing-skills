@@ -65,6 +65,8 @@ python3 <tighten-style>/scripts/tighten.py --article <file> --check-only   # pla
    pass moved toward the assistant register, which is the failure this design
    exists to prevent.
 4. **Do not tighten by hand-applying the rules with the drafting model.**
+   The full evidence is in
+   [references/hand-tightening-regression.md](./references/hand-tightening-regression.md).
    GH-222 measured what that does: a paper excerpt moved from distance 26.1 to
    6.5 from the AI-draft fingerprint under a faithful rules pass, overshooting
    the draft's own passive rate. The rules read as instructions by an
