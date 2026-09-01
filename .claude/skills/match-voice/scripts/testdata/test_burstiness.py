@@ -413,5 +413,60 @@ def main():
     print("test_burstiness: all assertions passed")
 
 
+def _mk_article(text):
+    import tempfile, os
+    d = tempfile.mkdtemp()
+    p = os.path.join(d, "a.md")
+    open(p, "w").write(text + "\n")
+    return p
+
+
+def test_contraction_counter():
+    assert burstiness.contraction_count(
+        "It's fine, isn't it? They're here \u2014 we've won, I'm sure it'll hold.") == 6
+    assert burstiness.contraction_count("It\u2019s the typographic kind.") == 1
+    assert burstiness.contraction_count("No contractions at all.") == 0
+    print("  contraction_counter: ok")
+
+
+def test_expanded_contraction_is_rejected():
+    """GH-135: a generator that expands contractions loses the candidate."""
+    path = _mk_article(
+        "It's a small step, and we've measured it before. The gate holds "
+        "because the numbers say so, and that's the entire argument here, "
+        "carried by enough plain words to clear the eligibility floor.")
+
+    def expander(prompt, **kw):
+        para = para_of(prompt)
+        return (para.replace("It's", "It is").replace("we've", "we have")
+                    .replace("that's", "that is"))
+
+    report = burstiness.run(path, out_path=path.replace(".md", ".b.md"), generate_fn=expander)
+    rows = [r for r in report["paragraphs"] if r.get("verdict") == "rejected"]
+    assert rows and rows[0]["reason"] == "contraction-loss", report["paragraphs"]
+    assert rows[0]["contractions"]["before"] == 3
+    assert rows[0]["contractions"]["after"] == 0
+    out = open(path.replace(".md", ".b.md")).read()
+    assert "It's" in out, "rejected paragraph must keep its original text"
+    print("  expanded_contraction_is_rejected: ok")
+
+
+def test_preserved_contractions_pass():
+    path = _mk_article(
+        "It's a small step, and we've measured it before. The gate holds "
+        "because the numbers say so, and that's the entire argument here, "
+        "carried by enough plain words to clear the eligibility floor.")
+
+    def keeper(prompt, **kw):
+        para = para_of(prompt)
+        return para.replace("small step", "modest step")
+
+    report = burstiness.run(path, out_path=path.replace(".md", ".b2.md"), generate_fn=keeper)
+    rejected = [r for r in report["paragraphs"]
+                if r.get("reason") == "contraction-loss"]
+    assert not rejected, rejected
+    print("  preserved_contractions_pass: ok")
+
+
 if __name__ == "__main__":
     main()
