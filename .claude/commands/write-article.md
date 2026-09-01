@@ -110,7 +110,7 @@ If no file specified:
 
 ### 1a. Check Current Marketing Context
 
-Read `career/marketing/substack-instructions.md`:
+Read `.claude/commands/substack-instructions.md` (the venue's marketing instructions; the old `career/marketing/` path no longer exists):
 
 - Note which articles are already published (to avoid duplicating ground already covered)
 - Check the Draft Pipeline table to understand where this article fits in the queue
