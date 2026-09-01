@@ -43,6 +43,7 @@ import argparse
 import json
 import math
 import os
+import re
 import sys
 import time
 import urllib.error
@@ -67,6 +68,67 @@ STATUS_HELP = {
     429: "rate limit exceeded for this API key",
     500: "Pangram server error",
 }
+
+
+CONSENT_FILE = "pangram-consent.yaml"
+
+
+def standing_consent(start_path=None):
+    """Operator-granted standing consent for Pangram uploads (GH-210).
+
+    Consent remains per document by default; the operator can grant it in
+    standing, revocable form. Precedence:
+
+      1. env PANGRAM_CONSENT: "standing" grants, "off"/"none" denies —
+         both win over the file.
+      2. writing-voice/pangram-consent.yaml (walk-up from start_path)
+         containing a line `consent: standing`.
+
+    Returns (granted, source) where source names what decided. The grant
+    only ever enables what a --pangram flag could; the third-party
+    retention warning in this module's docstring stands at grant time.
+    """
+    env = os.environ.get("PANGRAM_CONSENT", "").strip().lower()
+    if env in ("off", "none", "0", "false"):
+        return False, "env PANGRAM_CONSENT=" + env
+    if env == "standing":
+        return True, "env PANGRAM_CONSENT=standing"
+    d = os.path.dirname(os.path.abspath(start_path)) if start_path else os.getcwd()
+    while True:
+        cand = os.path.join(d, "writing-voice", CONSENT_FILE)
+        if os.path.isfile(cand):
+            try:
+                text = open(cand, encoding="utf-8").read()
+            except OSError:
+                return False, None
+            if re.search(r"^consent:\s*standing\b", text, re.M):
+                return True, cand
+            return False, cand
+        parent = os.path.dirname(d)
+        if parent == d:
+            return False, None
+        d = parent
+
+
+def should_score(start_path=None, cli_pangram=False, cli_no_pangram=False,
+                 venue_gates=None):
+    """Decide whether a driver scores with Pangram this run (GH-210).
+
+    A venue whose gates omit "pangram" never uploads, grant or no grant —
+    even over an explicit --pangram. Otherwise the explicit flags win over
+    the standing grant, and without any of them nothing is scored.
+    Returns (score, reason).
+    """
+    if venue_gates is not None and "pangram" not in venue_gates:
+        return False, "venue gates omit pangram; never uploaded"
+    if cli_no_pangram:
+        return False, "--no-pangram"
+    if cli_pangram:
+        return True, "--pangram (per-run consent)"
+    granted, source = standing_consent(start_path)
+    if granted:
+        return True, f"standing consent ({source})"
+    return False, "no consent"
 
 
 class PangramError(Exception):

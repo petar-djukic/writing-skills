@@ -223,7 +223,7 @@ tighten.py command line, or configure them in the venue profile.
    | `anchor_query` | the seed's anchor selection (Phase 2) |
    | `targets`, `hedge_policy` | tighten-style's floor: pass `--venue <name>` to tighten.py in Phase 3 |
    | `tell_lexicon` | the lexical catalog: pass `--lexicon=<value>` in Phase 1 |
-   | `gates` | which measurements run: no `pangram` gate → skip every Pangram scan in every phase (the consent rule still governs uploads when the gate IS present) |
+   | `gates` | which measurements run: no `pangram` gate → skip every Pangram scan in every phase, standing grant or not (when the gate IS present, uploads run under the consent rule — per document, or the operator's standing grant, GH-210) |
    | `citations` | which citation markers to spot-check after each stage (`[1]` numbered vs pandoc `[@citekey]` — both must survive every rewrite verbatim) |
 
    List venues with `venue_profile.py list --for <article.md>` when the
@@ -254,7 +254,10 @@ tighten.py command line, or configure them in the venue profile.
    (GH-129: a diction-only control arm held CV at 0.621 and Pangram at
    0.436, while the same model reshaping rhythm took CV to 0.690 and
    Pangram to 0.259). In venue mode, capture the Pangram baseline only
-   when the profile's gates include `pangram`. **Hold the Pangram
+   when the profile's gates include `pangram`. Under a standing consent
+   grant (GH-210) the drivers score every stage by default — which is what
+   the stop-at-the-upturn rule needs — and `--no-pangram` opts a run out.
+   **Hold the Pangram
    framing constant across every measurement in a run** — slice, whole,
    and prose-only payload scores of the same article are not comparable
    (measured spread on one article: 0.225 / 0.913 / 1.000).

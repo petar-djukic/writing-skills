@@ -890,6 +890,9 @@ def main():
                          "UPLOADS this article and the draft to a third party "
                          "that retains them; passing the flag is the consent, "
                          "and it is asked for per document. Costs two scans.")
+    ap.add_argument("--no-pangram", action="store_true",
+                    help="skip external scoring even under a standing consent "
+                         "grant (GH-210)")
     ap.add_argument("--exclude-keys", nargs="*", default=None,
                     help="YAML key-path globs whose paragraphs skip rewriting "
                          "(default for YAML: section_goal, goals.*.goal, "
@@ -916,6 +919,17 @@ def main():
                     help="single-shot path: rewrite, gate, done — no critique, "
                          "no repair pass")
     a = ap.parse_args()
+    # GH-210: an operator-granted standing consent turns scoring on by
+    # default so every run is measurable (score every pass, stop at the
+    # upturn). --no-pangram opts a run out; without any grant or flag,
+    # behaviour is unchanged.
+    if not a.pangram and not a.no_pangram:
+        sys.path.insert(0, SHARED)
+        import pangram as _pg
+        score, why = _pg.should_score(start_path=a.article)
+        if score:
+            a.pangram = True
+            print(f"pangram: scoring enabled by {why}; pass --no-pangram to skip")
 
     if a.no_anchors and any([a.role, a.anchor_tags, a.stratum, a.author]):
         ap.error("--no-anchors contradicts --role/--anchor-tags/--stratum/--author")

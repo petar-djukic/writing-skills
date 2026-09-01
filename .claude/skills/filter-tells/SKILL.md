@@ -353,9 +353,14 @@ seen our denylist, so its result is evidence rather than an echo. It is the
 only outside measurement here, and the only step that sends text off the
 machine.
 
-**Consent first, every document.** See the upload rule in the `writing-voice/`
-directory rule. A key in the environment is not consent. No key, or a declined
-prompt, means skip and say so — never substitute a local result for it.
+**Consent first, every document — grantable in standing form.** See the
+upload rule in the `writing-voice/` directory rule: the operator can
+record a standing, revocable grant (`writing-voice/pangram-consent.yaml`,
+`consent: standing`; env `PANGRAM_CONSENT` overrides either way), under
+which the drivers score by default and `--no-pangram` opts a run out
+(GH-210). A key in the environment is still not consent. No grant and no
+per-document yes, or no key, means skip and say so — never substitute a
+local result for it.
 
 ```bash
 python3 <agent-dir>/scripts/pangram.py --check                      # key + reachability, spends nothing
