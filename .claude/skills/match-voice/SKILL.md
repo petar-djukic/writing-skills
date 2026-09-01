@@ -464,6 +464,13 @@ Who writes the words is the biggest single lever on the score — the
 [references/authorship-lever.md](./references/authorship-lever.md),
 re-homed from write-article (GH-214).
 
+The gate also rejects **introduced first person** (GH-221): a candidate
+carrying I/we/my/our where the original paragraph has none is refused —
+an anchored seed imports the anchor author's register, and the measured
+worst case put invented claims in the author's mouth ("I might not
+understand, being too thick-skulled...", the-qwerty-endpoint,
+2026-09-01). An original with any first person keeps the check silent.
+
 The gate proves a candidate preserved citations, numbers, and meaning. It
 cannot tell you whether the prose stopped reading as machine-written, and
 filter-tells cannot settle that either — its detectors are the denylist the

@@ -175,6 +175,19 @@ def _numbers(text):
     return Counter(out)
 
 
+# GH-221: first-person pronouns, capitalized variants included, but never
+# the country ("US" stays uppercase and the pattern requires a lowercase
+# 's'). "I" matches only as the capital pronoun.
+_FIRST_PERSON = re.compile(
+    r"\bI\b|\b(?:[Mm]e|[Mm]y|[Mm]ine|[Mm]yself|[Ww]e|[Oo]ur(?:s|selves)?"
+    r"|[Uu]s|[Oo]urselves)\b")
+_URL = re.compile(r"https?://\S+")
+
+
+def _first_person(text):
+    return _FIRST_PERSON.search(_URL.sub(" ", _strip_citations(text)))
+
+
 def _acronyms(text):
     return Counter(ACRONYM.findall(text))
 
@@ -323,6 +336,24 @@ def verify(original, rewritten, anchors_json=None, max_shared_run=8,
                          "detail": f"em-dash count rose {o_d} -> {r_d}; the "
                                    "rewrite manufactured punctuation the "
                                    "original did not have"})
+
+    # A rewrite must not put claims in the author's mouth: an anchored seed
+    # imports the anchor author's register, and first-person fabrication is
+    # that import's worst case — measured live on the-qwerty-endpoint
+    # (2026-09-01), where a Krugman-anchored pass invented "I might not
+    # understand, being too thick-skulled..." in a paragraph whose original
+    # had no first person at all, and the gate passed it. Original carrying
+    # any first person keeps the check silent; rewrites reshuffle it
+    # legitimately.
+    if not _first_person(original):
+        hit = _first_person(rewritten)
+        if hit:
+            findings.append({"check": "first-person-introduced",
+                             "severity": "fatal",
+                             "detail": f"first person ({hit.group(0)!r}) "
+                                       "introduced into a paragraph whose "
+                                       "original has none; the rewrite put "
+                                       "words in the author's mouth"})
 
     o_a, r_a = _acronyms(original), _acronyms(rewritten)
     for term, n in o_a.items():

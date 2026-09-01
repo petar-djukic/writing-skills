@@ -305,8 +305,33 @@ def test_readability_guard():
     print("  readability_guard: ok")
 
 
+def test_first_person_introduced():
+    import verify as vf
+    orig = ("The assumption came from the API shape the whole industry "
+            "integrates against.")
+    # The recorded live pastiche (2026-09-01, the-qwerty-endpoint): fatal.
+    cand = (orig + " I might not understand, being too thick-skulled to see "
+            "the new era clearly. But in my view, trouble is brewing just "
+            "over the horizon.")
+    v = vf.verify(orig, cand)
+    checks = [f["check"] for f in v["findings"] if f["severity"] == "fatal"]
+    assert "first-person-introduced" in checks, v
+    # Original carrying first person keeps the check silent.
+    orig_we = "We banned a model from our writing pipeline."
+    v = vf.verify(orig_we, "We denylisted a model in our pipeline.")
+    assert "first-person-introduced" not in [f["check"] for f in v["findings"]]
+    # 'US' the country and 'usable' never trip; capitalized 'We' does.
+    v = vf.verify("The US market is usable.", "The US market stays usable.")
+    assert "first-person-introduced" not in [f["check"] for f in v["findings"]]
+    v = vf.verify("The market is broken.", "We think the market is broken.")
+    assert "first-person-introduced" in [
+        f["check"] for f in v["findings"] if f["severity"] == "fatal"]
+    print("  first_person_introduced: ok")
+
+
 def main():
     test_returns_shape()
+    test_first_person_introduced()
     test_accepted_when_clean()
     test_rejected_after_retries()
     test_restore_full_bold()
