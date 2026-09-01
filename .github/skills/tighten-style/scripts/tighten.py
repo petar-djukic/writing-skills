@@ -233,7 +233,7 @@ def main():
                          "--sent-floor still wins")
     ap.add_argument("--exclude-keys", nargs="*", default=None,
                     help="YAML key-path globs whose paragraphs skip rewriting "
-                         "(default for YAML: section_goal, goals.*.goal, "
+                         "(default for YAML: section_goal, goals.*.goal, metrics.*, "
                          "acceptance.*, meta.*). Pass --exclude-keys with no "
                          "args to disable")
     ap.add_argument("--must-preserve", nargs="*", default=None,

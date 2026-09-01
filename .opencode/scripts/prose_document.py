@@ -49,6 +49,11 @@ MIN_PROSE_WORDS = 5
 
 YAML_EXCLUDE_KEYS_DEFAULT = [
     "section_goal", "goals.*.goal", "acceptance.*", "meta.*",
+    # GH-227: experiment-record metric fields are contract values, never
+    # prose to launder — a rewrite pass once replaced a metrics.*.computed
+    # value with a pasted model refusal that shipped unnoticed (exp07,
+    # autogenic-systems GH-494).
+    "metrics.*",
 ]
 
 
