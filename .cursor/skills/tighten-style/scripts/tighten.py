@@ -416,8 +416,16 @@ def main():
     with open(os.path.join(work, "results.json"), "w") as f:
         json.dump(results, f, indent=2)
 
+    # GH-209: persistent changed-paragraph sidecar for the scoped
+    # filter-tells pass — results.json above lives in a mkdtemp the OS
+    # reaps. 1-based md_paragraphs prose numbers.
+    sidecar = out + ".tighten.json"
+    with open(sidecar, "w") as f:
+        json.dump({"changed_paragraphs": sorted(r["n"] for r in tightened)}, f)
+
     from collections import Counter
     print(f"draft: {out}\nwork:  {work}/results.json")
+    print(f"changed-paragraph sidecar: {sidecar}")
     for k, v in sorted(Counter(r["status"] for r in results).items()):
         print(f"  {k}: {v}")
 

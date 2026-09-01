@@ -304,6 +304,22 @@ author (the idiolect measures "X, not Y" at 2.29/1000 in the journal against
 Ceilings come from `idiolect.yaml`, never hand-written here: re-measure the
 corpus upstream and this pass follows.
 
+## Scoped mode (GH-209): scan only what the pipeline changed
+
+`scripts/scoped_scan.py` runs the lexical and structural scans over only
+the paragraphs the humanize chain's drivers report as changed — the
+pre-terminal recheck of humanize Phase 4b. Scope comes from the drivers'
+own artifacts (drive.py's `changed_paragraphs` manifest line, tighten.py's
+`<out>.tighten.json` sidecar, accent-dial's edit log) or an explicit
+`--changed "1,3,7-9"`. It builds a scoped view, runs both detectors on
+it, and maps every view paragraph back to its source lines; `--lexicon`
+and `--voice-dir` pass through, and voice-dir discovery walks up from the
+ARTICLE path, not the temp view. Repairs stay editorial per Step 4, and
+they route through the rewrite transport. The scoped scan never gates
+author text: an untouched paragraph is out of scope by construction. An
+empty scope exits 2 with a message — nothing changed means nothing to
+scan.
+
 ## Paragraph extraction (shared)
 
 `scripts/md_paragraphs.py` is the canonical markdown paragraph extractor for

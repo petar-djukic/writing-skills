@@ -498,6 +498,37 @@ full contract, grain choice, and dial calibration):
 Record as the "after-accent" column. Skipped → say so in the
 run-completeness check; the chain is complete without it.
 
+### Phase 4b: scoped filter-tells recheck (pre-terminal)
+
+Every sampling stage after Phase 1 can inject phrasing the early scan
+never saw — match-voice injected bold lead-ins despite instructions,
+tighten-style can raise nominalization, applied critic picks moved
+Pangram 0.332 -> 0.421. A full re-scan would re-litigate author text and
+invite the over-correction loop filter-tells warns about, so the recheck
+is **scoped to the paragraphs the drivers actually changed**, and it runs
+here — after the last sampling stage, before the terminal stage — because
+the terminal contract forbids repairs after inject-vernacular.
+
+```bash
+$RUN <filter-tells>/scripts/scoped_scan.py <current.md> \
+  --from-manifest <seed>.generation.yaml \
+  --from-manifest <passNN>.generation.yaml \
+  --from-tighten <tightened.md>.tighten.json \
+  --from-accent-log <dialed.md>.log.json \
+  --lexicon <tell_lexicon>       # venue mode
+```
+
+The drivers emit the scope themselves: drive.py writes
+`changed_paragraphs` into its generation.yaml, tighten.py writes a
+`<out>.tighten.json` sidecar, and accent-dial's edit log carries applied
+flags (its indices are mapped onto prose paragraph numbers). Findings are
+repaired editorially per the filter-tells procedure, through the rewrite
+transport — never by hand — and idiolect calibration keeps the scan from
+fighting accent-dial's deliberate injections: constructions below the
+author ceiling never flag. An empty scope is a stated no-op, not an
+error. A paragraph the chain never touched is out of scope by
+construction; a tell in author text stays the author's to keep.
+
 ### Phase 5: inject-vernacular (terminal)
 
 When the repository carries `writing-voice/idiolect.yaml`, run the
@@ -533,6 +564,7 @@ the work.
 | seed reach | reported (paragraphs changed / total) for the caller's cycle decision |
 | tighten-style | ran through the rewrite transport; venue floor named when in venue mode |
 | accent-dial | ran with its review gate, or skipped with the reason |
+| scoped recheck | ran over the drivers' changed-paragraph lists, or empty-scope reported |
 | inject-vernacular | ran, or skipped with the reason |
 | canonical blocks | registry found, or passed explicitly |
 | locks and markers | verified byte-identical after every stage |
