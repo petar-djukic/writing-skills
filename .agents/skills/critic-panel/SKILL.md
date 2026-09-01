@@ -21,15 +21,18 @@ description: >-
 argument-hint: 'Path to the draft, plus optionally: --roster article | book | <names>'
 ---
 
-# Critic Panel (read-only zone, before voice-critic)
+# Critic Panel (caller's review phase, before voice-critic)
 
 A draft that has cleared every gate is clean, correct, and often only
 fine — every pass was allowed to remove risk, none was hired to add. This
 skill hires the adders, on a leash: critics read and propose, the author
 chooses, and nothing reaches the text except through an author-directed
-cycle. It sits in the read-only zone (GH-57: after the terminal stage,
-models read but never write) ahead of voice-critic, because its picks
-change what voice-critic would audit.
+cycle. Its home is the caller's review phase (GH-208), not the humanize
+chain: a workflow command runs it after the chain's terminal stage
+(GH-57: after the terminal stage, models read but never write), ahead of
+voice-critic, because its picks change what voice-critic would audit.
+Rule-based application of the merged sheet is critic-apply's job
+(GH-206).
 
 ```
 terminal stage (inject-vernacular)

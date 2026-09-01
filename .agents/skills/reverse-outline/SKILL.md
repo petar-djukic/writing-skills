@@ -200,11 +200,14 @@ is reported rather than guessed at.
 
 ```
 draft → annotate → rank → author cuts → cycle
-      → humanize stages (markers ride along) → audit
+      → humanize chain (markers ride along) → audit
       → critic-panel / voice-critic → strip at paste
 ```
 
-The skill writes only comments, never prose, so running `audit` late does not
+This skill's home is the **caller's review phase** (GH-208): a workflow
+command runs it after humanize's terminal stage, alongside critic-panel
+and voice-critic — it is not a stage of the humanize chain. The skill
+writes only comments, never prose, so running `audit` late does not
 violate the GH-57 read-only-after-terminal contract. That contract exists
 because a generative pass after the terminal stage regresses the text toward a
 model's centre; a run that cannot write prose cannot do that.

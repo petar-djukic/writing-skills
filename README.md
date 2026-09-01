@@ -6,16 +6,30 @@ An AI-generated draft reveals itself in three ways — rhetorical scaffolding, s
 
 ```mermaid
 flowchart LR
-    A[AI draft] --> B[tighten-style or match-outline]
-    B --> C[filter-tells]
-    C --> D[match-voice, second model family]
-    D --> E[Pangram score]
-    E -->|before/after recorded| A
+    S[structure: match-outline, caller-run] --> A[humanize chain]
+    subgraph A[humanize chain]
+        C[filter-tells] --> D[seeded match-voice]
+        D --> T[tighten-style]
+        T --> X[accent-dial, optional]
+        X --> V[inject-vernacular, terminal]
+    end
+    A --> R[review: reverse-outline, critic-panel, voice-critic]
+    R -->|author picks; cycle decision| S
 ```
 
 ## Scope and Status
 
-The repository hosts 16 skills and 3 commands, canonical under `.claude/`. The prose pipeline consists of `humanize` (the three-step orchestrator), `filter-tells`, `match-voice`, `match-outline`, `match-structure`, `tighten-style`, and `tune-anchors`. Reference handling uses `update-references` and `audit-references`, which keep a CSL-YAML bibliography current and checked against retrieved sources. `patent-disclosure` populates an eleven-section invention-disclosure template, while `pattern-language` extracts Alexandrian pattern languages from repositories. `critic-panel` reads a finished draft through named persona critics in parallel and merges them into one sheet with cross-critic convergence first — an article roster that proposes line edits, a book roster of six critics that quote the passage and name the defect without rewriting it. `reverse-outline` labels an article's argument as RST markers kept in the text, then ranks every paragraph and section by what the argument loses if it is cut. The commands — `brainstorm-article`, `write-article`, `seo-pass` — drive an end-to-end article pipeline. History traces back to [coding-skills](https://github.com/petar-djukic/coding-skills), where these skills lived through August 2026; the coding commands remain there.
+The repository hosts 16 skills and 3 commands, canonical under `.claude/`. They fall into four categories (GH-208).
+
+**The humanize chain** — `humanize` orchestrates one generative pass: `filter-tells` (semantic cleanup), `match-voice` (seeded cross-model diction rewrite, plus the optional burstiness pass), `tighten-style` (word recovery toward the author's density floor), `accent-dial` (optional L2-accent stage), and `inject-vernacular` (the deterministic terminal stage). `match-structure` is the shared library underneath — metrics, anchor retrieval, venue profiles.
+
+**Structure, caller-run** — `match-outline` rewrites a whole document against a blueprint. It is invoked by a workflow before the chain, never by the chain: humanize's input contract assumes its work is done.
+
+**Review instruments, caller-run** — read-only, after the chain's terminal stage: `reverse-outline` labels the argument as RST markers and ranks every paragraph by what deletion costs, `critic-panel` reads a finished draft through named persona critics in parallel and merges them into one convergence-first sheet, and `voice-critic` gatekeeps against the author's voice constitution. None writes prose; author picks re-enter the chain as a new cycle.
+
+**Data and corpus tools** — `update-references` and `audit-references` keep a CSL-YAML bibliography current and checked against retrieved sources; `tune-anchors` sweeps anchor queries; `patent-disclosure` populates an eleven-section invention-disclosure template; `pattern-language` extracts Alexandrian pattern languages from repositories. These maintain data, not prose — a different kind from the chain's stages.
+
+The commands — `brainstorm-article`, `write-article`, `seo-pass` — drive an end-to-end article pipeline. History traces back to [coding-skills](https://github.com/petar-djukic/coding-skills), where these skills lived through August 2026; the coding commands remain there.
 
 ## Documentation
 

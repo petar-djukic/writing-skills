@@ -24,8 +24,9 @@ source of truth the constitution itself defers to.
 **Read-only is the contract.** `scripts/voice_critic.py` takes a document
 and produces a report; it never modifies the input, and the tests assert
 input bytes unchanged. That is why it may run after the terminal
-inject-vernacular stage — the read-only zone of the pipeline — and equally
-at any earlier gate; nothing in it assumes pipeline position.
+inject-vernacular stage — its home is the caller's review phase (GH-208),
+after critic-panel — and equally at any earlier gate; nothing in it
+assumes pipeline position. It is not a stage of the humanize chain.
 
 **The critic flags; the author adjudicates.** It replaces self-monitoring
 with a checklist, not with enforcement: over-ceiling snark is flagged,

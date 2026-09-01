@@ -1,179 +1,155 @@
 ---
 name: humanize
 description: >-
-  Three-step pipeline to move AI-drafted prose to human-passing on Pangram:
-  a configurable structural step (match-outline for section-level rewriting,
-  tighten-style for paragraph-level tightening, or skip), filter-tells
-  (semantic cleanup), then match-voice --no-anchors (paragraph diction).
-  Parameterized blueprint and anchor-tag selection, inter-step Pangram
-  measurement, consolidated five-category writing-quality report. Venue mode
-  (--venue <name>) resolves every choice from a writing-voice/venues/
-  profile instead of asking. Carries the pipeline's ordering contract:
-  locked spans respected by every stage, inject-vernacular terminal, and
-  after the terminal stage models read but never write. Triggers: humanize,
-  humanize article, make it human, full rewrite pipeline, rewrite for
-  pangram, three-step rewrite, humanize for venue.
+  The laundering chain: one generative pass that moves AI-drafted prose
+  toward human-passing on Pangram. Stages in order — filter-tells
+  (semantic cleanup), seeded match-voice (anchored Cohere seed, iterate
+  only while the score falls), optional burstiness, tighten-style (word
+  recovery), optional accent-dial, inject-vernacular (terminal). Pure
+  function: structurally diverged draft in, laundered draft plus report
+  out; the caller owns structure (match-outline), review (reverse-outline,
+  critic-panel, voice-critic, cold review), and the decision to cycle.
+  Venue mode (--venue <name>) resolves stage parameters from a
+  writing-voice/venues/ profile. Locked spans respected by every stage;
+  after the terminal stage models read but never write. Triggers:
+  humanize, humanize article, make it human, full rewrite pipeline,
+  rewrite for pangram, humanize for venue, laundering chain.
 ---
 
-# Humanize (three-step pipeline)
+# Humanize (the laundering chain)
 
-Orchestrates the three prose skills that together move an AI-drafted article
-away from a 100% AI verdict on Pangram. The verified effect (2026-07-29,
-working gate) is 100% AI -> Mixed: 23.8% AI / 76.2% AI-assisted, mean window
-0.993 -> 0.576. Each step exists because the other two cannot compensate for
-its absence.
+One generative pass over a draft: semantic cleanup, a seeded diction
+rewrite, word recovery, optional accent, then the deterministic terminal
+stage. The chain is a **pure function** — structurally diverged draft in,
+laundered draft plus a measurement report out. It runs once per
+invocation. Structure, review, author edits, and the decision to run the
+chain again belong to the caller (GH-208): a workflow command invokes
+match-outline before this chain when the form needs changing, runs the
+read-only instruments after it, and reads this chain's seed-reach report
+to decide whether another cycle would pay.
 
-## Why three steps
+The verified effect on a fresh AI draft (2026-07-29, working gate) is
+100% AI -> Mixed: 23.8% AI / 76.2% AI-assisted, mean window 0.993 ->
+0.576. On well-edited prose the gain is real but small — see the
+calibration data at the end.
 
-| step | what it does | what happens without it |
+## The chain
+
+| stage | what it does | what happens without it |
 |---|---|---|
-| structural step (match-outline or tighten-style) | changes enough sentence structure that the downstream paragraph rewriter can clear the mechanical gate — match-outline rewrites at section level against a blueprint, tighten-style tightens paragraph by paragraph toward the author's density floor | match-voice rewrites land at distance 0.0 from the original; the gate rejects every paragraph and nothing changes (unverified — measured against the broken gate, see calibration note) |
 | filter-tells semantic cleanup | collapse antithesis pairs, remove CoT leakage, cut recap ballast, fix banned words | Pangram score stays at 100% AI even after match-voice, because the rhetorical patterns survive diction changes |
-| seeded iteration (Phase 3) | seed in a second model family, then iterate the first --no-anchors to the score floor | unseeded, the iterator substitutes its own diction instead of stripping the old fingerprint: measured 0.609 gated, against 0.370 seeded, on the same article |
+| seeded match-voice | one anchored Cohere seed pass, then iterate --no-anchors only while the score falls (GH-194) | unseeded, the rewriter substitutes its own diction instead of stripping the old fingerprint: measured 0.609 gated, against 0.370 seeded, on the same article |
+| burstiness (optional) | raises sentence-length variance through the rewrite transport, behind the same gate | CV stays put; on a plain stylometric model dispersion is one of the two discriminative features |
+| tighten-style | gives back the words the rewrite costs, through the second model family, without giving back the score | the draft reads leisurely (2,378 -> 2,502 words on the worktrees run) |
+| accent-dial (optional) | dials a gated, ranked fraction of EN->SR->EN round-trip edits into structurally clean text | the strongest single Pangram move recorded on strategy-theatre (0.708 -> 0.150) is left on the table |
+| inject-vernacular (terminal) | deterministic idiolect operators restore the author's markers; nothing samples | the author's signature constructions stay at machine rates |
 
-The compound effect: semantic cleanup alone does not move Pangram (rhetorical
-patterns are not what it measures). Both steps together, with the structural
-step providing the divergence, moved the verified run from 100% AI to
-Mixed (76.2% AI-assisted, mean window 0.576). The ablation rows that showed
-match-voice alone gate-rejected at distance 0.0 were measured against the
-broken gate (GH-318) and are unverified — see the calibration note at the
-end.
+## Input contract: structurally diverged prose
 
-## Stage order and the read-only-after-terminal invariant (GH-57)
+The chain does not restructure. **match-voice gate-rejects everything
+(distance 0.0) when the input's sentence structure is still the drafting
+model's** — the ablation rows in the calibration data (unverified, but
+consistent with every measured run). Divergence is the caller's job,
+before the chain runs:
 
-The pipeline is a **cycle**, not a line:
+- **match-outline** is the structural tool — section-level rewriting
+  against a blueprint. It is a document rewriter, not a prose stage, and
+  it carries its own risk class: verify content preservation after it,
+  including figure blocks (a 2026-08-31 run dropped an entire figure
+  while reporting "all citations and numbers preserved" — see
+  match-outline's SKILL.md).
+- A venue profile's `structural_step` field is **consumed by the
+  caller**, not by this chain: it names the structural tool the caller
+  should run (or `skip`) before invoking humanize.
+- Well-edited human prose is acceptable input without a structural pass —
+  expect low seed reach and a small gated gain (strategy-theatre: 19 of
+  125 paragraphs changed, and that was enough).
 
-```
-draft (with declared/locked spans)
-  ┌─> generative chain, lock-respecting
-  │     structural step -> filter-tells -> match-voice (SEEDED, Phase 3)
-  │     -> burstiness (optional) -> tighten-style
-  │     -> inject-vernacular (terminal for this cycle)
-  │
-  ├─> read-only zone
-  │     reverse-outline annotate + rank, Pangram, critic-panel, then
-  │     voice-critic (critic-panel first: its author-accepted picks change
-  │     what voice-critic audits)
-  │
-  ├─> author picks and edits
-  │
-  └─< repeat the chain IF the trigger below fires; otherwise
-      -> author gate -> publish
-```
+A run on undiverged input is not an error; it reports itself through the
+gate stats (kept-original dominating, distance near 0.0) and the caller
+reads that as "run the structural step first."
 
-**Why the chain runs again after the read-only zone.** Two reasons, both
-measured on strategy-theatre (substack GH-208/GH-211):
+## What the caller owns
 
-1. The read-only zone injects prose that has never been laundered. Critic
-   suggestions are model sentences, and they cost detector score even when
-   they improve the writing (0.332 -> 0.421 at one panel, again at the
-   next). Under a linear pipeline that prose ships as-is, because the
-   generative stages already ran. The post-critic chain is what cleans it:
-   assisted fell 0.255 -> 0.080 on the run that worked.
-2. The read-only zone finds defects the generative chain cannot see —
-   orphaned callbacks whose setup was trimmed, erosion across passes,
-   actor-name drift after a recast. Polishing diction over a broken
-   argument is wasted work, so the argument gets fixed first and the
-   chain runs over the corrected text.
+The chain reports; the caller decides. After the terminal stage, the
+caller's review phase runs the read-only instruments — reverse-outline
+(annotate + rank), critic-panel and its rule-based application
+(critic-apply, GH-206), cold review (GH-207), voice-critic — and the
+author picks and edits. None of that is this skill's procedure. Critic
+picks and author edits are new prose that has never been laundered, so a
+caller that applies them re-enters the chain in a new cycle; re-entering
+is the 're-running from a pre-terminal checkpoint' the terminal contract
+allows.
 
-The only generative stage that survived cold review and improved the
-article ran *after* a socratic rewrite, two critic panels and a reverse
-outline. Run before that work, the same recipe gated 0.609 instead of
-0.370.
-
-**The burstiness pass** (GH-129) is an optional pre-terminal stage in the
-same slot as match-voice: match-voice's `burstiness.py` raises
-sentence-length variance through the second model family, behind the same
-gate. It earns its position the same way the seed does — measured only on
-documents already through the chain. On pipeline-state prose it moved
-Pangram 38.1% -> 29.1% (and, at an earlier state of the same article,
-0.445 -> 0.259) with a rhythm-held control within noise both times; run
-on a raw draft it can do nothing (a saturated 100% baseline has no room
-to fall), so running it early wastes a cycle. The CV printed at each
-measurement point is how you see whether it has anything left to do:
-match-voice's SKILL.md carries the invocation and the gate details.
-
-### The trigger: when to run the chain again
-
-Not a count. Re-run when the read-only zone and the author's edits have
-changed enough text for the seed to have something to work on. Two
-indicators, both of which predicted the outcome before the scan confirmed
-it:
+**Seed reach is the cycle signal, and this chain must report it**: the
+count of paragraphs the seed pass changed, out of total. Measured
+indicators from the strategy-theatre runs, for the caller's decision:
 
 | indicator | chain worked | chain failed |
 |---|---|---|
 | seed reach (paragraphs changed) | 19 of 125 | 16 of 125, 36 gate-rejected |
 | gated survival at cold review | 51% mid-edit, 35% well-edited | 39% and scoring worse |
 
-**When the seed cannot move the text, stop.** A converged article only
-shuffles between detector buckets: the failed run posted the best raw AI
-fraction of its day (0.167) with the entire gain sitting in paragraphs the
-cold reviewer reverted, and what movement there was went into *assisted*
-rather than *human*.
+When the seed cannot move the text, the article has converged and further
+chain runs only shuffle between detector buckets.
 
-### Terminal per cycle, not per article
+## The terminal invariant (GH-57)
 
 `inject-vernacular` is terminal **for its cycle**. Within a cycle nothing
-writes after it: a defect found in the read-only zone is fixed by the
-author's hand, or by opening the next cycle. Re-entering the generative
-chain in a new cycle is not a contract violation — it is the
-'re-running from a pre-terminal checkpoint' the contract already allows,
-made explicit.
-
-**After the terminal stage, models may read but never write.** The
-evidence behind the rule is the Strategy Theatre provenance logs: every
+writes after it. **After the terminal stage, models may read but never
+write.** The evidence is the Strategy Theatre provenance logs: every
 generative pass regresses text toward the model's distribution center —
 match-voice injected bold lead-ins despite instructions, tighten-style
-invented a sentence, and a step-6 rerun rewrote hand-cleaned prose 8/8
-times until the entailment gate rejected all of it. So the ordering is a
-contract, not a preference. A defect found after the terminal stage is
-fixed by the author's hand, or by re-running from a pre-terminal
-checkpoint — never by an additional model repair on the final text, which
-would put a generative pass after the stage that exists to be last.
+invented a sentence, and a rerun rewrote hand-cleaned prose 8/8 times
+until the entailment gate rejected all of it. A defect found after the
+terminal stage is fixed by the author's hand, or by re-running from a
+pre-terminal checkpoint — never by an additional model repair on the
+final text.
 
 Three rules the order encodes:
 
-1. **Locks travel the whole pipeline.** Spans marked `<!-- lock -->` …
+1. **Locks travel the whole chain.** Spans marked `<!-- lock -->` …
    `<!-- /lock -->` at drafting are excised by the shared drivers before
    any model call and spliced back byte-identical after, in every stage —
    protection is mechanical, enforced in `prose_document.py` /
    `md_paragraphs.py`, never by prompts.
-2. **inject-vernacular is terminal (for its cycle) because it is deterministic.** It
+2. **inject-vernacular is terminal because it is deterministic.** It
    applies the idiolect.yaml operator bank by substitution and
    restoration only; nothing samples, so it cannot regress the text
    toward a model's center — which qualifies it to run after every stage
    that can.
-3. **Snark and disproportion are born at drafting and locked.** The
-   terminal stage never inserts them: mechanical joke insertion is
-   prohibited by design. voice-critic audits them in the read-only zone
-   (L0–L5 scale, receipt-first, density caps) and flags to the author
-   gate; it never edits.
+3. **Snark and disproportion are born at drafting and locked.** No stage
+   in this chain inserts them: mechanical joke insertion is prohibited by
+   design. voice-critic audits them in the caller's review phase (L0–L5
+   scale, receipt-first, density caps) and flags to the author gate; it
+   never edits.
 
-## Why no anchors for match-voice
+## Why anchors on the seed and none on the iterator
 
-Every anchor configuration tested made Pangram scores worse. gpt-oss
-unconstrained produces formal Latinate prose (passive, nominalized, complex
-sentences) that does not match Pangram's training distribution of
-conversational AI text. Anchors constrain gpt-oss into register patterns
-Pangram catches. See calibration data at the end.
+The GH-194 measurement (see Model pins below) made the anchored Cohere
+seed the mechanism: the anchored pass does the work, and iteration adds
+little. The `--no-anchors` iterator remains for payloads that keep
+falling: anchors constrain an iterator into register patterns Pangram
+catches, so the iterator runs free while the seed carries the register.
 
 ## Prerequisites
 
 - A Cohere key (`COHERE_API_KEY` / `COHERE_SECRETS_FILE`) — every stage's
-  *default* model is `cohere:command-a-03-2025` since GH-176–190
-- Ollama endpoint reachable with `kimi-k2.6:cloud` and `gpt-oss:120b-cloud` —
-  required by the **pinned recipes below** and by the keyless fallbacks
+  *default* model is `cohere:command-a-03-2025` since GH-176–190, except
+  accent-dial (deliberate `gemma4:31b-cloud`, see Phase 4)
+- Ollama endpoint reachable — required by the keyless fallbacks and the
+  recorded July recipe
+- A `writing-voice/` directory with exemplars
+- For Pangram measurement: an API key configured per the match-voice
+  credential contract (`.secrets/keys.json` with `"pangram"` entry)
 
-### Model pins vs stage defaults (GH-193)
+### Model pins vs stage defaults (GH-193, re-pinned GH-194)
 
-The commands in this SKILL pin `--model` explicitly (kimi for match-outline,
-an anchored gemma seed, a gpt-oss no-anchors iterator). Those pins are the
-calibrated multi-family strategy — the July 2026 runs whose Pangram outcomes
-the results tables record — and they deliberately override the stage
-defaults, which have since converted to Cohere. Do not "fix" a pinned command
-to the default: the pin is the experiment. Whether Cohere arms beat the pins
-was GH-194, and the numbers are in (2026-08-31, two published payloads,
-seed+iterator isolated on raw articles, prose-only Pangram):
+Stage defaults are Cohere; the recorded July recipe pinned other models,
+and those pins are the experiment — do not "fix" a pinned command to the
+default. Whether Cohere arms beat the pins was GH-194 (2026-08-31, two
+published payloads, seed+iterator isolated on raw articles, prose-only
+Pangram):
 
 | arm (seed -> iterator) | loop (base 1.000) | prompts (base 0.913) | mean |
 |---|--:|--:|--:|
@@ -182,33 +158,25 @@ seed+iterator isolated on raw articles, prose-only Pangram):
 | gemma-anchored -> cohere | 1.000 | 0.909 | 0.955 |
 | **cohere -> cohere** | **0.802** | **0.735** | **0.768** |
 
-**The recommended strategy is now a single Krugman-anchored Cohere seed
-pass** (`--model cohere:command-a-03-2025 --author Krugman`), measured, with
-further no-anchor passes only if the score still falls: it tied the pinned
-recipe's 3-pass endpoint on one payload in ONE pass, was the only arm to
-move the other payload at all, and needs no Ollama. Two different mechanisms
-showed up: the pinned recipe is iterator-driven (gpt-oss grinding over
-passes), the Cohere strategy is seed-driven (the anchored pass does the work
-and iteration adds nothing — every Cohere arm upturned at p1). The
-multi-family "foreign fingerprint" thesis did not replicate: both mixed arms
-were worse than either pure arm, and a gpt-oss pass after a Cohere seed
-actively destroyed the seed's gain (0.896 -> 0.996).
+**The recommended strategy is a single Krugman-anchored Cohere seed
+pass** (`--model cohere:command-a-03-2025 --author Krugman`), with
+further no-anchor passes only if the score still falls: it tied the
+pinned recipe's 3-pass endpoint on one payload in ONE pass, was the only
+arm to move the other payload at all, and needs no Ollama. The pinned
+recipe is iterator-driven, the Cohere strategy seed-driven. The
+multi-family "foreign fingerprint" thesis did not replicate: both mixed
+arms were worse than either pure arm, and **a gpt-oss pass after a Cohere
+seed actively destroys the seed's gain (0.896 -> 0.996) — never mix them
+in that order.**
 
-Limits: n=2 payloads, arms isolated on raw articles (the July pins ran after
-outline+filter-tells cleanup), stop-on-upturn sampled once per pass. The
-pinned recipe stays documented below as the recorded July configuration; it
-remains the choice when an iterator-driven grind is wanted on an
-already-clean draft.
-- A `writing-voice/` directory with exemplars and at least one blueprint
-  under `writing-voice/blueprints/`
-- For Pangram measurement: an API key configured per the match-voice
-  credential contract (`.secrets/keys.json` with `"pangram"` entry)
+Limits: n=2 payloads, arms isolated on raw articles, stop-on-upturn
+sampled once per pass.
 
 ## Contract-field protection (GH-362)
 
 YAML spec files carry contract fields (section_goal, goals, acceptance
 criteria, metadata) whose values are terse, lowercase phrases the repo's
-audit tools grep for. The pipeline protects them in two layers:
+audit tools grep for. The chain protects them in two layers:
 
 **Exclude keys.** Both tighten.py and drive.py accept `--exclude-keys` with
 dot-separated key-path globs. For YAML files, the default exclusion list is
@@ -227,20 +195,19 @@ quotes, non-breaking hyphens and spaces, en-dashes) to ASCII before running
 any check. A rewrite that reintroduces them is caught by the gate rather
 than silently passing.
 
-When running the pipeline on spec YAML, the exclude-keys defaults apply
+When running the chain on spec YAML, the exclude-keys defaults apply
 automatically. For guard phrases, pass them explicitly on the drive.py or
 tighten.py command line, or configure them in the venue profile.
 
 ## Procedure
 
-### Phase 0: Discover and choose targets
+### Phase 0: Discover, resolve the venue, measure the baseline
 
 1. Discover `writing-voice/` by walking up from the article path.
    Error if not found.
 
-1b. **Venue mode (GH-336).** If the user named a venue (`--venue <name>`, or
-   "humanize this for the book/newsletter/..."), resolve the profile and skip
-   the interactive questions below:
+2. **Venue mode (GH-336).** If the user named a venue (`--venue <name>`,
+   or "humanize this for the book/newsletter/..."), resolve the profile:
 
    ```bash
    $RUN <match-structure>/scripts/venue_profile.py show \
@@ -250,49 +217,21 @@ tighten.py command line, or configure them in the venue profile.
    A profile that fails validation is refused — report the errors and stop;
    never fall back to guessing. From the resolved profile:
 
-   | profile field | replaces |
+   | profile field | governs |
    |---|---|
-   | `structural_step` | the step question (step 2) |
-   | `blueprint`, `anchor_query` | the blueprint/tags questions (step 3) |
-   | `targets`, `hedge_policy` | tighten-style's floor: pass `--venue <name>` to tighten.py in Phase 1 |
-   | `tell_lexicon` | the lexical catalog: pass `--lexicon=<value>` in Phase 2 |
+   | `structural_step` | **the caller's pre-chain step, not this chain** — report it so the caller can confirm it ran (or was skipped) |
+   | `anchor_query` | the seed's anchor selection (Phase 2) |
+   | `targets`, `hedge_policy` | tighten-style's floor: pass `--venue <name>` to tighten.py in Phase 3 |
+   | `tell_lexicon` | the lexical catalog: pass `--lexicon=<value>` in Phase 1 |
    | `gates` | which measurements run: no `pangram` gate → skip every Pangram scan in every phase (the consent rule still governs uploads when the gate IS present) |
-   | `citations` | which citation markers to spot-check after each step (`[1]` numbered vs pandoc `[@citekey]` — both must survive every rewrite verbatim) |
+   | `citations` | which citation markers to spot-check after each stage (`[1]` numbered vs pandoc `[@citekey]` — both must survive every rewrite verbatim) |
 
-   List venues with `venue_profile.py list --for <article.md>` when the user
-   asks what is available. No venue named, or no `venues/` directory → the
-   interactive flow below, unchanged.
+   List venues with `venue_profile.py list --for <article.md>` when the
+   user asks what is available. No venue named, or no `venues/` directory
+   → ask for the anchor selection interactively; everything else takes
+   its default.
 
-2. Ask the user which structural step to run:
-
-   | choice | when to use | what it does |
-   |---|---|---|
-   | match-outline | article structure needs section-level rewriting (new blueprint, different register) | section-level rewrite via Kimi with chosen blueprint and anchor-tags |
-   | tighten-style | article structure is sound but the paragraphs are too dense for the rewriter to clear the gate | paragraph-level rule-keyed rewriting via Ollama with anchor-gated verification. **Not the default placement** — see Phase 3.5, which runs tighten-style after match-voice to recover the words the rewrite costs. Choose this one only for the gate reason. |
-   | skip | article already structurally rewritten (e.g. resuming after step 1) | proceed directly to filter-tells |
-
-3. **If match-outline was chosen**, list available blueprints and tags, then
-   ask which to use:
-
-   ```bash
-   ls <repo>/writing-voice/blueprints/*.md
-   ```
-
-   ```bash
-   RUN="pixi run --manifest-path <agent-dir>/pixi.toml python"
-   $RUN <match-structure>/scripts/voice_anchors.py \
-     --voice-dir <repo>/writing-voice tags
-   ```
-
-   If the `tags` subcommand is not available, parse distinct tag values from
-   `writing-voice/manifest.yaml` directly. If only one blueprint exists,
-   propose it as the default. Show the available tags and let the user choose
-   (or skip tags for untagged retrieval).
-
-   **If tighten-style was chosen**, no blueprint or tag question is needed —
-   it uses the writing-voice corpus floor and its rule catalog.
-
-4. Capture baseline measurements:
+3. Capture baseline measurements:
 
    ```bash
    # Pangram baseline (one-shot scan; uploads the prose, costs a scan)
@@ -305,88 +244,34 @@ tighten.py command line, or configure them in the venue profile.
    $RUN <match-structure>/scripts/style.py burstiness <article.md> --text
    ```
 
-   Record the baseline Pangram scores (human %, mean window score, verdict),
-   the full `text_metrics()` output, and the burstiness line. These are the
-   "before" column in the final report. **Print the CV next to the Pangram
-   score at every measurement point below, not only in the final table** —
-   sentence-length dispersion and AI-phrase density are the two features a
-   plain stylometric model uses, and a step that moves the score without
-   moving CV moved something else (GH-129: a diction-only control arm held
-   CV at 0.621 and Pangram at 0.436, while the same model reshaping rhythm
-   took CV to 0.690 and Pangram to 0.259). With the `skip` choice, capture the baseline and proceed to
-   Phase 2. In venue mode, capture the Pangram baseline only when the
-   profile's gates include `pangram`.
+   Record the baseline Pangram scores (human %, mean window score,
+   verdict), the full `text_metrics()` output, and the burstiness line.
+   These are the "baseline" column in the final report. **Print the CV
+   next to the Pangram score at every measurement point below, not only
+   in the final table** — sentence-length dispersion and AI-phrase
+   density are the two features a plain stylometric model uses, and a
+   step that moves the score without moving CV moved something else
+   (GH-129: a diction-only control arm held CV at 0.621 and Pangram at
+   0.436, while the same model reshaping rhythm took CV to 0.690 and
+   Pangram to 0.259). In venue mode, capture the Pangram baseline only
+   when the profile's gates include `pangram`. **Hold the Pangram
+   framing constant across every measurement in a run** — slice, whole,
+   and prose-only payload scores of the same article are not comparable
+   (measured spread on one article: 0.225 / 0.913 / 1.000).
 
-### Phase 1: Structural step
+### Phase 1: filter-tells semantic cleanup
 
-Run the step chosen in Phase 0. With `skip`, proceed directly to Phase 2.
-Locked spans pass through untouched — both tools extract paragraphs through
-the shared drivers, which excise `<!-- lock -->` spans before the model
-sees the text and splice them back byte-identical.
-
-**match-outline** — rewrite the whole article via `match_outline.py
---rewrite` with the user's chosen blueprint and anchor-tags:
-
-```bash
-$RUN <match-outline>/scripts/match_outline.py <article.md> \
-  --voice-dir <repo>/writing-voice \
-  --anchor-tags <chosen-tags> \
-  --blueprint <chosen-blueprint> \
-  --model kimi-k2.6:cloud \
-  --rewrite
-```
-
-The output is `<article-stem>-rewritten.md` next to the original.
-
-**tighten-style** — survey the findings, then tighten paragraph by
-paragraph with the anchor-gated verifier:
-
-```bash
-$RUN <tighten-style>/scripts/check_style.py <article.md>
-$RUN <tighten-style>/scripts/tighten.py --article <article.md> \
-  --out <article-stem>-tightened.md
-```
-
-(Pass `--out` explicitly: tighten.py's default output name is
-`<stem>.tightmd`, which the rest of this pipeline does not expect.
-In venue mode add `--venue <name>` — the profile's targets become the
-sentence floor and its hedge policy sets the TS-08 threshold.)
-
-Either way, the output is expected to remain AI-flagged — the structural
-step provides divergence, not diction cleanup.
-
-Verify the rewrite preserved content: check that citations, numbers, code
-blocks, and figures survived. Both tools run their own guards
-(match_outline.py a similarity guard, tighten.py the match-voice gate), but
-spot-check the sections that carry data.
-
-Measure after the structural step:
-
-```bash
-$RUN <agent-dir>/scripts/pangram_report.py scan --article <step1-output.md>
-
-$RUN <match-structure>/scripts/style.py profile <step1-output.md>
-
-$RUN <match-structure>/scripts/style.py burstiness <step1-output.md> \
-  --baseline <article.md> --text
-```
-
-Record as the "after step 1" column, Pangram and CV together.
-
-### Phase 2: filter-tells semantic cleanup
-
-Run the lexical and structural scans on the step-1 output (or the original
-article when the structural step was skipped). Block-locked regions never
-enter the scans' prose view, and semantic edits are applied through the
-lock-respecting drivers — a locked antithesis or authored snark span is
-not filter-tells' to collapse. With `writing-voice/idiolect.yaml`
+Run the lexical and structural scans on the input. Block-locked regions
+never enter the scans' prose view, and semantic edits are applied through
+the lock-respecting drivers — a locked antithesis or authored snark span
+is not filter-tells' to collapse. With `writing-voice/idiolect.yaml`
 discoverable, the structural scan calibrates to the author baseline:
 native constructions flag only above the author ceiling, and calibrated
 flags say reduce toward the target, not to zero.
 
 ```bash
-bash <filter-tells>/scripts/detect-lexical.sh <step1-output.md>
-$RUN <filter-tells>/scripts/detect-structural.py <step1-output.md>
+bash <filter-tells>/scripts/detect-lexical.sh <article.md>
+$RUN <filter-tells>/scripts/detect-structural.py <article.md>
 ```
 
 In venue mode pass `--lexicon=<tell_lexicon>` to detect-lexical.sh — the
@@ -395,7 +280,7 @@ section, and the academic lexicon adds paper-template tells the default
 list does not carry.
 
 Apply the semantic edits following the filter-tells Step 3 procedure. The
-edits that matter most for this pipeline:
+edits that matter most for this chain:
 
 1. **Antithesis pairs** — collapse every negation-flip pair into a single
    sentence. These are the dominant AI rhetorical pattern. Target: 0 pairs.
@@ -418,40 +303,16 @@ After editing, re-run both scans to confirm:
 - Antithesis pairs: 0
 - No banned words
 
-Measure after filter-tells:
+Measure after filter-tells (Pangram + profile + burstiness against the
+baseline). Record as the "after-tells" column, Pangram and CV together.
 
-```bash
-$RUN <agent-dir>/scripts/pangram_report.py scan --article <step1-output.md>
-
-$RUN <match-structure>/scripts/style.py profile <step1-output.md>
-
-$RUN <match-structure>/scripts/style.py burstiness <step1-output.md> \
-  --baseline <article.md> --text
-```
-
-Record as the "after-tells" column, Pangram and CV together.
-
-### Phase 3: seeded iteration (seed in a second family, then iterate)
+### Phase 2: seeded match-voice
 
 **Run the seed. It is the mechanism, not an enhancement.** A single
 unseeded match-voice pass has only its own distribution to push against,
-so it substitutes diction instead of stripping it. Seeding with a
-different model family first leaves a foreign fingerprint the iterator
-has something to erase — and that difference decides whether the phase
-helps or hurts.
+so it substitutes diction instead of stripping it.
 
-Measured on strategy-theatre (2026-08-22), same article, same iterator,
-same cold-review standard:
-
-| variant | review-gated result | verdict |
-|---|---|---|
-| unseeded single pass | 0.609 ai, against a 0.375 baseline | dropped |
-| **seeded iteration** | **0.370 ai / 0.550 human** | **kept** |
-
-The unseeded pass is retained below as a named ablation. Choosing it is a
-deviation a run has to state and justify.
-
-#### 3.1 Seed — Cohere, anchored (the GH-194 default)
+#### 2.1 Seed — Cohere, anchored (the GH-194 default)
 
 ```bash
 $RUN <match-voice>/scripts/drive.py \
@@ -473,10 +334,12 @@ $RUN <match-structure>/scripts/voice_anchors.py tags --voice-dir <repo>/writing-
 ```
 
 **With a Cohere seed, the seed is usually the result** (GH-194: every
-Cohere arm's floor was the seed itself). Measure it; that score is your
-baseline for 3.2.
+Cohere arm's floor was the seed itself). Measure it; that score is the
+baseline for 2.2. **Record seed reach** — paragraphs changed out of
+total, from the driver's accepted/kept table — it is the caller's cycle
+signal and a required line in the report.
 
-#### 3.2 Iterate — only while the score still falls
+#### 2.2 Iterate — only while the score still falls
 
 ```bash
 PREV=<seed.md>
@@ -494,42 +357,48 @@ GH-194 Cohere arm. It stays in the recipe because stop-on-upturn makes a
 zero-gain loop cost exactly one pass, and a payload that does respond gets
 its passes.
 
-**Recorded July configuration (alternative).** The pre-GH-194 pinned
-recipe — anchored `gemma4:31b-cloud` seed, then a `gpt-oss:120b-cloud`
-no-anchors iterator — is the arm the results tables below measured through
-July. It is iterator-driven where the Cohere strategy is seed-driven, lost
-the GH-194 head-to-head (mean 0.867 vs 0.768), and a gpt-oss pass after a
-Cohere seed actively undoes the seed (0.896 -> 0.996) — never mix them in
-that order. Reach for it when an iterator-grind on an already-clean draft
-is specifically wanted; substitute the model names into the commands above.
-
 Three rules, all load-bearing:
 
 1. **Score every pass and stop at the first upturn.** Never run a fixed
-   count. The floor is typically pass 1–4; past it each pass concentrates
-   the iterator's own signature and the score climbs back.
+   count. Past the floor each pass concentrates the iterator's own
+   signature and the score climbs back (the U-curve: 0.992 -> 0.579 ->
+   0.432 -> 0.489 -> … -> 0.700 by pass 10, stay-on-track 2026-07-29).
 2. **The publish candidate is the floor pass, not the last pass.** Keep
    every pass on disk with its provenance.
-3. **Cold-review the floor pass before believing its score.** Every stage
-   measured this way lost most of its gain at review — the raw floor and
-   the gated floor are different numbers, and only the gated one counts.
+3. **The floor pass's score is raw until the caller's cold review gates
+   it.** Every stage measured this way lost most of its gain at review —
+   the raw floor and the gated floor are different numbers, and only the
+   gated one counts. Cold review belongs to the caller's review phase
+   (GH-207).
 
 **Pass `--canonical-blocks` explicitly** when the article is staged
 anywhere but its repo: discovery walks up from the article path, so a run
 staged in a scratch directory silently has no registry and will rewrite
 the disclosure and subscribe lines.
 
-#### 3.3 Ablation: the unseeded single pass
+**Recorded July configuration (alternative).** The pre-GH-194 pinned
+recipe — anchored `gemma4:31b-cloud` seed, then a `gpt-oss:120b-cloud`
+no-anchors iterator — is the arm the calibration tables below measured
+through July. It is iterator-driven where the Cohere strategy is
+seed-driven, lost the GH-194 head-to-head (mean 0.867 vs 0.768), and a
+gpt-oss pass after a Cohere seed actively undoes the seed (0.896 ->
+0.996) — never mix them in that order. Reach for it when an
+iterator-grind on an already-clean draft is specifically wanted;
+substitute the model names into the commands above. Pangram retrains on
+new model families, so re-measure before reusing any recipe.
 
-Run the paragraph-level diction rewrite with no voice anchors and no seed. Inline
-locks reach the rewriter as opaque `[[LOCK-n]]` anchor tokens; a rewrite
-that drops one is refused by the drivers and the original paragraph is
-kept — the locked bytes cannot be lost to this phase.
+#### 2.3 Ablation: the unseeded single pass
+
+Retained as a named ablation; choosing it is a deviation a run has to
+state and justify (measured 0.609 gated against 0.370 seeded on the same
+article). Inline locks reach the rewriter as opaque `[[LOCK-n]]` anchor
+tokens; a rewrite that drops one is refused by the drivers and the
+original paragraph is kept.
 
 ```bash
 $RUN <match-voice>/scripts/drive.py \
-  --article <rewritten-and-cleaned.md> \
-  --model gpt-oss:120b-cloud \
+  --article <cleaned.md> \
+  --model cohere:command-a-03-2025 \
   --no-anchors \
   --pangram \
   --out <output.md>
@@ -544,63 +413,39 @@ Check the output for:
 - Distance > 0 (confirms the gate accepted rewrites)
 - Pangram verdict and mean window score (when the gate ran)
 
-Measure final style:
+#### 2.4 Burstiness (optional, same slot)
 
-```bash
-$RUN <match-structure>/scripts/style.py profile <output.md>
-```
+**The burstiness pass** (GH-129) runs in the match-voice slot:
+match-voice's `burstiness.py` raises sentence-length variance through the
+rewrite transport, behind the same gate. It earns its position the same
+way the seed does — measured only on documents already through the chain.
+On pipeline-state prose it moved Pangram 38.1% -> 29.1% (and, at an
+earlier state of the same article, 0.445 -> 0.259) with a rhythm-held
+control within noise both times; run on a raw draft it can do nothing (a
+saturated 100% baseline has no room to fall). The CV printed at each
+measurement point is how you see whether it has anything left to do:
+match-voice's SKILL.md carries the invocation and the gate details.
 
+Measure after Phase 2 (profile at minimum; Pangram per the venue gates).
 Record as the "after-voice" column.
 
-### Phase 3b: iteration calibration (reference)
+### Phase 3: tighten-style (word recovery)
 
-A single no-anchors pass leaves most windows near 0.75. Iterating the
-Phase 3 rewrite on its own output keeps stripping the previous model's
-fingerprint — up to a point. Measured on the stay-on-track article
-(2026-07-29, experiments/2026-07-29-gptoss-iter/): the per-pass mean
-window traces a **U-curve** — 0.992 -> 0.579 -> 0.432 (55% human) ->
-0.489 -> 0.418 -> then monotonic regression back to 0.70 by pass 10.
-Past the floor, each pass concentrates the rewriter's own single-family
-signature, which is exactly what Pangram's synthetic-mirror training
-detects (arXiv:2402.14873).
-
-Rules:
-
-1. **Seed with a different family than the iterator.** The best floor
-   came from seeding with an anchored gemma pass (Krugman tags) that
-   itself scored 0.992 — useless as an endpoint, useful as a seed. The
-   iterator (gpt-oss) then has a foreign fingerprint to erase.
-2. **Score every pass** (`--pangram`) and **stop at the first upturn**.
-   Never run a fixed pass count. The floor is typically pass 2-4.
-3. **Keep every pass on disk** with its provenance YAML; the publish
-   candidate is the floor pass, not the last pass.
-4. **Expect decay.** Pangram retrains on new model families; a floor
-   measured today drifts up as the iterator model enters their mirror
-   set. Re-measure before reusing a recipe.
-
-```bash
-PREV=<seed.md>
-for i in 01 02 03 04; do
-  $RUN <match-voice>/scripts/drive.py --article $PREV \
-    --model gpt-oss:120b-cloud --no-anchors --pangram \
-    --out pass$i.md
-  PREV=pass$i.md   # read mean window from pass$i.generation.yaml; stop on upturn
-done
-```
-
-### Phase 3.5: tighten-style, after match-voice
-
-Run tighten-style **after** the rewrite, never before it. The rewrite buys
-the score and costs words; this pass gives the words back without giving
-back the score.
+Run tighten-style **after** the rewrite. The rewrite buys the score and
+costs words; this pass gives the words back without giving back the
+score.
 
 ```bash
 $RUN <tighten-style>/scripts/tighten.py --article <floor-pass.md> \
   --out <tightened.md>
 ```
 
-Measured (2026-07-26 worktrees run, carried from the substack
-write-article command, which has run this ordering longest):
+(In venue mode add `--venue <name>` — the profile's targets become the
+sentence floor and its hedge policy sets the TS-08 threshold. Pass
+`--out` explicitly: tighten.py's default output name is `<stem>.tightmd`,
+which the rest of this chain does not expect.)
+
+Measured (2026-07-26 worktrees run):
 
 | | words | mean sentence | Pangram |
 |---|---:|---:|---|
@@ -608,23 +453,55 @@ write-article command, which has run this ordering longest):
 | after match-voice | 2,502 | 17.8 | 0.0% AI |
 | after tighten-style | 2,306 | 16.5 | 0.0% AI |
 
-**The pass must run through the second model family.** The same tightening
-applied by Claude against the rule catalog took a 0.0% draft to **77.9%** —
-same article, same rules, opposite result, because Claude tightens toward
-Claude's own register. Read the findings; let the tool rewrite.
+**The pass must run through the rewrite transport, never by hand.** The
+same tightening applied by Claude against the rule catalog took a 0.0%
+draft to **77.9%** — same article, same rules, opposite result, because
+Claude tightens toward Claude's own register. Read the findings; let the
+tool rewrite.
 
-**Two placements, two different questions.** Phase 1 offers tighten-style
-as the *structural step*: that placement answers "the paragraphs are too
-dense for the rewriter to clear the mechanical gate", and it runs before
-match-voice by design. This phase answers "the rewrite left the prose
-leisurely", and it runs after. A run picks one and states which; running
-both is defensible only if the first was chosen for the gate reason and
-the second for the word-count reason.
+**A second placement exists, and it is the caller's.** A caller may run
+tighten-style *before* the chain when the paragraphs are too dense for
+the rewriter to clear the mechanical gate (the venue profile's
+`structural_step` can name it for exactly that reason). This phase
+answers a different question — "the rewrite left the prose leisurely" —
+and a run states which placement was used; both is defensible only when
+the first was for the gate reason and this one for the word count.
 
-### Phase 3c: inject-vernacular (terminal)
+Record as the "after-tighten" column.
+
+### Phase 4: accent-dial (optional)
+
+When the author wants the accent — or the venue profile calls for it —
+run accent-dial on the tightened text. It is a generative candidate
+source with deterministic application, so it sits **after** every other
+sampling stage and **before** the terminal stage.
+
+```bash
+python3 <accent-dial>/scripts/accent_dial.py --article <tightened.md> --dial 0.4
+```
+
+Three things this chain holds accent-dial to (its SKILL.md carries the
+full contract, grain choice, and dial calibration):
+
+- **It composes after structural repair, never instead of it** — the
+  round-trip launders diction, not discourse structure, and gemma
+  manufactures antithesis, so its output gets a structural recheck.
+- **Its model exception stands**: default `gemma4:31b-cloud`
+  (`ACCENT_DIAL_MODEL`), deliberately not the pipeline-wide Cohere
+  default — the 2026-08-21 A/B showed stronger return-leg translators
+  polish the accent away (L2 composite -0.009 vs +0.726) and score worse
+  on Pangram (0.247 vs 0.150).
+- **Its entailment review gate is mandatory** before the output moves on:
+  applied paragraphs are reviewed against their originals and rejected by
+  reverting in place — never by a model repair.
+
+Record as the "after-accent" column. Skipped → say so in the
+run-completeness check; the chain is complete without it.
+
+### Phase 5: inject-vernacular (terminal)
 
 When the repository carries `writing-voice/idiolect.yaml`, run the
-terminal vernacular stage on the Phase 3 (or 3b floor-pass) output:
+terminal vernacular stage on the Phase 3 (or Phase 4) output:
 
 ```bash
 $RUN <inject-vernacular>/scripts/inject_vernacular.py <output.md>
@@ -633,130 +510,79 @@ $RUN <inject-vernacular>/scripts/inject_vernacular.py <output.md>
 Deterministic operators only — it restores the author's markers toward
 the bank's essay targets and writes an edit log for the survival
 analysis; nothing samples. This is the last stage that writes. Everything
-after this line — the Phase 4 report, any final Pangram scan, a
-voice-critic run, cold reads, the author gate — reads the text and never
-modifies it. A defect found from here on means the author's hand or a
-re-run from a pre-terminal checkpoint. No idiolect.yaml → skip this
-phase; the invariant then attaches to the end of Phase 3.
+after this line — the Phase 7 report, any final Pangram scan, and the
+whole of the caller's review phase — reads the text and never modifies
+it. A defect found from here on means the author's hand or a re-run from
+a pre-terminal checkpoint. No idiolect.yaml → skip this phase; the
+invariant then attaches to the end of the last stage that ran.
 
-For the gate checklist, run the read-only critic on the final text:
-
-```bash
-$RUN <voice-critic>/scripts/voice_critic.py <output.md> --form essay
-```
-
-### Phase 3d: run-completeness check
+### Phase 6: run-completeness check
 
 Before the report, state what actually ran. A partial run must report
 itself as partial — the failure this prevents is a run that stops at an
-unseeded Phase 3, looks complete, and quietly omits the step that does the
-work.
+unseeded Phase 2, looks complete, and quietly omits the step that does
+the work.
 
 | item | required |
 |---|---|
-| structural step | ran, or skipped with the reason |
+| structural precondition | caller's structural step named (match-outline / tighten-style / skip), or the low-divergence signal reported |
 | filter-tells | ran; findings triaged into real vs false positives |
-| Phase 3 seed | ran, with the model family and anchor tags named |
-| Phase 3 iteration | every pass scored; stopped at an upturn, not a count |
+| Phase 2 seed | ran, with the model and anchor selection named |
+| Phase 2 iteration | every pass scored; stopped at an upturn, not a count |
 | floor selection | the publish candidate is the floor pass |
-| cold review | run on the floor pass; survival rate stated |
-| tighten-style | which placement was used (Phase 1 gate reason, or Phase 3.5 word-recovery), and through the second family |
+| seed reach | reported (paragraphs changed / total) for the caller's cycle decision |
+| tighten-style | ran through the rewrite transport; venue floor named when in venue mode |
+| accent-dial | ran with its review gate, or skipped with the reason |
 | inject-vernacular | ran, or skipped with the reason |
 | canonical blocks | registry found, or passed explicitly |
 | locks and markers | verified byte-identical after every stage |
+| Pangram framing | one framing used throughout, named |
 
-### Phase 4: Consolidated report
+### Phase 7: Consolidated report
 
-Print a single report with five categories. Each metric shows four columns:
-baseline, after step 1, after-tells, after-voice, and the total delta
-(after-voice minus baseline).
+Print a single report. Each metric shows the stage columns —
+baseline, after-tells, after-voice, after-tighten, after-accent (when it
+ran) — and the total delta (final minus baseline).
 
 In venue mode, head the report with the venue name and add a `target`
 column to categories 2–5 wherever the profile's `targets` block carries the
-metric — the question the report answers becomes "did the pipeline land on
+metric — the question the report answers becomes "did the chain land on
 the venue's measured register", not only "did the numbers move". Run each
 gate from the profile's `gates` list in order and state pass/fail per gate;
 omit the Pangram category entirely when that gate is absent.
 
-**1. AI/Human detection (Pangram)**
+**1. AI/Human detection (Pangram)** — one row per stage measured: human %,
+mean score, verdict, CV.
 
-| stage | human % | mean score | verdict |
-|---|---|---|---|
-| baseline | — | — | — |
-| after step 1 (match-outline or tighten-style) | — | — | — |
-| after filter-tells | — | — | — |
-| after match-voice | — | — | — |
+**2. Readability** — Flesch Reading Ease, Flesch-Kincaid Grade, Gunning
+Fog, SMOG Index.
 
-**2. Readability**
+**3. Lexical diversity** — Type-Token Ratio, Corrected TTR, Hapax Ratio,
+Yule's K.
 
-| metric | baseline | after step 1 | after-tells | after-voice | delta |
-|---|---|---|---|---|---|
-| Flesch Reading Ease | — | — | — | — | — |
-| Flesch-Kincaid Grade | — | — | — | — | — |
-| Gunning Fog | — | — | — | — | — |
-| SMOG Index | — | — | — | — | — |
+**4. Syntactic and structural** — sentence length mean / stdev / CV /
+min / max / p10 / median / p90, mean clause length, passive per 100
+sentences, paragraph cohesion.
 
-**3. Lexical diversity**
+**5. Stylometrics** — function word ratio; hedges, commas, semicolons,
+em dashes, colons per 1000 words; top sentence openers.
 
-| metric | baseline | after step 1 | after-tells | after-voice | delta |
-|---|---|---|---|---|---|
-| Type-Token Ratio | — | — | — | — | — |
-| Corrected TTR | — | — | — | — | — |
-| Hapax Ratio | — | — | — | — | — |
-| Yule's K | — | — | — | — | — |
+**6. Filter-tells results** — antithesis pairs, banned words, structural
+verdict, before and after cleanup.
 
-**4. Syntactic and structural**
-
-| metric | baseline | after step 1 | after-tells | after-voice | delta |
-|---|---|---|---|---|---|
-| Sentence length mean | — | — | — | — | — |
-| Sentence length stdev | — | — | — | — | — |
-| Sentence length CV | — | — | — | — | — |
-| Sentence length min / max | — | — | — | — | — |
-| Sentence length p10 / median / p90 | — | — | — | — | — |
-| Mean clause length | — | — | — | — | — |
-| Passive / 100 sentences | — | — | — | — | — |
-| Paragraph cohesion | — | — | — | — | — |
-
-**5. Stylometrics**
-
-| metric | baseline | after step 1 | after-tells | after-voice | delta |
-|---|---|---|---|---|---|
-| Function word ratio | — | — | — | — | — |
-| Hedges / 1000 words | — | — | — | — | — |
-| Commas / 1000 words | — | — | — | — | — |
-| Semicolons / 1000 words | — | — | — | — | — |
-| Em dashes / 1000 words | — | — | — | — | — |
-| Colons / 1000 words | — | — | — | — | — |
-| Top sentence openers | — | — | — | — | — |
-
-**6. Filter-tells results**
-
-| metric | before cleanup | after cleanup |
-|---|---|---|
-| Antithesis pairs | — | — |
-| Banned words | — | — |
-| Structural verdict | — | — |
-
-**7. Match-voice gate stats**
-
-| metric | value |
-|---|---|
-| Accepted (mechanical) | — |
-| Kept original | — |
-| Skipped (short) | — |
-| Mean distance | — |
+**7. Match-voice gate stats** — accepted (mechanical), kept original,
+skipped (short), mean distance, **seed reach**.
 
 ## File naming convention
 
-| file | step |
+| file | stage |
 |---|---|
-| `<stem>.md` | original article |
-| `<stem>-rewritten.md` | after match-outline (when chosen) |
-| `<stem>-tightened.md` | after tighten-style (when chosen; pass `--out`, the tool's own default is `<stem>.tightmd`) |
-| `<step1-output>.md` | same file, after semantic edits applied in place |
-| `<step1-output>.vr-gptoss-noanchor.md` | final output after match-voice |
-| `<step1-output>.vr-gptoss-noanchor.generation.yaml` | provenance record |
+| `<stem>.md` | input (already structurally diverged by the caller; a caller's match-outline output is conventionally `<stem>-rewritten.md`) |
+| `<stem>.vr-draft.md` / `<seed.md>` | after the Phase 2 seed |
+| `pass<NN>.md` | iterator passes, kept with provenance |
+| `<floor>.tight.md` or `--out` name | after tighten-style |
+| `<stem>.dial<p>.md` | after accent-dial (when run) |
+| `*.generation.yaml` | provenance record per drive.py run |
 
 ## When it breaks
 
@@ -767,24 +593,26 @@ omit the Pangram category entirely when that gate is absent.
   reporting success (Pangram before == after is the tell). Check the
   provenance YAML: `accepted: 0` with unchanged scores means the gate never
   ran, not that the rewrites failed.
-- **match-voice gate rejects everything (distance 0.0):** the structural
-  step (when match-outline was chosen) did not change the prose enough. Try
-  a different model or blueprint for match-outline, or apply more aggressive
-  semantic edits in Phase 2.
+- **match-voice gate rejects everything (distance 0.0):** the input is
+  not structurally diverged. Hand the run back to the caller to run
+  match-outline (or more aggressive Phase 1 semantic edits) — the
+  precondition in the input contract above.
 - **tighten-style gate rejects everything:** the prose is already at or
-  below the author's density floor — there is nothing to tighten. When the
-  structure itself needs to change, match-outline is the right step 1, not
-  tighten-style.
+  below the density floor — there is nothing to tighten.
 - **Pangram score does not improve:** the semantic cleanup missed rhetorical
   patterns. Re-run filter-tells Step 3 (the full semantic analysis) and look
   for surviving antithesis pairs, tricolon patterns, or CoT leakage.
-- **Meaning drift:** three rewrites compound. The match-outline rewrite is
-  the largest source of drift. Compare the final output against the original
-  (not the intermediate) to catch cumulative losses.
-- **Filler regression:** gpt-oss without anchors tends toward formal prose,
-  but can introduce filler. Check the stylometrics section of the report.
+- **Meaning drift:** rewrites compound; the caller's match-outline pass
+  is the largest source of drift. Compare the final output against the
+  original (not the intermediate) to catch cumulative losses.
+- **Filler regression:** an unanchored iterator can introduce filler.
+  Check the stylometrics section of the report.
 
 ## Calibration data
+
+The historical runs below were measured under the pre-GH-208 layout, with
+match-outline as the chain's own first phase; its role is unchanged — it
+ran before filter-tells then, and runs caller-side now.
 
 Tested on `2026-10-29-how-to-break-an-ais-heresy.md` (2,357 words) with
 hardcoded Evans how-to blueprint and anchor-tags.
@@ -849,7 +677,7 @@ works:
 Two lessons. The seed does not need to rewrite wholesale to work — 19
 paragraphs of foreign fingerprint were enough. And survival at cold review
 falls as input quality rises (21% single-shot, 51% harness on mid-edit
-text, 33–35% on well-edited text): the pipeline's value is front-loaded
+text, 33–35% on well-edited text): the chain's value is front-loaded
 onto drafts, and on edited prose the gated gain is real but small.
 
 Same-family iteration is a no-op: kimi match-voice on kimi-derived prose
