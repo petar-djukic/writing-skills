@@ -1,5 +1,10 @@
 #!/usr/bin/env python3
-"""Cohere A/B harness: does a system/user split change what survives a rewrite?
+"""Bake-off harness (GH-205; formerly match-voice/cohere_ab.py): multi-payload
+model comparison through the shared transport — it drives any model the
+transport routes, not only Cohere.
+
+Original question, kept for the record: does a system/user split change
+what survives a rewrite?
 
 GH-153 proposed routing Cohere with the rules in a `system` message and only
 the content in `user`, on the strength of a single-passage A/B where the split
@@ -21,9 +26,9 @@ Pacing matters: a Cohere trial key allows 20 calls/minute, and an unpaced
 sweep fills with 429s that look like failures.
 
 Usage:
-  COHERE_SECRETS_FILE=... python3 cohere_ab.py sweep <draft.md> [--out results.json]
-  COHERE_SECRETS_FILE=... python3 cohere_ab.py replicate [--trials 6]
-  COHERE_SECRETS_FILE=... python3 cohere_ab.py bakeoff <draft.md> --out-dir <dir>
+  COHERE_SECRETS_FILE=... python3 bakeoff.py sweep <draft.md> [--out results.json]
+  COHERE_SECRETS_FILE=... python3 bakeoff.py replicate [--trials 6]
+  COHERE_SECRETS_FILE=... python3 bakeoff.py bakeoff <draft.md> --out-dir <dir>
 
 `bakeoff` (GH-160) runs the two Cohere models AND the incumbent Ollama
 rewriters over the same paragraphs, single-message shape only (the shape the
@@ -40,7 +45,9 @@ import sys
 import time
 
 HERE = os.path.dirname(os.path.realpath(__file__))
-sys.path.insert(0, HERE)
+MATCH_VOICE = os.path.normpath(os.path.join(HERE, "..", "..", "match-voice",
+                                            "scripts"))
+sys.path.insert(0, MATCH_VOICE)
 sys.path.insert(0, os.path.normpath(os.path.join(HERE, "..", "..", "..", "scripts")))
 import rewrite as rw  # noqa: E402
 import md_paragraphs as mp  # noqa: E402
