@@ -36,6 +36,8 @@ The blindness runs in **both directions**. The scripts flag the bland AI directi
 
 **Do not infer voice quality from the structural script's verdict label.** Voice is a judgment, not a statistic.
 
+**Long unattended runs on a local Ollama:** set `OLLAMA_WAIT_SERVER=600` — a supervised server can be reaped mid-run, and the transport then polls for its return instead of failing the paragraph (GH-173). Hosted (cohere:) models are unaffected.
+
 ## When to Use
 
 - Before publishing any document drafted or edited by AI

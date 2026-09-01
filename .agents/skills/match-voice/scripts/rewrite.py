@@ -11,9 +11,10 @@ unreachable or the model is missing, this exits nonzero with remediation. The
 skill must report that and stop — falling back to a Claude rewrite would
 defeat the decorrelation the pipeline exists for.
 
-Defaults to local gemma4:12b, the best local model in the GH-163 bake-off that
-runs on any machine. Bigger is a one-flag swap: --model gemma4:31b-mlx on a
-32 GB Apple Silicon box keeps the paragraphs on the machine, --model
+Defaults to cohere:command-a-03-2025 (the GH-138/142 bake-off winner on
+Pangram; needs COHERE_API_KEY / COHERE_SECRETS_FILE). The GH-163 local models
+are the no-egress fallback via --model or MATCH_VOICE_MODEL: gemma4:12b runs
+anywhere, gemma4:31b-mlx keeps 31b-tier quality on a 32 GB Apple Silicon box,
 gemma4:31b-cloud when the memory is not there. SKILL.md has the tiers.
 
 Usage:
@@ -26,8 +27,10 @@ Usage:
 import argparse
 import json
 import os
+import re
 import socket
 import sys
+import time
 import urllib.error
 import urllib.request
 
@@ -37,14 +40,378 @@ if HERE not in sys.path:
 import protected_terms as _pt  # noqa: E402
 
 DEFAULT_ENDPOINT = os.environ.get("OLLAMA_ENDPOINT", "http://localhost:11434")
-# Defaults chosen by the GH-163 bake-off (10 models, one draft paragraph,
-# same anchors, judged on voice fidelity + gate + register scan):
-# gemma4:12b was the best local; gemma4:31b-cloud the best overall, with
-# kimi-k2.6:cloud a complementary second opinion (it edits least).
-# llama3.1:8b ranked last — it destroyed a term of art and weakened a claim
-# while passing the mechanical gate — and is no longer a default.
-DEFAULT_MODEL = os.environ.get("MATCH_VOICE_MODEL", "gemma4:12b")
+# Default set by the GH-138/142 Cohere bake-off: command-a-03-2025 drove a
+# non-saturated draft to ~0.49 Pangram where gemma4:31b RAISED it to 1.000
+# (Pangram reads the common open families as AI; Cohere's rarer fingerprint
+# reads as human), and after the 422-retry fix it runs fully clean through the
+# gate. The author accepted its cost/egress tradeoff and flipped the default
+# (GH-145). The GH-163 local models remain the no-egress fallback via --model
+# or MATCH_VOICE_MODEL: gemma4:12b (best local), gemma4:31b-cloud (best Ollama
+# overall), kimi-k2.6:cloud (edits least). A keyless environment MUST pass one
+# of those, since a cohere: default with no key stops rather than falling back.
+DEFAULT_MODEL = os.environ.get("MATCH_VOICE_MODEL", "cohere:command-a-03-2025")
 DEFAULT_TIMEOUT = int(os.environ.get("MATCH_VOICE_TIMEOUT", "300"))
+# Retries for transient Ollama transport failures (dropped connection, timeout).
+OLLAMA_MAX_RETRIES = int(os.environ.get("OLLAMA_MAX_RETRIES", "3"))
+# Wait budget for an Ollama server that goes DOWN mid-run, in seconds
+# (default 0 = off, today's behavior). On this machine an `ollama launch
+# opencode` supervisor reaps foreign `ollama serve` processes and cycles its
+# own; the 1-2-4s retry backoff cannot ride out a supervisor restart, and
+# three consecutive bake-off re-runs died to it before a polling wrapper held
+# (GH-173). With a budget set, a refused connection polls /api/tags every 5s
+# up to the budget before retrying, and a successful wait does not consume a
+# retry attempt. Set OLLAMA_WAIT_SERVER=600 for unattended batch runs.
+OLLAMA_WAIT_SERVER = int(os.environ.get("OLLAMA_WAIT_SERVER", "0"))
+# Whether this process has ever reached the server — distinguishes "vanished
+# mid-run" (supervisor reaping; waiting can help) from "never up" (start it).
+_OLLAMA_WAS_UP = False
+
+
+def _ollama_down_message(model, endpoint, cause):
+    """The two down states need opposite remediations (GH-173)."""
+    waited = (f" (waited {OLLAMA_WAIT_SERVER}s for it to return)"
+              if OLLAMA_WAIT_SERVER > 0 else
+              " (set OLLAMA_WAIT_SERVER=600 to ride out supervisor restarts)")
+    if _OLLAMA_WAS_UP:
+        return (f"Ollama at {endpoint} vanished mid-run on model '{model}' "
+                f"({cause}){waited}. A supervisor may be reaping the server; "
+                "see writing-skills#173. No Claude fallback, by design.")
+    return (f"Ollama never came up at {endpoint} for model '{model}' "
+            f"({cause}){waited}. Start it with `ollama serve` or point "
+            "OLLAMA_ENDPOINT elsewhere. No Claude fallback, by design.")
+
+
+def _wait_for_ollama(endpoint, budget=None):
+    """Poll /api/tags until the server answers or the budget expires.
+    Returns True when it came back. No-op (False) with a zero budget."""
+    budget = OLLAMA_WAIT_SERVER if budget is None else budget
+    if budget <= 0:
+        return False
+    deadline = time.time() + budget
+    while time.time() < deadline:
+        try:
+            req = urllib.request.Request(f"{endpoint}/api/tags")
+            with urllib.request.urlopen(req, timeout=4):
+                return True
+        except Exception:  # noqa: BLE001 — down is down, keep polling
+            time.sleep(5)
+    return False
+
+# Cohere is an opt-in cross-family backend, selected by a `cohere:` model-id
+# prefix (e.g. --model cohere:command-a-03-2025). It routes to Cohere's hosted
+# v2 /chat API instead of Ollama; every generative stage that calls generate()
+# gets it for free. Defaults are unchanged — nothing routes here unless the
+# model id asks for it. Rationale: the substack GH-269 confound test measured a
+# cross-family fixer (Cohere) taking a filter-tells fix to 0.335/0.665 human
+# where the session model produced 1.000, so a distinct non-Claude family is
+# worth having in the toolbox. Adoption as a default is gated on the bake-off
+# (writing-skills GH-138).
+COHERE_PREFIX = "cohere:"
+COHERE_ENDPOINT = os.environ.get("COHERE_ENDPOINT", "https://api.cohere.com/v2/chat")
+COHERE_MAX_RETRIES = int(os.environ.get("COHERE_MAX_RETRIES", "3"))
+
+# Reasoning models are allowed here. Two guards used to refuse them — a name
+# substring ("reasoning") and a denylist naming command-a-plus — both written
+# when a scratchpad in the answer looked like a property of the model. It is
+# not. Cohere separates reasoning into its own content block, and since GH-154
+# this module reads blocks by type, so a thinking model's scratchpad cannot
+# reach the returned prose whatever the model is called. The name guard could
+# not have worked anyway: command-a-plus-05-2026 is a reasoning model whose name
+# says nothing of the sort, which is why the denylist existed to patch it.
+#
+# What DOES put a scratchpad in the answer is starving the thinking budget.
+# Measured 2026-08-29 on command-a-plus-05-2026, one passage, temperature 0.3:
+#
+#   thinking setting                    thinking block   answer block
+#   (none sent — the default here)        3954-6310 ch      97-154 ch  clean
+#   {"type": "disabled"}                        0 ch           91 ch   clean
+#   {"type": "enabled", "token_budget": 1}      2 ch         6590 ch   SPILLED
+#
+# The last row opened "<EOS_TOKEN>We need to rewrite the passage:" — the GH-138
+# signature exactly. Reasoning with nowhere to go goes into the answer. So the
+# default is to send no `thinking` field at all, and a budget, if one is ever
+# configured, is clamped to a floor well above the longest run observed.
+COHERE_MIN_THINKING_BUDGET = int(os.environ.get("COHERE_MIN_THINKING_BUDGET", "8000"))
+# Opt-in only, and not recommended: disabling thinking on a reasoning model
+# gives a deterministic 422 INVALID_TOOL_GENERATION on a long prompt (7/7 across
+# two probes on the 11k-character match-voice prompt; 4/4 clean on a short one).
+# Unset sends no field, which is what every measured-clean run above did.
+COHERE_THINKING = os.environ.get("COHERE_THINKING", "").strip().lower()
+COHERE_THINKING_BUDGET = os.environ.get("COHERE_THINKING_BUDGET", "").strip()
+# Doc audit (GH-176, docs.cohere.com 2026-08-31): temperature defaults to 0.3,
+# p to 0.75, k to 0; safety_mode defaults to CONTEXTUAL; `seed` gives
+# deterministic sampling. The documented reasoning guidance is "leave at least
+# 1K tokens for the response" and 31K for reason-to-the-limit — our 8000 floor
+# is empirical and stricter, kept because token_budget=1 measurably spilled
+# the scratchpad into the answer. The 422 error_types this module classifies
+# (INVALID_TOOL_GENERATION deterministic, NO_VALID_RESPONSE_GENERATED
+# transient) are NOT in Cohere's documented error list — both are empirical,
+# and the docs do not document 422 for chat at all.
+# COHERE_SEED, when set to an integer, is sent as `seed` — a documented
+# parameter that makes bake-off arms reproducible.
+COHERE_SEED = os.environ.get("COHERE_SEED", "").strip()
+# finish_reason values the docs enumerate. Only COMPLETE is a finished answer
+# for this pipeline: we send no stop_sequences and no tools, so every other
+# value means the text is truncated or absent and must not be spliced.
+COHERE_FINISH_OK = ("COMPLETE",)
+# Lines a leak-prone model emits instead of, or around, the rewrite: prompt-rule
+# echoes and reasoning narration. Stripped as defense in depth even for allowed
+# models; if stripping leaves nothing, the caller treats it as a failed rewrite.
+# Deliberately NARROW: it must not touch legitimate prose that merely opens with
+# a transition word ("Now the engine reads…", "So the validator runs…"). It
+# matches only genuine meta — instruction echoes and first-person deliberation.
+_COHERE_META = re.compile(
+    r"^\s*(?:"
+    r"(?:is|here is|this is|below is) the rewritten paragraph\b"
+    r"|(?:rewritten paragraph|output|note|explanation)\s*:"
+    r"|no preamble\b"
+    r"|(?:now,?\s+|so,?\s+)?we (?:need to|should|must|will|have to)\b"
+    r"|let me\b|let's\b"
+    r"|i (?:will|need to|should|have) \w"
+    r").*$",
+    re.IGNORECASE)
+
+
+def _sanitize_cohere_output(text):
+    """Strip instruction-echo / reasoning-narration lines a leak-prone model
+    mixes into the response (GH-138/GH-140). Defense in depth beside the
+    denylist: keeps a stray meta line from a clean model out of the splice."""
+    kept = [ln for ln in text.splitlines() if not _COHERE_META.match(ln)]
+    return "\n".join(kept).strip()
+
+
+# Cohere v2 returns the assistant turn as a list of TYPED content blocks. A
+# reasoning model puts its scratchpad in a block of its own —
+# {"type": "thinking", "thinking": ...} — beside the answer in
+# {"type": "text", "text": ...}. Probed 2026-08-29 against
+# command-a-plus-05-2026: 6541 characters of thinking sat beside 195 characters
+# of prose, in two separate blocks. Cohere did the separation; nothing here has
+# to parse it back out of the answer.
+#
+# Reading the "text" key off every block happened to drop the scratchpad, since
+# a thinking block carries no such key. That was luck, not policy — a block kind
+# Cohere adds later would vanish the same silent way. Select on `type` instead,
+# and hand the scratchpad back to the caller rather than discarding it unnamed
+# (GH-154).
+COHERE_TEXT_BLOCK = "text"
+COHERE_THINKING_BLOCK = "thinking"
+
+
+def _cohere_blocks(parts):
+    """Split a v2 content-block list into (text, thinking, other_types).
+
+    `other_types` names the block kinds this code does not read, so an unknown
+    one is reportable rather than silently swallowed. Never raises on shape: a
+    malformed block is counted as unknown, not allowed to kill the call."""
+    text, thinking, other = [], [], []
+    for p in parts:
+        if not isinstance(p, dict):
+            other.append(type(p).__name__)
+            continue
+        kind = p.get("type")
+        if kind == COHERE_TEXT_BLOCK:
+            text.append(p.get("text") or "")
+        elif kind == COHERE_THINKING_BLOCK:
+            thinking.append(p.get("thinking") or "")
+        else:
+            other.append(str(kind))
+    return "".join(text), "".join(thinking), other
+
+
+def _cohere_key():
+    """Cohere API key from COHERE_API_KEY, else the JSON file named by
+    COHERE_SECRETS_FILE (key 'cohere'). Returns None if neither yields one.
+    Never hardcoded; the key value never lives in this repo."""
+    key = os.environ.get("COHERE_API_KEY")
+    if key:
+        return key.strip()
+    path = os.environ.get("COHERE_SECRETS_FILE")
+    if path and os.path.exists(path):
+        try:
+            with open(path) as fh:
+                return (json.load(fh).get("cohere") or "").strip() or None
+        except Exception:  # noqa: BLE001
+            return None
+    return None
+
+
+def _is_cohere(model):
+    return isinstance(model, str) and model.startswith(COHERE_PREFIX)
+
+
+def _cohere_thinking():
+    """The `thinking` field for the request body, or None to send no field.
+
+    None is the default and the measured-clean setting. A configured budget is
+    clamped up to COHERE_MIN_THINKING_BUDGET: a budget the model cannot finish
+    inside pushes the scratchpad into the answer, which is the one failure this
+    whole path exists to avoid."""
+    if COHERE_THINKING_BUDGET:
+        try:
+            want = int(COHERE_THINKING_BUDGET)
+        except ValueError:
+            raise RuntimeError(
+                f"COHERE_THINKING_BUDGET must be an integer, got "
+                f"{COHERE_THINKING_BUDGET!r}.")
+        return {"type": "enabled",
+                "token_budget": max(want, COHERE_MIN_THINKING_BUDGET)}
+    if COHERE_THINKING == "disabled":
+        return {"type": "disabled"}
+    return None
+
+
+def _cohere_http_error(e):
+    """Read an HTTPError body once and return (error_type, message).
+
+    Once: HTTPError.read() drains the stream, so a second call yields nothing.
+    The old code read it only on the non-retry branch, which is why a retried
+    422 was never classified."""
+    try:
+        payload = json.loads(e.read().decode("utf-8", "replace") or "{}")
+    except Exception:  # noqa: BLE001
+        return "", ""
+    if not isinstance(payload, dict):
+        return "", ""
+    return (payload.get("error_type") or ""), (payload.get("message") or "")
+
+
+def _cohere_generate(prompt, model, temperature, timeout, system=None,
+                     thinking_out=None):
+    """One raw Cohere v2 /chat call. Raises RuntimeError; never falls back.
+
+    Same contract as the Ollama path in generate(): no Claude fallback, clear
+    remediation on failure. Reference shape mirrors the substack
+    burstiness-validation cohere_chat.py driver.
+    """
+    name = model[len(COHERE_PREFIX):]
+    key = _cohere_key()
+    if not key:
+        raise RuntimeError(
+            "no Cohere API key. Set COHERE_API_KEY, or COHERE_SECRETS_FILE to a "
+            "JSON file with a 'cohere' key. match-voice does not fall back to "
+            "Claude: that would defeat its purpose.")
+    messages = []
+    if system is not None:
+        messages.append({"role": "system", "content": system})
+    messages.append({"role": "user", "content": prompt})
+    payload = {
+        "model": name,
+        "messages": messages,
+        "temperature": float(temperature),
+    }
+    thinking = _cohere_thinking()
+    if thinking is not None:
+        payload["thinking"] = thinking
+    if COHERE_SEED:
+        try:
+            payload["seed"] = int(COHERE_SEED)
+        except ValueError:
+            raise RuntimeError(f"COHERE_SEED must be an integer, got {COHERE_SEED!r}.")
+    body = json.dumps(payload).encode()
+
+    # Bounded retry with backoff for transient failures (429, 5xx, timeout).
+    # A rewrite-error dropped a paragraph to its original on the first hiccup in
+    # the GH-138 run; retrying recovers those. Non-transient errors (400/401)
+    # raise immediately. No Claude fallback, by design.
+    last = None
+    for attempt in range(COHERE_MAX_RETRIES):
+        req = urllib.request.Request(
+            COHERE_ENDPOINT, data=body,
+            headers={"Authorization": f"Bearer {key}",
+                     "Content-Type": "application/json"})
+        try:
+            with urllib.request.urlopen(req, timeout=timeout) as r:
+                data = json.loads(r.read())
+            break
+        except urllib.error.HTTPError as e:
+            # Read the body first: the decision to retry depends on what it
+            # says, and it can only be read once. 422 is retryable in general
+            # (GH-142: Cohere returns it intermittently on the long match-voice
+            # prompt and the identical request then succeeds), but not every
+            # 422 is the same animal. 400/401 stay non-retryable.
+            error_type, msg = _cohere_http_error(e)
+            if e.code == 422 and error_type == "INVALID_TOOL_GENERATION":
+                # Deterministic, not transient: measured 7/7 on the 11k-character
+                # match-voice prompt with thinking disabled, against 0/6 for the
+                # same prompt with thinking left alone. Retrying spends three
+                # requests and the backoff between them to fail identically.
+                raise RuntimeError(
+                    f"Cohere is refusing this request: HTTP 422 "
+                    f"INVALID_TOOL_GENERATION "
+                    f"on '{name}'. Measured cause: thinking disabled on a "
+                    f"reasoning model with a long prompt — it is deterministic, "
+                    f"so this is not retried. Unset COHERE_THINKING (the default "
+                    f"sends no thinking field and does not hit this), or shorten "
+                    f"the prompt. No Claude fallback, by design.")
+            # 499 (request cancelled) is documented "try the request again".
+            if e.code in (422, 429, 499, 500, 502, 503, 504) and attempt < COHERE_MAX_RETRIES - 1:
+                last = f"HTTP {e.code}{'/' + error_type if error_type else ''}"
+                time.sleep(2 ** attempt)
+                continue
+            # Surface Cohere's own reason, which is what tells a content
+            # rejection apart from a format bug.
+            detail = f" ({error_type}: {msg[:120]})" if error_type or msg else ""
+            raise RuntimeError(f"Cohere request failed: HTTP {e.code} on "
+                               f"'{name}'{detail}. No Claude fallback, by design.")
+        except socket.timeout:
+            last = "timeout"
+            if attempt < COHERE_MAX_RETRIES - 1:
+                time.sleep(2 ** attempt)
+                continue
+            raise RuntimeError(
+                f"Cohere timed out after {timeout}s on model '{name}' "
+                f"({COHERE_MAX_RETRIES} attempts). Raise the timeout or retry.")
+        except urllib.error.URLError as e:
+            if isinstance(getattr(e, "reason", None), socket.timeout) \
+                    and attempt < COHERE_MAX_RETRIES - 1:
+                last = "timeout"
+                time.sleep(2 ** attempt)
+                continue
+            raise RuntimeError(f"Cohere request failed: {e.reason}. "
+                               "No Claude fallback, by design.")
+    else:  # pragma: no cover - loop always breaks or raises
+        raise RuntimeError(f"Cohere failed after {COHERE_MAX_RETRIES} attempts "
+                           f"on '{name}' ({last}).")
+
+    finish = data.get("finish_reason")
+    if finish is not None and finish not in COHERE_FINISH_OK:
+        # MAX_TOKENS means a truncated rewrite; ERROR/TIMEOUT mean no answer.
+        # Splicing any of them corrupts the draft, so all are failed rewrites.
+        # The docs enumerate COMPLETE, STOP_SEQUENCE, MAX_TOKENS, TOOL_CALL,
+        # ERROR, TIMEOUT; this pipeline sends no stop sequences and no tools,
+        # so nothing but COMPLETE is expected (GH-176).
+        raise RuntimeError(
+            f"Cohere '{name}' finished with {finish!r}, not COMPLETE — the "
+            f"text would be truncated or absent, so it is not spliced. "
+            f"MAX_TOKENS means the model hit its output cap on this paragraph.")
+    parts = (data.get("message") or {}).get("content") or []
+    raw, thinking, other = _cohere_blocks(parts)
+    if thinking_out is not None:
+        thinking_out.append(thinking)
+    out = _sanitize_cohere_output(raw.strip())
+    if out:
+        return out
+    # Empty output is a failed rewrite whichever way it happened, and the
+    # driver already buckets it — classify_rewrite_error() keys on the phrase
+    # "empty output", so every branch below keeps it. What differs is the rest
+    # of the sentence, because "reasoned at length and answered nothing" and
+    # "answered only meta-commentary" call for different fixes.
+    extra = f" (unread block types: {', '.join(sorted(set(other)))})" if other else ""
+    if raw.strip():
+        raise RuntimeError(
+            f"empty output from Cohere '{name}': {len(raw.strip())} characters of "
+            f"text sanitized to nothing — the model returned meta-commentary "
+            f"instead of a rewrite.{extra}")
+    if thinking.strip():
+        raise RuntimeError(
+            f"empty output from Cohere '{name}': the model produced "
+            f"{len(thinking.strip())} characters of reasoning and no answer text. "
+            f"A thinking budget too small to finish in pushes the scratchpad into "
+            f"the answer or leaves none; send no token_budget rather than a "
+            f"tight one.{extra}")
+    raise RuntimeError(
+        f"empty output from Cohere '{name}': the response carried no text "
+        f"blocks.{extra}")
 
 PROMPT = """You are rewriting one paragraph so it sounds like the author of the anchor passages below. The anchors are the author's own published prose.
 
@@ -52,7 +419,7 @@ VOICE ANCHORS (match this register — sentence rhythm, vocabulary, directness):
 {anchors}
 
 RULES:
-1. Preserve every fact, number, unit, and citation key EXACTLY as written. Citation keys look like [@key] or \\citep{{key}} — copy them verbatim, never reword or drop them.
+1. Preserve every fact, number, unit, and citation key EXACTLY as written. Citation markers are the bracketed @-keys and \\citep/\\citet commands already in the paragraph — copy each one verbatim, never reword or drop one, and never write a key that is not already there. (A rewrite once replaced a real key with the example key from this very rule, which is why this rule no longer shows one — GH-159.)
 2. Preserve the meaning completely. Do not add claims, do not remove claims.
 3. Preserve the markdown formatting: every **bold** span, *italic* span, and `code` span stays, in the same place. If the paragraph opens with a bold sentence, your rewrite opens with a bold sentence — it is a lead-in, not ordinary prose.
 4. Rewrite only this one paragraph. Do not merge it with others, do not split the topic, do not add a heading.
@@ -85,6 +452,8 @@ def build_prompt(paragraph, anchors, retry_note="", protected_terms=None):
 
 def check_server(endpoint, model):
     """Return (ok, message). Never falls back — the caller must stop on False."""
+    if _is_cohere(model):
+        return _check_cohere(model)
     try:
         req = urllib.request.Request(f"{endpoint}/api/tags")
         with urllib.request.urlopen(req, timeout=10) as r:
@@ -104,8 +473,29 @@ def check_server(endpoint, model):
     return True, f"{endpoint} ready, model {model}"
 
 
+def _check_cohere(model):
+    """Return (ok, message) for a cohere: model. Does not spend a request.
+
+    The key is the only hard requirement. Model families are no longer refused
+    by name — see the COHERE_MIN_THINKING_BUDGET comment for why the reasoning
+    guard and the denylist went away. A disabled-thinking setting is reported,
+    since it is the one configuration measured to fail outright on a long
+    prompt, and check_server runs before a batch rather than during it."""
+    name = model[len(COHERE_PREFIX):]
+    if not _cohere_key():
+        return False, ("no Cohere API key. Set COHERE_API_KEY, or "
+                       "COHERE_SECRETS_FILE to a JSON file with a 'cohere' key.")
+    if COHERE_THINKING == "disabled":
+        return True, (f"Cohere ready, model {name} — WARNING: COHERE_THINKING="
+                      "disabled gives a deterministic 422 "
+                      "INVALID_TOOL_GENERATION on prompts the size of "
+                      "match-voice's. Unset it unless the prompts are short.")
+    return True, f"Cohere ready, model {name}"
+
+
 def generate(prompt, endpoint=DEFAULT_ENDPOINT, model=DEFAULT_MODEL,
-             temperature=0.7, timeout=DEFAULT_TIMEOUT, system=None, think=None):
+             temperature=0.7, timeout=DEFAULT_TIMEOUT, system=None, think=None,
+             thinking_out=None):
     """One raw generation call. Raises RuntimeError; never falls back.
 
     Factored out of rewrite() (GH-225) so tighten-style's driver shares the
@@ -123,7 +513,20 @@ def generate(prompt, endpoint=DEFAULT_ENDPOINT, model=DEFAULT_MODEL,
     chain-of-thought plus terminal control codes and mid-word backspace
     artifacts. The corrupted text measured 0.428 on Pangram against 0.259 for
     the clean rerun, so the transport silently changed the finding.
+
+    A ``cohere:`` model id routes to Cohere's hosted v2 /chat API instead
+    (opt-in; the Ollama path stays the default). The signature is unchanged, so
+    every stage that calls generate() can select Cohere without its own client.
+
+    ``thinking_out``, when a list is passed, receives the model's reasoning as
+    a string — Cohere's ``thinking`` content blocks, or Ollama's ``thinking``
+    field. It is never spliced into the returned prose; a caller that wants to
+    log or inspect the scratchpad asks for it, and one that does not never sees
+    it (GH-154).
     """
+    if _is_cohere(model):
+        return _cohere_generate(prompt, model, temperature, timeout, system,
+                                thinking_out=thinking_out)
     payload = {
         "model": model,
         "prompt": prompt,
@@ -135,24 +538,66 @@ def generate(prompt, endpoint=DEFAULT_ENDPOINT, model=DEFAULT_MODEL,
     if think is not None:
         payload["think"] = bool(think)
     body = json.dumps(payload).encode()
-    req = urllib.request.Request(f"{endpoint}/api/generate", data=body,
-                                 headers={"Content-Type": "application/json"})
-    try:
-        with urllib.request.urlopen(req, timeout=timeout) as r:
-            data = json.loads(r.read())
-    except socket.timeout:
-        raise RuntimeError(
-            f"Ollama timed out after {timeout}s on model '{model}'. A cold "
-            "model load can take minutes (gemma4:12b measured ~210s cold). "
-            "Raise the timeout or warm the model first with "
-            f"`ollama run {model} ''`. No Claude fallback, by design.")
-    except urllib.error.URLError as e:
-        if isinstance(getattr(e, "reason", None), socket.timeout):
+    # Bounded retry with backoff for transient transport failures. Ollama's
+    # cloud endpoint drops connections mid-request (RemoteDisconnected, a
+    # ConnectionError subclass); before this, one dropped connection killed a
+    # whole filter-tells run — 12 semantic prompts plus 3 rewrite passes — with
+    # no recovery (GH-147). A cold-load timeout is retried too; it usually is
+    # not fixed by retrying, so the final message still points at the timeout.
+    last = None
+    for attempt in range(OLLAMA_MAX_RETRIES):
+        req = urllib.request.Request(f"{endpoint}/api/generate", data=body,
+                                     headers={"Content-Type": "application/json"})
+        try:
+            with urllib.request.urlopen(req, timeout=timeout) as r:
+                data = json.loads(r.read())
+            global _OLLAMA_WAS_UP
+            _OLLAMA_WAS_UP = True
+            break
+        except socket.timeout:
+            last = "timeout"
+            if attempt < OLLAMA_MAX_RETRIES - 1:
+                time.sleep(2 ** attempt)
+                continue
             raise RuntimeError(
-                f"Ollama timed out after {timeout}s on model '{model}'. "
-                f"Raise the timeout or warm the model first.")
-        raise RuntimeError(f"Ollama request failed: {e.reason}. "
-                           "No Claude fallback, by design.")
+                f"Ollama timed out after {timeout}s on model '{model}' "
+                f"({OLLAMA_MAX_RETRIES} attempts). A cold model load can take "
+                "minutes (gemma4:12b measured ~210s cold). Raise the timeout or "
+                f"warm the model first with `ollama run {model} ''`. No Claude "
+                "fallback, by design.")
+        except ConnectionError as e:
+            last = f"connection ({e.__class__.__name__})"
+            if _wait_for_ollama(endpoint):
+                continue        # server came back; the attempt is not spent
+            if attempt < OLLAMA_MAX_RETRIES - 1:
+                time.sleep(2 ** attempt)
+                continue
+            raise RuntimeError(_ollama_down_message(model, endpoint,
+                                                    e.__class__.__name__))
+        except urllib.error.URLError as e:
+            if isinstance(getattr(e, "reason", None), socket.timeout):
+                last = "timeout"
+                if attempt < OLLAMA_MAX_RETRIES - 1:
+                    time.sleep(2 ** attempt)
+                    continue
+                raise RuntimeError(
+                    f"Ollama timed out after {timeout}s on model '{model}'. "
+                    "Raise the timeout or warm the model first.")
+            if isinstance(getattr(e, "reason", None), (ConnectionError, OSError)):
+                if _wait_for_ollama(endpoint):
+                    continue    # server came back; the attempt is not spent
+                if attempt < OLLAMA_MAX_RETRIES - 1:
+                    time.sleep(2 ** attempt)
+                    continue
+                raise RuntimeError(_ollama_down_message(model, endpoint,
+                                                        str(e.reason)))
+            raise RuntimeError(f"Ollama request failed: {e.reason}. "
+                               "No Claude fallback, by design.")
+    else:  # pragma: no cover - loop always breaks or raises
+        raise RuntimeError(f"Ollama failed after {OLLAMA_MAX_RETRIES} attempts "
+                           f"on '{model}' ({last}).")
+    if thinking_out is not None:
+        thinking_out.append(data.get("thinking") or "")
     out = (data.get("response") or "").strip()
     # models sometimes wrap the answer in quotes or a lead-in line
     if out.startswith('"') and out.endswith('"') and out.count('"') == 2:

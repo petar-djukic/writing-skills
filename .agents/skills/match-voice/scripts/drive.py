@@ -83,6 +83,22 @@ LOCK_NOTE = ("The paragraph contains anchor tokens that look like [[LOCK-1]]. Ea
              "it sits. Do not remove, reword, duplicate, or invent tokens.")
 
 
+def classify_rewrite_error(msg):
+    """Bucket a rewrite-error's stderr/message into a cause, so a run reports
+    *why* paragraphs failed, not just how many (GH-142). Order matters: the
+    empty-output and refusal messages are checked before the API/timeout ones."""
+    m = (msg or "").lower()
+    if "empty output" in m:
+        return "empty/sanitized-to-empty"
+    if "refusing" in m or "denylist" in m:
+        return "refused-model"
+    if "timed out" in m or "timeout" in m:
+        return "timeout"
+    if "http" in m or "request failed" in m:
+        return "api-error"
+    return "other"
+
+
 def _protected_terms_module():
     if SK not in sys.path:
         sys.path.insert(0, SK)
@@ -821,7 +837,8 @@ def parse_paragraphs(path, min_words):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--article", required=True)
-    ap.add_argument("--model", default=os.environ.get("MATCH_VOICE_MODEL", "gemma4:12b"))
+    ap.add_argument("--model",
+                    default=os.environ.get("MATCH_VOICE_MODEL", "cohere:command-a-03-2025"))
     ap.add_argument("--endpoint", default=os.environ.get("OLLAMA_ENDPOINT", "http://localhost:11434"))
     ap.add_argument("--out", help="draft path (default: <stem>.vr-draft<ext> "
                                   "beside the article)")
@@ -998,7 +1015,27 @@ def main():
     critic = None
     critique_mod = _critique_module()
     banned = critique_mod.load_banned()
-    critic_model = a.critic_model or a.model
+    rwm_early = _rewrite_module()
+    # A Cohere rewrite model makes a poor critic of itself: in the GH-138 bake-off
+    # Cohere-as-its-own-critic produced 9 unparsable critiques of 24. When the
+    # rewrite model is cohere: and no --critic-model was given, default the critic
+    # to the reliable Ollama default so the critique step parses. An explicit
+    # --critic-model always wins.
+    if a.critic_model:
+        critic_model = a.critic_model
+    elif rwm_early._is_cohere(a.model):
+        # The critic defaults to the rewrite model, restoring the pre-GH-140
+        # behavior. GH-140 forced gemma here because Cohere critiqued itself
+        # into 9/24 unparsable verdicts — retested on the corrected pipeline
+        # (post GH-154/155/171/172): 12/12 parsed (GH-181). The unparsable
+        # critiques were that era's pipeline faults, not a model property.
+        # COHERE_CRITIC_MODEL still overrides, and a pure-Cohere run now has
+        # no Ollama dependency at all.
+        critic_model = os.environ.get("COHERE_CRITIC_MODEL", a.model)
+        if critic_model != a.model:
+            print(f"critique: COHERE_CRITIC_MODEL overrides critic to {critic_model}.")
+    else:
+        critic_model = a.model
     if not a.no_critique:
         rwm = _rewrite_module()
         ok, msg = rwm.check_server(a.endpoint, critic_model)
@@ -1072,7 +1109,15 @@ def main():
                 cmd += ["--protected-terms", protected_path]
             rw = run(cmd)
             if rw.returncode != 0 or not rw.stdout.strip():
-                rec["status"] = "rewrite-error"; rec["err"] = (rw.stderr or "")[:200]
+                rec["status"] = "rewrite-error"
+                # Distinguish the two ways this fires: a non-zero exit carries
+                # the rewrite model's error on stderr (API failure, refusal, a
+                # denylisted model); a clean exit with empty stdout means the
+                # model returned nothing, or sanitizing stripped it to empty.
+                if rw.returncode != 0:
+                    rec["err"] = (rw.stderr or "").strip()[:200] or "nonzero exit, no stderr"
+                else:
+                    rec["err"] = "empty output (model returned nothing, or sanitized to empty)"
                 break
             # Repair before verifying, not at assembly time: the gate now checks
             # markup (GH-232), so a candidate the driver would have patched on
@@ -1193,9 +1238,19 @@ def main():
             print(f"  kept p{r['n']:02d} (L{r['lines'][0]}): {why}")
         if r["status"] == "gate-error":
             print(f"  GATE-ERROR p{r['n']:02d} (L{r['lines'][0]}): {r.get('err', '?')}")
+        if r["status"] == "rewrite-error":
+            print(f"  rewrite-error p{r['n']:02d} (L{r['lines'][0]}): "
+                  f"{r.get('err', '?')}")
         if r.get("warnings"):
             print(f"  advisory p{r['n']:02d} (L{r['lines'][0]}): "
                   f"{','.join(r['warnings'])}")
+    # By-cause breakdown of rewrite-errors, so a run does not report only a bare
+    # count (GH-140 left 6 undiagnosed because the cause was never surfaced).
+    rw_errs = [r for r in results if r["status"] == "rewrite-error"]
+    if rw_errs:
+        by_cause = C(classify_rewrite_error(r.get("err")) for r in rw_errs)
+        print("  rewrite-error by cause: "
+              + ", ".join(f"{k}={v}" for k, v in sorted(by_cause.items())))
     if not a.no_critique:
         summary = critique_mod.summarize_passes(results)
         summary["model"] = critic_model

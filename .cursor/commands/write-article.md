@@ -308,6 +308,8 @@ Preventing the tells while drafting is cheaper than repairing them in step 6.
 - When referencing a concept from another article, explain it briefly in-line before linking. The link is supplemental, not required.
 - Never assume the reader knows what "the casino loop," "the architecture-first approach," or any other coined term means. A single clause of context is enough — "the casino loop — endless iteration with no stopping point —" lets the reader follow without clicking away.
 - Cross-references should add depth for returning readers, not create confusion for new ones.
+- **Per-mention catalog sweep**: when the draft first mentions a topic an already-published article covers, link that article in prose with a descriptive keyword anchor. The in-line gloss rule above stands — the link supplements the gloss, never replaces it. Ceiling: ~5-8 in-prose internal links per article; past that, keep the strongest. Articles are born linked; the seo-pass is the catcher, not the source.
+- **Self-citation rule**: citing one of our own articles only as a bare-URL numbered reference is the SEO-weakest internal link. The in-prose descriptive link at the in-text mention is required; the numbered entry is optional alongside it.
 
 **Content requirements:**
 - Align with Petar's documented experience
@@ -952,6 +954,7 @@ After saving, provide this checklist:
 - [ ] All claims are supported by evidence
 - [ ] 4-7 credible sources cited
 - [ ] All URLs verified and working
+- [ ] Catalog sweep done: first mentions of previously-covered topics linked in prose (count reported), self-citations carry prose links
 - [ ] No confidential information disclosed
 - [ ] `match-structure` pass run, and content preservation verified (citations, numbers, references, quotes)
 - [ ] No Claude-authored prose in the shipping text — every rewrite and repair went through the second model family
@@ -1078,6 +1081,7 @@ A successful article includes:
 - [ ] Pattern recognition without prescription
 - [ ] 4-7 properly cited, verified sources
 - [ ] All URLs tested and working
+- [ ] Catalog sweep run: first mentions of previously-covered topics linked in prose with descriptive anchors (≤ ceiling), self-citations carry prose links
 - [ ] No confidential information
 - [ ] Quality pipeline run end to end: match-structure, filter-tells, match-voice, tighten-style, cold re-check
 - [ ] AI level reported before and after, or the skip stated

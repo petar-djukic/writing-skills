@@ -29,8 +29,24 @@ import re
 import sys
 import urllib.request
 
-OLLAMA_URL = "http://localhost:11434/api/chat"
-DEFAULT_MODEL = "gemma4:31b-cloud"
+# Shared transport from match-voice (GH-184): every stage that goes through
+# generate() gets the cohere: routing, the retry/backoff, and the typed-block
+# parsing for free — the GH-137 rationale this script had missed by carrying
+# its own /api/chat client.
+_MV = os.path.normpath(os.path.join(os.path.dirname(os.path.realpath(__file__)),
+                                    "..", "..", "match-voice", "scripts"))
+if _MV not in sys.path:
+    sys.path.insert(0, _MV)
+from rewrite import generate as _generate  # noqa: E402
+
+DEFAULT_ENDPOINT = os.environ.get("OLLAMA_ENDPOINT", "http://localhost:11434")
+# Deliberately NOT the Cohere default the other stages converged on (GH-184):
+# the 2026-08-21 A/B measured a stronger return-leg translator polishing the
+# accent away (gpt-oss L2 composite -0.009 vs gemma +0.726), and injecting
+# accent is this skill's entire job. ACCENT_DIAL_MODEL (or --model) selects
+# cohere:command-a-03-2025 when wanted — the shared transport routes it — but
+# the default follows the measurement.
+DEFAULT_MODEL = os.environ.get("ACCENT_DIAL_MODEL", "gemma4:31b-cloud")
 CHUNK = 6
 
 # Serbian-L1 calque patterns, mirrored from paper-stash
@@ -54,23 +70,14 @@ QUOTED = re.compile(r"\"([^\"]{2,})\"|“([^”]{2,})”")
 
 
 def chat(prompt, model, temperature=0.2, retries=3):
-    body = json.dumps({
-        "model": model,
-        "messages": [{"role": "user", "content": prompt}],
-        "stream": False,
-        "options": {"temperature": temperature},
-    }).encode()
-    err = None
-    for _ in range(retries):
-        try:
-            req = urllib.request.Request(
-                OLLAMA_URL, data=body,
-                headers={"Content-Type": "application/json"})
-            with urllib.request.urlopen(req, timeout=600) as r:
-                return json.load(r)["message"]["content"].strip()
-        except Exception as e:  # noqa: BLE001 — retry any transport failure
-            err = e
-    raise SystemExit(f"ollama unreachable after retries: {err}")
+    """One generation through the shared transport. `retries` is honored by
+    generate()'s own bounded retry; the parameter stays for call-site
+    compatibility."""
+    try:
+        return _generate(prompt, endpoint=DEFAULT_ENDPOINT, model=model,
+                         temperature=temperature, timeout=600).strip()
+    except RuntimeError as e:
+        raise SystemExit(str(e))
 
 
 SR_PROMPT = ("Prevedi sledeci tekst na srpski jezik (latinica). Sacuvaj podelu "
@@ -83,6 +90,38 @@ EN_PROMPT = ("Translate the following Serbian text into English. Keep the "
              "and the translation must have the same number of paragraphs. "
              "Copy numbers, names, and bracketed citations like [7] exactly. "
              "Output ONLY the translation, no commentary.\n\n")
+
+# The language dial (GH-186). Serbian is the calibrated default and keeps its
+# native-language outbound prompt above; any other pivot gets these
+# English-phrased templates. The calque gate below stays Serbian-calibrated
+# either way — see prompts_for().
+OUT_TEMPLATE = ("Translate the following text into {language}. Keep the "
+                "paragraph structure: paragraphs are separated by a blank "
+                "line, and the translation must have the same number of "
+                "paragraphs. Copy numbers, names, and bracketed citations "
+                "like [7] exactly. Output ONLY the translation, no "
+                "commentary.\n\n")
+BACK_TEMPLATE = ("Translate the following {language} text into English. Keep "
+                 "the paragraph structure: paragraphs are separated by a "
+                 "blank line, and the translation must have the same number "
+                 "of paragraphs. Copy numbers, names, and bracketed citations "
+                 "like [7] exactly. Output ONLY the translation, no "
+                 "commentary.\n\n")
+
+
+def prompts_for(language):
+    """(outbound, back) prompts for a pivot language.
+
+    Serbian — the default, and the language the scoring gate is calibrated
+    for — keeps the prompts the 2026-08-21 calibration ran with, byte for
+    byte. Any other pivot produces its own accent flavor, but score()'s
+    calque term is a Serbian-L1 pattern bank and contributes nothing there:
+    ranking degrades to restructuring distance alone. Reduced gate fidelity,
+    not breakage; the caller prints the caveat."""
+    if language.strip().lower() == "serbian":
+        return SR_PROMPT, EN_PROMPT
+    name = language.strip().title()
+    return OUT_TEMPLATE.format(language=name), BACK_TEMPLATE.format(language=name)
 
 
 def split_paras(text):
@@ -106,11 +145,70 @@ def run_leg(paras, prompt, model):
     return out
 
 
-def roundtrip(paras, model):
-    print("leg 1: EN -> SR", file=sys.stderr)
-    sr = run_leg(paras, SR_PROMPT, model)
-    print("leg 2: SR -> EN (blind)", file=sys.stderr)
-    return run_leg(sr, EN_PROMPT, model)
+# The fluency dial (GH-188). A bare immersion-years number is a NULL — four
+# levels (5/10/20/30) produced near-identical fluent output; the model cannot
+# calibrate fluency to a number. Describing what each level SOUNDS like works:
+# the 2026-08-31 experiment got a visible, subtle gradient (fronted adverbs
+# and dropped articles at fresh, faint formality at settled, idiomatic at
+# native). The bands name concrete features; l2-markers.yaml is the canonical
+# bank to grow them from.
+FLUENCY_BANDS = {
+    "fresh": (
+        "Their English carries visible {l1} traces: articles (a/the) "
+        "occasionally dropped or misplaced, present tense where English "
+        "wants perfect, direct {l1} phrasings translated word-for-word where "
+        "a native would use an idiom, slightly formal word choice where "
+        "natives go casual. Grammatical, understandable, but recognizably "
+        "L2."),
+    "settled": (
+        "Their English is fluent and comfortable but not native: an "
+        "occasional slightly-off idiom or article, a preference for direct "
+        "statement over English hedging, sentence rhythm a touch more even "
+        "than a native's. One subtle trace per few sentences, no more."),
+    "native": (
+        "Their English is fully idiomatic after decades of immersion; at "
+        "most one faint trace of directness per paragraph survives."),
+}
+
+
+def fluency_band(years):
+    """Immersion years -> band name. The cutoffs are coarse on purpose: the
+    experiment showed the model only distinguishes described bands, so finer
+    year granularity would imply a precision the mechanism does not have."""
+    return "fresh" if years <= 8 else ("settled" if years <= 22 else "native")
+
+
+def fluency_return_prompt(language, band):
+    """Return-leg prompt carrying a fluency persona. Separate from
+    prompts_for(): the blind mechanical return leg stays byte-identical to
+    the calibration when no fluency is requested."""
+    l1 = language.strip().title()
+    features = FLUENCY_BANDS[band].replace("{l1}", l1)
+    return ("Translate the following " + l1 + " text into English as written "
+            "by a native " + l1 + " speaker. " + features + " Keep the "
+            "paragraph structure: paragraphs are separated by a blank line, "
+            "and the translation must have the same number of paragraphs. "
+            "Copy numbers, names, and bracketed citations like [7] exactly. "
+            "Output ONLY the translation, no commentary.\n\n")
+
+
+def roundtrip(paras, model, model_return=None, language="serbian",
+              fluency=None):
+    """EN -> pivot -> EN. The 2026-08-21 A/B located the accent effect on the
+    RETURN leg — a strong translator polishes it away there — so the legs
+    take separate models (GH-186): a strong outbound translator buys fidelity
+    into the pivot without costing accent, as long as the return leg stays
+    weak. model_return defaults to model, keeping single-model calls exact."""
+    out_prompt, back_prompt = prompts_for(language)
+    mode = "blind"
+    if fluency:
+        back_prompt = fluency_return_prompt(language, fluency)
+        mode = f"fluency={fluency}"
+    label = language.strip().title()
+    print(f"leg 1: EN -> {label} ({model})", file=sys.stderr)
+    mid = run_leg(paras, out_prompt, model)
+    print(f"leg 2: {label} -> EN ({mode}, {model_return or model})", file=sys.stderr)
+    return run_leg(mid, back_prompt, model_return or model)
 
 
 def is_prose(p):
@@ -228,7 +326,26 @@ def main():
     ap.add_argument("--max-per-para", type=int, default=2,
                     help="sentence grain: cap of swapped sentences per "
                          "paragraph (the anti-wall mechanism)")
-    ap.add_argument("--model", default=DEFAULT_MODEL)
+    ap.add_argument("--model", default=DEFAULT_MODEL,
+                    help="outbound-leg translator (and return leg unless "
+                         "--model-return is given)")
+    ap.add_argument("--model-return",
+                    default=os.environ.get("ACCENT_DIAL_MODEL_RETURN") or None,
+                    help="return-leg translator; the accent is made or "
+                         "destroyed on this leg, keep it weak "
+                         "(env ACCENT_DIAL_MODEL_RETURN)")
+    ap.add_argument("--fluency", choices=sorted(FLUENCY_BANDS),
+                    help="return-leg persona band; absent = the blind "
+                         "mechanical return leg (today's behavior)")
+    ap.add_argument("--fluency-years", type=int,
+                    help="immersion years, mapped to a band (<=8 fresh, "
+                         "<=22 settled, else native); a bare number in the "
+                         "prompt is a measured null, so years only select "
+                         "a described band")
+    ap.add_argument("--language", default="serbian",
+                    help="pivot language for the round trip (default: "
+                         "serbian, the only pivot the calque gate is "
+                         "calibrated for)")
     ap.add_argument("--out", help="default <stem>.dial<p><ext>")
     ap.add_argument("--log", help="default <out>.log.json")
     args = ap.parse_args()
@@ -236,7 +353,13 @@ def main():
         sys.exit("--dial must be in [0, 1]")
 
     with open(args.article, encoding="utf-8") as f:
-        paras = split_paras(f.read())
+        raw = f.read()
+    front_matter = ""
+    if raw.startswith("---"):
+        fm_end = raw.index("---", 3)
+        front_matter = raw[: fm_end + 3]
+        raw = raw[fm_end + 3 :]
+    paras = split_paras(raw)
 
     rt_path = args.roundtrip or (
         os.path.splitext(args.article)[0] + ".roundtrip.txt")
@@ -244,7 +367,17 @@ def main():
         with open(rt_path, encoding="utf-8") as f:
             rt = split_paras(f.read())
     else:
-        rt = roundtrip(paras, args.model)
+        if args.language.strip().lower() != "serbian":
+            print(f"note: pivot '{args.language}' is outside the calque "
+                  "gate's calibration — score() ranks by restructuring "
+                  "distance alone for this run.", file=sys.stderr)
+        fluency = args.fluency
+        if fluency is None and args.fluency_years is not None:
+            fluency = fluency_band(args.fluency_years)
+            print(f"fluency: {args.fluency_years} years -> band '{fluency}'",
+                  file=sys.stderr)
+        rt = roundtrip(paras, args.model, args.model_return, args.language,
+                       fluency)
         with open(rt_path, "w", encoding="utf-8") as f:
             f.write("\n\n".join(rt))
         print(f"round-trip cached: {rt_path}", file=sys.stderr)
@@ -317,6 +450,8 @@ def main():
     stem, ext = os.path.splitext(args.article)
     out_path = args.out or f"{stem}.dial{args.dial:g}{ext or '.txt'}"
     with open(out_path, "w", encoding="utf-8") as f:
+        if front_matter:
+            f.write(front_matter + "\n")
         f.write("\n\n".join(out_paras) + "\n")
 
     log = {"article": args.article, "roundtrip": rt_path, "model": args.model,

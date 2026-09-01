@@ -66,6 +66,23 @@ for t in "${tests[@]}"; do
   fi
 done
 
+# Mirror drift gate (GH-134). A mirrors.yml workflow ran --check on every PR
+# and failed red for ~25 straight merges; nothing looked at CI and nothing
+# enforced it, so drift shipped stale skill copies to every non-.claude
+# surface for weeks. THIS script is what actually runs before every merge, so
+# the check lives here too — the same lesson as test discovery above: a gate
+# nobody runs cannot gate.
+if [[ -z "$PATTERN" ]]; then
+  if ! "$ROOT/scripts/sync-mirrors.sh" --check >/dev/null 2>&1; then
+    printf '  FAIL  mirrors drifted from .claude/ — run scripts/sync-mirrors.sh
+'
+    failed+=("sync-mirrors --check")
+  else
+    printf '  ok    mirrors match .claude/
+'
+  fi
+fi
+
 echo
 if [[ ${#failed[@]} -gt 0 ]]; then
   echo "${#failed[@]} of ${#tests[@]} failed:"

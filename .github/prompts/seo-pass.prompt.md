@@ -76,7 +76,7 @@ Check each lever and report present/missing:
 | First paragraph | Are the named entities mentioned in the first 100 words? |
 | Headers (H2) | Do section headers contain search-relevant terms or are they literary? |
 | Named entities | Are tools/companies/papers/people named explicitly, or referred to obliquely? |
-| Internal links | Does the article link to other published articles? Does any other article link to it? |
+| Internal links | Count, don't check presence. (a) Outbound: in-prose internal links in the article body, excluding boilerplate — the Start Here line, the disclosure link, front matter fields, and REFERENCES-section entries all don't count. (b) Inbound: which other published articles link to this one. State both counts; the exclusion rule keeps counts comparable across passes. |
 | Image alt text | Does the lead image (and any others) have descriptive alt text? |
 | Tags | Are the YAML tags searchable terms? |
 
@@ -87,10 +87,26 @@ For each gap, propose a specific, voice-safe edit. Show before/after for each. O
 1. **Subtitle rewrite** (highest leverage — Google meta description). Propose 2-3 alternatives that contain searchable terms while preserving the article's framing.
 2. **First-paragraph named-entity insertion**. If the article references "the recent layoffs" without naming Oracle, propose adding "Oracle's" inline. Show the exact wording.
 3. **Header tweaks** (medium leverage). If a section is titled "The Trust Decision" but is about edit strategies in coding agents, propose "The Edit Strategy Trust Decision" or similar. Don't rewrite headers that already contain search terms.
-4. **Internal links** (free, compounds over time). Suggest 1-3 specific places to link to other published articles using descriptive anchor text. Verify the linked articles exist and have URLs.
-5. **Image alt text** (small but free). For any image without alt text, propose descriptive alt text that includes the article's main searchable terms.
-6. **Tag updates** (small). If the YAML `tags` field is generic, propose 2-3 more specific tags.
-7. **Query-shaped H2 or closing FAQ block** (when honest). If the article genuinely
+4. **Internal links** (free, compounds over time). Sweep the article's topic
+   mentions against the published catalog: the first mention of each topic a
+   published article already covers gets a link to that article, with a
+   descriptive keyword anchor, folded into the existing prose — no sentence
+   rewrites, consistent with the insert-surgically rule. Verify the linked
+   articles exist and have URLs. Density ceiling: ~5-8 in-prose internal links
+   per article; past that, drop the weakest. Self-citation rule: when the
+   article cites one of our own articles only as a numbered reference with a
+   bare URL (`[5]` style), that is the SEO-weakest form of internal link —
+   add a prose link with a descriptive anchor at the in-text mention, and
+   keep the numbered entry alongside it.
+5. **Inbound links** (the other direction of the mesh). List older published
+   articles that mention this article's topic without linking it, and propose
+   the specific backlink edits — exact sentence, exact anchor text. These
+   apply at those posts' next live edit, per the live-post retrofit
+   convention in the writing repository's rules; the proposal here is the
+   record that makes that edit a lookup instead of a re-derivation.
+6. **Image alt text** (small but free). For any image without alt text, propose descriptive alt text that includes the article's main searchable terms.
+7. **Tag updates** (small). If the YAML `tags` field is generic, propose 2-3 more specific tags.
+8. **Query-shaped H2 or closing FAQ block** (when honest). If the article genuinely
    answers 2-4 long-tail questions ("why does my coding agent forget context between
    sessions"), propose either phrasing one H2 as the question or adding a short closing
    FAQ — question as bold text or H3, answer in 2-3 sentences of the article's own
@@ -167,6 +183,10 @@ Apply only what the user approves. Do not bundle voice-risky edits with safe one
 After applying, summarize:
 
 - What changed and why
+- **Summary of changes with internal link counts** (required): in-prose
+  internal link count before → after (boilerplate excluded, per the step 4
+  exclusion rule), the list of links added with their anchor text, and the
+  inbound backlinks proposed with the older articles they land in
 - What was left alone (and why — voice constraint, no clear win, etc.)
 - Which queries the article is now positioned to rank for
 - What to monitor: check Substack post-level stats in 2-4 weeks for google.com referrals on this article
@@ -210,7 +230,9 @@ A successful SEO pass:
 
 - [ ] Subtitle contains at least 2 searchable terms relevant to the article's topic
 - [ ] Named entities appear in the first 100 words
-- [ ] At least one internal link to a related published article (when one exists)
+- [ ] Every first mention of a previously-covered catalog topic is linked, up to the density ceiling (~5-8 in-prose links)
+- [ ] Report states internal link count before → after (in-prose, boilerplate excluded)
+- [ ] Inbound-link audit ran: older articles mentioning this topic identified, backlink edits proposed
 - [ ] Lead image has descriptive alt text
 - [ ] No voice rules violated
 - [ ] User confirmed each applied edit

@@ -89,13 +89,18 @@ strengthen a claim. Nothing is spliced into a draft until the gate passes.
   `python3 <agent-dir>/scripts/credentials.py` reports which services are
   configured, printing names and never values.
 
-**Model choice.** Default `gemma4:12b` — the best local model in the GH-163
-bake-off that runs anywhere. On a 32 GB Apple Silicon machine, `gemma4:31b-mlx`
-reaches the top tier without sending drafts off the machine; `gemma4:31b-cloud`
-when the memory is not there. **Prefer local when the machine can hold the
-model**: this operates on unpublished prose, and the cloud rows buy quality a
-big-memory Mac already has. Sizes, the full ranking, and the reasoning are in
-[model-choice.md](./references/model-choice.md).
+**Model choice.** Default `cohere:command-a-03-2025` — the GH-138/142 bake-off
+winner: it drives a draft toward human where the gemma family *raises* the
+Pangram score, and runs clean through the gate. It needs `COHERE_API_KEY` or
+`COHERE_SECRETS_FILE`, sends the paragraph to Cohere's API, and bills per token.
+**A keyless machine, or one where the draft must not leave it, sets `--model
+gemma4:12b`** (or `MATCH_VOICE_MODEL`) — the local GH-163 winner that runs
+anywhere; `gemma4:31b-mlx` reaches the top tier on a 32 GB Apple Silicon box
+without egress, `gemma4:31b-cloud` when the memory is not there. There is no
+silent fallback: a `cohere:` default with no key stops with remediation. Sizes,
+the full ranking, and the Cohere decision are in
+[model-choice.md](./references/model-choice.md) and
+[cohere-bakeoff.md](./references/cohere-bakeoff.md).
 
 Check the endpoint before starting:
 
@@ -373,7 +378,8 @@ stay verbatim in the draft, and are counted in the manifest.
 | Setting | Flag | Default |
 |---|---|---|
 | Endpoint | `--endpoint` / `OLLAMA_ENDPOINT` | `http://localhost:11434` |
-| Model | `--model` / `MATCH_VOICE_MODEL` | `gemma4:12b` |
+| `OLLAMA_WAIT_SERVER` | seconds to wait for a mid-run Ollama restart (default 0) | set 600 for unattended batches — a supervised local server can be reaped mid-run and the retry backoff alone cannot ride out its restart (GH-173) |
+| Model | `--model` / `MATCH_VOICE_MODEL` | `cohere:command-a-03-2025` (local fallback `gemma4:12b`) |
 | Temperature | `--temperature` | 0.7 |
 | Timeout (s) | `--timeout` / `MATCH_VOICE_TIMEOUT` | 300 (cold loads are slow) |
 | Anchors per paragraph | `-k` | 3 |
@@ -384,6 +390,47 @@ stay verbatim in the draft, and are counted in the manifest.
 | Canonical blocks | `--canonical-blocks` | `writing-voice/canonical-blocks.txt` by walk-up |
 | Critic model | `--critic-model` / `--no-critique` | the rewrite model; critique on |
 | External check | `--pangram` | off (the flag is the consent) |
+
+### Cohere backend (opt-in)
+
+A `cohere:` model id routes to Cohere's hosted v2 `/chat` API instead of
+Ollama — for example `--model cohere:command-a-03-2025`. It is additive: the
+Ollama path stays the default, and nothing routes to Cohere unless the model id
+asks for it. Because the transport lives in `generate()`, the same prefix works
+from `drive.py`, filter-tells, and burstiness — no stage grows its own client.
+
+- **Reasoning variants are allowed; do not starve the thinking budget.**
+  Cohere returns reasoning in its own `type: "thinking"` content block, and the
+  backend reads blocks by type, so a scratchpad cannot reach the prose whatever
+  the model is called (GH-154). The refusals this replaces — a `"reasoning"`
+  name substring and a denylist naming `command-a-plus` — rested on the opposite
+  belief and are gone (GH-155). What does put a scratchpad in the answer is a
+  thinking budget too small to finish inside: `token_budget: 1` produced a
+  2-character thinking block and a 6590-character answer opening
+  `<EOS_TOKEN>We need to rewrite the passage:`. The default sends no `thinking`
+  field, and a configured `COHERE_THINKING_BUDGET` is clamped up to
+  `COHERE_MIN_THINKING_BUDGET`. Output is still sanitized of stray
+  instruction-echo lines as defense in depth.
+- **`COHERE_THINKING=disabled` is opt-in and usually wrong.** Disabling thinking
+  on a reasoning model gives a deterministic 422 `INVALID_TOOL_GENERATION` on a
+  prompt the size of match-voice's (7/7 measured; 4/4 clean on a short prompt).
+  That 422 is not retried — it fails identically every time — and `check_server`
+  warns when the variable is set.
+- **Its critic defaults to the rewrite model.** GH-140 had forced a gemma
+  critic because Cohere critiqued itself into unparsable verdicts (GH-138: 9 of
+  24); retested on the corrected pipeline, 12/12 parse (GH-181), so the
+  pre-GH-140 default is restored and a pure-Cohere run needs no Ollama at all.
+  `--critic-model` / `COHERE_CRITIC_MODEL` still override.
+  Transient API errors (429/5xx/timeout, and 422s other
+  than `INVALID_TOOL_GENERATION`) are retried (`COHERE_MAX_RETRIES`, default 3).
+- **Key** comes from `COHERE_API_KEY`, or from the JSON file named by
+  `COHERE_SECRETS_FILE` (key `cohere`). Never hardcoded, never committed. The
+  no-Claude-fallback contract holds: a missing key or an unreachable endpoint
+  stops the run, it does not silently fall back.
+- **It is a hosted API**, so the paragraph text leaves the machine (as the
+  `:cloud` Ollama models already do) and billing is per token. Whether Cohere
+  should be a *default* anywhere is gated on the bake-off (GH-138); this is the
+  backend it runs through.
 
 `--style-note "active voice, plain diction"` sends a standing directive to
 the rewrite model on every attempt, first included; retries append their

@@ -159,7 +159,46 @@ Pangram catches. See calibration data at the end.
 
 ## Prerequisites
 
-- Ollama endpoint reachable with `kimi-k2.6:cloud` and `gpt-oss:120b-cloud`
+- A Cohere key (`COHERE_API_KEY` / `COHERE_SECRETS_FILE`) — every stage's
+  *default* model is `cohere:command-a-03-2025` since GH-176–190
+- Ollama endpoint reachable with `kimi-k2.6:cloud` and `gpt-oss:120b-cloud` —
+  required by the **pinned recipes below** and by the keyless fallbacks
+
+### Model pins vs stage defaults (GH-193)
+
+The commands in this SKILL pin `--model` explicitly (kimi for match-outline,
+an anchored gemma seed, a gpt-oss no-anchors iterator). Those pins are the
+calibrated multi-family strategy — the July 2026 runs whose Pangram outcomes
+the results tables record — and they deliberately override the stage
+defaults, which have since converted to Cohere. Do not "fix" a pinned command
+to the default: the pin is the experiment. Whether Cohere arms beat the pins
+was GH-194, and the numbers are in (2026-08-31, two published payloads,
+seed+iterator isolated on raw articles, prose-only Pangram):
+
+| arm (seed -> iterator) | loop (base 1.000) | prompts (base 0.913) | mean |
+|---|--:|--:|--:|
+| pinned: gemma-anchored -> gpt-oss | 1.000 (never moved) | 0.734 (3 passes) | 0.867 |
+| cohere-anchored -> gpt-oss | 0.896 | 0.913 | 0.904 |
+| gemma-anchored -> cohere | 1.000 | 0.909 | 0.955 |
+| **cohere -> cohere** | **0.802** | **0.735** | **0.768** |
+
+**The recommended strategy is now a single Krugman-anchored Cohere seed
+pass** (`--model cohere:command-a-03-2025 --author Krugman`), measured, with
+further no-anchor passes only if the score still falls: it tied the pinned
+recipe's 3-pass endpoint on one payload in ONE pass, was the only arm to
+move the other payload at all, and needs no Ollama. Two different mechanisms
+showed up: the pinned recipe is iterator-driven (gpt-oss grinding over
+passes), the Cohere strategy is seed-driven (the anchored pass does the work
+and iteration adds nothing — every Cohere arm upturned at p1). The
+multi-family "foreign fingerprint" thesis did not replicate: both mixed arms
+were worse than either pure arm, and a gpt-oss pass after a Cohere seed
+actively destroyed the seed's gain (0.896 -> 0.996).
+
+Limits: n=2 payloads, arms isolated on raw articles (the July pins ran after
+outline+filter-tells cleanup), stop-on-upturn sampled once per pass. The
+pinned recipe stays documented below as the recorded July configuration; it
+remains the choice when an iterator-driven grind is wanted on an
+already-clean draft.
 - A `writing-voice/` directory with exemplars and at least one blueprint
   under `writing-voice/blueprints/`
 - For Pangram measurement: an API key configured per the match-voice
@@ -412,42 +451,57 @@ same cold-review standard:
 The unseeded pass is retained below as a named ablation. Choosing it is a
 deviation a run has to state and justify.
 
-#### 3.1 Seed — a different family, anchored
+#### 3.1 Seed — Cohere, anchored (the GH-194 default)
 
 ```bash
 $RUN <match-voice>/scripts/drive.py \
   --article <cleaned.md> \
-  --model gemma4:31b-cloud \
-  --anchor-tags <tags that select one author's exemplars> \
+  --model cohere:command-a-03-2025 \
+  --author <the author whose register fits> \
   --voice-dir <repo>/writing-voice \
+  --pangram \
   --out <seed.md>
 ```
 
-Anchor by **tags**, not `--author`: the corpus carries no author field, so
-`--author` selects an empty pool and aborts (writing-skills GH-98). Pick
-tags exclusive to the author you want — `parable,ledger-read` selects the
-22 Krugman exemplars and nothing else. Verify the pool size before
-trusting the run:
+`--author` works by filename inference where the manifest carries no author
+field — the anchor pool line reports `(inferred from filenames)` — so the
+old anchor-by-tags-only guidance (GH-98 era) is superseded; tags remain the
+tool when no single author fits. Verify the pool either way:
 
 ```bash
 $RUN <match-structure>/scripts/voice_anchors.py tags --voice-dir <repo>/writing-voice
 ```
 
-The seed is expected to score badly on its own. That is not failure; a
-seed that scores well has not changed the fingerprint.
+**With a Cohere seed, the seed is usually the result** (GH-194: every
+Cohere arm's floor was the seed itself). Measure it; that score is your
+baseline for 3.2.
 
-#### 3.2 Iterate — the first family, no anchors, stop at the upturn
+#### 3.2 Iterate — only while the score still falls
 
 ```bash
 PREV=<seed.md>
 for i in 01 02 03 04; do
   $RUN <match-voice>/scripts/drive.py --article $PREV \
-    --model gpt-oss:120b-cloud --no-anchors --pangram \
+    --model cohere:command-a-03-2025 --no-anchors --pangram \
     --canonical-blocks <repo>/writing-voice/canonical-blocks.txt \
     --out pass$i.md
   PREV=pass$i.md   # read the score; STOP at the first upturn
 done
 ```
+
+Expect this loop to stop at pass 1 — iteration earned nothing in any
+GH-194 Cohere arm. It stays in the recipe because stop-on-upturn makes a
+zero-gain loop cost exactly one pass, and a payload that does respond gets
+its passes.
+
+**Recorded July configuration (alternative).** The pre-GH-194 pinned
+recipe — anchored `gemma4:31b-cloud` seed, then a `gpt-oss:120b-cloud`
+no-anchors iterator — is the arm the results tables below measured through
+July. It is iterator-driven where the Cohere strategy is seed-driven, lost
+the GH-194 head-to-head (mean 0.867 vs 0.768), and a gpt-oss pass after a
+Cohere seed actively undoes the seed (0.896 -> 0.996) — never mix them in
+that order. Reach for it when an iterator-grind on an already-clean draft
+is specifically wanted; substitute the model names into the commands above.
 
 Three rules, all load-bearing:
 
