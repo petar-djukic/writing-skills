@@ -34,7 +34,7 @@ The voice rule is firm: titles stay literary. The SEO work happens in places tha
 - Read the full article including YAML front matter
 - Summarize the article's core topic in one sentence ("This article compares the edit, tool selection, and termination strategies of Aider, OpenHands, and Crush")
 - Identify the named entities in the article: tools, companies, papers, people, technical concepts
-- Note the article's date and whether it's published (in `substack/[YEAR]/`) or a draft (in `substack/[YEAR]/drafts/`)
+- Note the article's date and whether it's published (in `substack/[YEAR]/Q[1-4]/`) or a draft (in `substack/[YEAR]/drafted/`)
 
 ### 2. Generate Candidate Search Queries
 
