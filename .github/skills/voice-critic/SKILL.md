@@ -105,7 +105,8 @@ constructions native to the voice.
 python3 scripts/voice_critic.py draft.md
 
 # full: judged dimensions through a local model (read-only)
-python3 scripts/voice_critic.py draft.md --judge --model gemma4:12b
+python3 scripts/voice_critic.py draft.md --judge                # cohere default (GH-190)
+python3 scripts/voice_critic.py draft.md --judge --model gemma4:12b   # keyless/local
 
 # polemic caps, machine-readable report for the gate checklist
 python3 scripts/voice_critic.py draft.md --form polemic --json --report out.json

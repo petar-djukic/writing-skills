@@ -31,7 +31,15 @@ _PROMPTS_PATH = os.path.join(_SKILL, "references", "perplexity-prompts.md")
 _FM = re.compile(r"\A---\s*\n.*?\n(?:---|\.\.\.)\s*\n", re.DOTALL)
 
 DEFAULT_ENDPOINT = os.environ.get("OLLAMA_ENDPOINT", "http://localhost:11434")
-DEFAULT_MODEL = os.environ.get("FILTER_TELLS_MODEL", "gpt-oss:120b-cloud")
+# Operator decision (GH-176, 2026-08-31): default is Cohere, overriding the
+# GH-170 post-fix mean where gpt-oss led (0.114 vs 0.279). Recorded as a
+# choice, not a measurement: Cohere was best-in-run on technical prose
+# (including the run's only perfect 0.000/0.931 score) and improved most once
+# GH-171/172 fixed the pipeline faults that had depressed it. It is a hosted
+# API — needs a key, bills per token, sends the draft off the machine; a
+# keyless machine sets FILTER_TELLS_MODEL=gpt-oss:120b-cloud, the GH-170
+# incumbent, and check_server names that remediation rather than crashing.
+DEFAULT_MODEL = os.environ.get("FILTER_TELLS_MODEL", "cohere:command-a-03-2025")
 DEFAULT_TIMEOUT = int(os.environ.get("FILTER_TELLS_TIMEOUT", "600"))
 
 
@@ -336,7 +344,11 @@ def _extract_priority(text: str) -> list[str]:
     if not m:
         return []
     block = m.group(1).strip()
-    lines = [ln.strip().lstrip("0123456789.-) ") for ln in block.split("\n")
+    # Cohere bolds its labels, leaving "**" residue on the values and a bare
+    # "**" line where the label's own bold closed (GH-180). Strip markdown
+    # emphasis from the edges and drop lines that were only emphasis.
+    lines = [ln.strip().lstrip("0123456789.-) ").strip("*").strip()
+             for ln in block.split("\n")
              if ln.strip() and not ln.strip().startswith("---")]
     return [ln for ln in lines if ln]
 
@@ -346,7 +358,7 @@ def _extract_field(text: str, field: str) -> str:
     if not text:
         return ""
     m = re.search(rf"{field}[:\s]+(.+?)(?:\n|$)", text, re.IGNORECASE)
-    return m.group(1).strip() if m else ""
+    return m.group(1).strip().strip("*").strip() if m else ""
 
 
 # ---------------------------------------------------------------------------
@@ -409,21 +421,76 @@ CONSTRAINTS:
 8. Plain sentences are allowed and required
 9. Do NOT close every paragraph on a flourish
 10. Prefer the boring accurate sentence over the clever compressed one
+11. Copy every bracketed citation marker (a number or an @-key in square \
+brackets) into the rewrite verbatim, attached to the same claim; never add \
+one that is not already there
+12. The rewrite must not be longer than the original passage — cutting is \
+allowed, adding is not
+13. Preserve every bold, italic, and backtick code span in place
 
 OUTPUT: The rewritten passage only. No commentary."""
 
 
-def _issues_for_lines(scan: dict, start: int, end: int) -> str:
-    """Collect scan issues that fall within a line range."""
+_QUOTED = re.compile(r'[\u201c"]([^\u201c\u201d"]{12,})[\u201d"]')
+
+
+def _issues_for_lines(scan: dict, start: int, end: int, passage: str = "") -> str:
+    """Collect scan issues that belong to THIS passage.
+
+    Lexical issues carry line numbers and filter by range. Structural issues
+    carry sentence-pair positions that do not map to lines, so they are kept
+    only when the verbatim prose their detail quotes appears in the passage;
+    a quote-less detail (a document-level rhythm stat like dash-heavy) is kept
+    everywhere.
+
+    Before GH-171 the structural list was appended to EVERY paragraph's
+    rewrite prompt, quotes and all — 26 issues, 2,815 characters of other
+    paragraphs' sentences, injected into each of ~70 rewrites of one essay.
+    An instruction-literal model then "fixes" prose that is not in its
+    passage: one bake-off draft came back with a sentence quoted in an issue
+    detail spliced into six different paragraphs, and a vocabulary the issue
+    blob converged every paragraph onto. Models that ignore prompt noise hid
+    the bug; models that obey exposed it."""
     hits = []
     for h in scan.get("lexical", {}).get("issues", []):
         ln = h.get("line", 0)
         if start <= ln <= end:
             hits.append(f"L{ln} [{h.get('category','')}] {h.get('text','')[:100]}")
+    passage_flat = " ".join(passage.split()).lower()
     for h in scan.get("structural", {}).get("issues", []):
-        pos = h.get("position", "")
-        hits.append(f"[{h.get('type','')}] {h.get('detail','')[:100]}")
+        detail = h.get("detail", "")
+        quotes = _QUOTED.findall(detail)
+        if quotes:
+            if not passage_flat:
+                continue
+            if not any(" ".join(q.split()).lower() in passage_flat for q in quotes):
+                continue
+        hits.append(f"[{h.get('type','')}] {detail[:100]}")
     return "\n".join(hits) if hits else "(general AI patterns detected)"
+
+
+# Pandoc [@key], numbered [1], and \citep{...}/\citet{...} markers. The gate
+# compares multisets by identity: a rewrite that swaps [@park2024] for any
+# other key — including a plausible-looking one — is damage, not preservation.
+# match-voice's verify.py has enforced this per paragraph all along; the
+# filter-tells splice had no citation check at all (GH-159).
+_CITE_MARKERS = re.compile(r"\[@[^\]\s]+\]|\[\d+\]|\\cite[pt]?\{[^}]*\}")
+
+
+def _citation_damage(original: str, rewritten: str) -> str | None:
+    """A sentence naming what changed, or None when the markers survive."""
+    from collections import Counter
+    o, r = Counter(_CITE_MARKERS.findall(original)), Counter(_CITE_MARKERS.findall(rewritten))
+    if o == r:
+        return None
+    lost = sorted((o - r).elements())
+    invented = sorted((r - o).elements())
+    parts = []
+    if lost:
+        parts.append(f"lost {', '.join(lost)}")
+    if invented:
+        parts.append(f"invented {', '.join(invented)}")
+    return "citation markers damaged: " + "; ".join(parts)
 
 
 def rewrite_passage(passage: str, issue_report: str,
@@ -431,6 +498,34 @@ def rewrite_passage(passage: str, issue_report: str,
     """Send a passage through the rewrite prompt via Ollama."""
     prompt = _REWRITE_PROMPT.format(passage=passage, issue_report=issue_report)
     return generate(prompt, endpoint=endpoint, model=model, timeout=timeout)
+
+
+def _rewrite_error_cause(msg: str) -> str:
+    """Bucket a rewrite error into a cause, mirroring match-voice's
+    classify_rewrite_error so the two skills report failures in the same
+    vocabulary. Local rather than imported: match-voice's copy lives in its
+    driver script, and importing a driver for one dictionary couples the
+    skills at the wrong joint."""
+    m = (msg or "").lower()
+    if "empty output" in m:
+        return "empty/sanitized-to-empty"
+    if "refusing" in m or "denylist" in m:
+        return "refused-model"
+    if "api key" in m:
+        return "no-api-key"
+    if "unreachable" in m:
+        return "server-unreachable"
+    if "timed out" in m or "timeout" in m:
+        return "timeout"
+    if "http" in m or "request failed" in m:
+        return "api-error"
+    return "other"
+
+
+# Causes that will recur identically for every paragraph: a refused model, a
+# missing key, an unreachable server. One of these stops the run; anything
+# else costs only its own paragraph (GH-157).
+RUN_FATAL_CAUSES = frozenset({"refused-model", "no-api-key", "server-unreachable"})
 
 
 def run_rewrite(article_path: str, scan: dict, semantic: dict | None,
@@ -456,7 +551,7 @@ def run_rewrite(article_path: str, scan: dict, semantic: dict | None,
     # Identify which paragraphs to rewrite based on scan issues
     targets = []
     for start, end, text in paras:
-        issues = _issues_for_lines(scan, start, end)
+        issues = _issues_for_lines(scan, start, end, text)
         if issues != "(general AI patterns detected)" or \
                 scan.get("verdict") in ("likely-ai", "suspicious",
                                         "suspicious-overshoot"):
@@ -470,31 +565,60 @@ def run_rewrite(article_path: str, scan: dict, semantic: dict | None,
     base = os.path.splitext(os.path.basename(article_path))[0]
     draft_path = os.path.join(out_dir, f"{base}.ft-draft.md")
     passes = []
-    current_lines = list(lines)
     prev_issue_count = (scan["lexical"]["issue_count"] +
                         scan["structural"]["issue_count"])
+    # Seed the draft with the original. Every pass then reads and writes THIS
+    # file, so the paragraph positions in `targets` (re-derived from the same
+    # file each pass) always match the buffer being spliced. The prior version
+    # carried a stale in-memory `current_lines` across passes and spliced a
+    # multi-line rewrite in as a single list element, so after pass 1 the list
+    # was no longer one-line-per-element and every later index was wrong —
+    # progressive corruption that ballooned the draft (GH-147).
+    with open(draft_path, "w") as f:
+        f.write(original_text)
 
     for pass_num in range(1, max_passes + 1):
+        # Read the current draft fresh so splice indices match `targets`.
+        current_lines = open(draft_path).read().split("\n")
         rewrites_applied = 0
+        # One paragraph's failure costs that paragraph, not the pass: before
+        # GH-157 a single RuntimeError broke out of this loop and silently
+        # left every remaining paragraph unprocessed, with one bare error
+        # string in the pass record. match-voice already isolates failures
+        # per paragraph; this matches it. Only a cause that must recur for
+        # every paragraph (RUN_FATAL_CAUSES) stops the run.
+        errors = []
+        fatal = None
         for start, end, text, issues in reversed(targets):
             try:
                 rewritten = rewrite_passage(text, issues,
                                             endpoint, model, timeout)
             except RuntimeError as e:
-                passes.append({"pass": pass_num, "error": str(e)})
-                break
+                cause = _rewrite_error_cause(str(e))
+                errors.append({"line": start, "cause": cause,
+                               "error": str(e)[:200]})
+                if cause in RUN_FATAL_CAUSES:
+                    fatal = cause
+                    break
+                continue
             if rewritten and rewritten.strip() != text.strip():
-                current_lines[start - 1:end] = [rewritten]
+                damage = _citation_damage(text, rewritten)
+                if damage:
+                    # The rewrite is refused, the original paragraph stays.
+                    errors.append({"line": start, "cause": "citation-damage",
+                                   "error": damage})
+                    continue
+                # Expand a multi-line rewrite into multiple list elements, or
+                # current_lines stops being one-line-per-element. reversed()
+                # (bottom-up) keeps earlier indices valid even when a rewrite
+                # changes the paragraph's line count.
+                current_lines[start - 1:end] = rewritten.split("\n")
                 rewrites_applied += 1
 
-        # Write draft
-        draft_text = "\n".join(current_lines)
-        if front_matter and not draft_text.startswith("---"):
-            draft_text = front_matter + draft_text
         with open(draft_path, "w") as f:
-            f.write(draft_text)
+            f.write("\n".join(current_lines))
 
-        # Validate by re-running Steps 1-2
+        # Validate by re-running Steps 1-2 on the written draft.
         lex = run_lexical(draft_path)
         struct = run_structural(draft_path, voice_profile)
         val = combine(lex, struct)
@@ -507,8 +631,15 @@ def run_rewrite(article_path: str, scan: dict, semantic: dict | None,
             "prev_issue_count": prev_issue_count,
             "verdict": val["verdict"],
         }
+        if errors:
+            pass_record["errors"] = errors
         passes.append(pass_record)
 
+        if fatal:
+            # The paragraphs already rewritten this pass are kept — the draft
+            # was written above — but nothing further can succeed.
+            pass_record["stopped"] = f"fatal: {fatal}"
+            break
         if val["verdict"] == "clean":
             break
         if new_count >= prev_issue_count:
@@ -516,14 +647,14 @@ def run_rewrite(article_path: str, scan: dict, semantic: dict | None,
             break
 
         prev_issue_count = new_count
-        # Re-parse for next pass
+        # Re-parse + re-target from the written draft for the next pass.
         try:
             paras = parse_paragraphs(draft_path)
         except RuntimeError:
             break
         targets = []
         for start, end, text in paras:
-            issues = _issues_for_lines(val, start, end)
+            issues = _issues_for_lines(val, start, end, text)
             if issues != "(general AI patterns detected)":
                 targets.append((start, end, text, issues))
         if not targets:

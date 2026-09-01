@@ -53,7 +53,9 @@ if HERE not in sys.path:
 import rewrite as _rw          # noqa: E402  shared Ollama transport
 import verify as _vf           # noqa: E402  the acceptance gate
 
-DEFAULT_MODEL = os.environ.get("BURSTINESS_MODEL", "gemma4:31b-cloud")
+# Cohere default (GH-184, completing the GH-176 conversion). BURSTINESS_MODEL
+# overrides; gemma4:31b-cloud is the keyless/local fallback.
+DEFAULT_MODEL = os.environ.get("BURSTINESS_MODEL", "cohere:command-a-03-2025")
 DEFAULT_TIMEOUT = int(os.environ.get("BURSTINESS_TIMEOUT", "300"))
 
 # Paragraphs below this have no rhythm to reshape: a two-sentence aside cannot
@@ -74,7 +76,7 @@ BAN_RULES = """- Never use em-dashes or en-dashes. Use periods, commas, or semic
 BURSTINESS_SYSTEM = f"""You are an editor increasing the BURSTINESS of a paragraph: the variance in sentence length. Human prose alternates long and short sentences; machine prose is evenly paced. Your ONLY job is to vary sentence lengths harder while keeping the meaning identical.
 
 Rules, all mandatory:
-- Preserve meaning exactly. Change no facts, numbers, names, or citation markers like [1] [2] [@key].
+- Preserve meaning exactly. Change no facts, numbers, names, or citation markers (bracketed numbers and @-keys); never write a marker that is not already in the text.
 - Do not add or remove information. Do not summarize.
 - Split some long sentences into a long one plus a short punchy one. Occasionally use a deliberate short fragment.
 - Keep at least one genuinely long sentence per paragraph so the contrast is real.
@@ -84,7 +86,7 @@ Rules, all mandatory:
 CONTROL_SYSTEM = f"""You are an editor lightly copyediting a paragraph. Your ONLY job is to fix any awkwardness while keeping the meaning and sentence structure essentially the same.
 
 Rules, all mandatory:
-- Preserve meaning exactly. Change no facts, numbers, names, or citation markers like [1] [2] [@key].
+- Preserve meaning exactly. Change no facts, numbers, names, or citation markers (bracketed numbers and @-keys); never write a marker that is not already in the text.
 - Do not add or remove information. Do not summarize.
 - Do not change the sentence lengths or rhythm. Keep the same number of sentences.
 {BAN_RULES}
@@ -296,9 +298,13 @@ def run(article, out_path=None, control=False, model=DEFAULT_MODEL,
             "burstiness": {"before": before},
         }
 
-    ok, message = _rw.check_server(endpoint, model)
-    if not ok:
-        sys.exit(message)
+    # An injected generate_fn IS the transport — checking the real server or
+    # key behind its back couples offline tests to ambient credentials, which
+    # surfaced the moment the default became a keyed backend (GH-184).
+    if generate_fn is (_rw.generate):
+        ok, message = _rw.check_server(endpoint, model)
+        if not ok:
+            sys.exit(message)
 
     by_index = {r["index"]: r for r in paragraphs}
     for para in doc.paragraphs:

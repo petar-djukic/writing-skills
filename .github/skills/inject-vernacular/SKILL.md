@@ -153,7 +153,8 @@ python3 scripts/inject_vernacular.py draft.md
 python3 scripts/inject_vernacular.py draft.md --dry-run --json
 
 # with the keep/drop verifier
-python3 scripts/inject_vernacular.py draft.md --verify --model gemma4:12b
+python3 scripts/inject_vernacular.py draft.md --verify         # cohere default (GH-190)
+python3 scripts/inject_vernacular.py draft.md --verify --model gemma4:12b  # keyless/local
 
 # proposed-tier calques too (default is attested only; --calques none disables)
 python3 scripts/inject_vernacular.py draft.md --calques proposed

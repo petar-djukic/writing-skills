@@ -55,10 +55,33 @@ python3 <skill>/scripts/accent_dial.py --article draft.md --dial 0.4
   free). `--roundtrip` points at an existing cache.
 - Output: `<stem>.dial<p>.md` + `<out>.log.json` (per-candidate gate
   verdict, score, applied flag — the survival-analysis surface).
-- `--model` overrides the translator. Keep gemma4:31b-cloud: the
-  2026-08-21 A/B showed the stronger gpt-oss return leg polishes the
-  accent away (L2 composite -0.009 vs gemma's +0.726) and scores worse on
-  Pangram (0.247 vs 0.150).
+- **Fluency dial (GH-188).** `--fluency {fresh,settled,native}` (or
+  `--fluency-years N`, mapped <=8 / <=22 / else) gives the return leg an
+  immersion persona, dialing the accent between the mechanical round trip's
+  total-beginner sound and polished-away. Measured on the way in: a bare
+  years number in the prompt is a null — four levels produced identical
+  fluent output — so years only select a *described feature band* (fronted
+  adverbs and dropped articles at fresh, faint formality at settled,
+  idiomatic at native). Absent, the blind return leg is byte-identical to
+  the calibration.
+- **Two dials since GH-186.** `--model-return` (env
+  `ACCENT_DIAL_MODEL_RETURN`) splits the legs: the 2026-08-21 A/B located the
+  accent effect on the return leg, so the productive pairing is a strong
+  outbound translator (fidelity into the pivot) with the weak return one
+  (where the accent is born) — e.g. `--model cohere:command-a-03-2025
+  --model-return gemma4:31b-cloud`. `--language` swaps the pivot (default
+  serbian); any other pivot produces its own accent flavor but sits outside
+  the calque gate's calibration — score() then ranks by restructuring
+  distance alone, and the run says so on stderr. Per-language marker banks
+  (l2-markers.yaml is the canonical home) are the eventual fix.
+- `--model` (or `ACCENT_DIAL_MODEL`) overrides the translator, and since
+  GH-184 the script rides match-voice's shared transport, so
+  `cohere:command-a-03-2025` routes with key handling and retries for free.
+  The default stays gemma4:31b-cloud on the 2026-08-21 A/B: the stronger
+  gpt-oss return leg polishes the accent away (L2 composite -0.009 vs
+  gemma's +0.726) and scores worse on Pangram (0.247 vs 0.150) — the same
+  risk applies to any stronger translator, Cohere included, so the
+  pipeline-wide Cohere default deliberately does not reach this skill.
 
 ## Calibration (Strategy Theatre payload, 2026-08-21)
 

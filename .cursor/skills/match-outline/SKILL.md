@@ -3,8 +3,8 @@ name: match-outline
 description: >-
   Whole-document voice analysis: compare a draft against a corpus profile,
   extract voice persona blueprints from exemplar papers, and rewrite the
-  entire draft in one pass to match a voice. Uses gpt-oss:120b-cloud via
-  Ollama by default; match-voice cleans AI diction downstream.
+  entire draft in one pass to match a voice. Uses cohere:command-a-03-2025 by
+  default (GH-184); match-voice cleans AI diction downstream.
   Triggers: compare my outline, section analysis, does my intro match the
   field, methodology conventions, results conventions, rewrite in the
   style of, apply the voice, voice persona, exemplar, blueprint
@@ -22,7 +22,8 @@ It complements `match-structure` (which provides the quantitative metrics,
 frequency tables, and similarity math this skill imports) and `filter-tells`
 (which detects generic AI-writing patterns at the paragraph level).
 
-The rewrite uses `gpt-oss:120b-cloud` via Ollama by default. Pass
+The rewrite uses `cohere:command-a-03-2025` by default (GH-184;
+`MATCH_OUTLINE_MODEL` or `--model gpt-oss:120b-cloud` for keyless/local). Pass
 `--model claude-sonnet-5` to use the Anthropic API instead. AI-sounding
 output is expected at this stage — `match-voice` handles paragraph-level
 diction cleanup downstream.
@@ -115,7 +116,7 @@ $RUN <skill>/scripts/match_outline.py <draft.md> --db <db-path>
 $RUN <skill>/scripts/match_outline.py --db <db-path> \
   --exemplar paper1 --exemplar paper2 --name icml
 
-# Rewrite a draft (uses gpt-oss:120b-cloud by default)
+# Rewrite a draft (uses cohere:command-a-03-2025 by default)
 $RUN <skill>/scripts/match_outline.py <draft.md> --db <db-path> --rewrite
 
 # A long chapter on a local model needs longer than the 600s default
@@ -143,5 +144,5 @@ Two sources of exemplars are accepted:
 
 `match_outline.py` imports `style` from `match-structure/scripts/` for
 corpus selection and the similarity guard. Default model is
-`gpt-oss:120b-cloud` via Ollama. Pass `--model claude-sonnet-5` to use
+`cohere:command-a-03-2025`. Pass `--model claude-sonnet-5` to use
 the Anthropic API (requires the `anthropic` package).

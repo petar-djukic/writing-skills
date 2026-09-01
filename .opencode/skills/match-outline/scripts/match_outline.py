@@ -46,7 +46,10 @@ ANALYSIS_MD = os.path.join(SKILL_DIR, "references", "voice-analysis-instructions
 APPLICATION_MD = os.path.join(SKILL_DIR, "references", "style-application-instructions.md")
 REPORT_TEMPLATE = os.path.join(SKILL_DIR, "references", "comparison-report-template.md")
 
-DEFAULT_MODEL = os.environ.get("MATCH_OUTLINE_MODEL", "gpt-oss:120b-cloud")
+# Cohere default (GH-184). MATCH_OUTLINE_MODEL overrides; gpt-oss:120b-cloud
+# is the keyless/local fallback. The cohere: prefix routes through the shared
+# generate() inside _call_ollama, so no separate client exists here.
+DEFAULT_MODEL = os.environ.get("MATCH_OUTLINE_MODEL", "cohere:command-a-03-2025")
 DEFAULT_ENDPOINT = os.environ.get("OLLAMA_ENDPOINT", "http://localhost:11434")
 # --rewrite is a single generation call whose output scales with the document,
 # so the ceiling has to move with the machine: a 1,427-word chapter took 604s at
