@@ -31,8 +31,8 @@ cycle. Its home is the caller's review phase (GH-208), not the humanize
 chain: a workflow command runs it after the chain's terminal stage
 (GH-57: after the terminal stage, models read but never write), ahead of
 voice-critic, because its picks change what voice-critic would audit.
-Rule-based application of the merged sheet is critic-apply's job
-(GH-206).
+Rule-based application of the merged sheet is
+[critic-apply](../critic-apply/SKILL.md)'s job.
 
 ```
 terminal stage (inject-vernacular)

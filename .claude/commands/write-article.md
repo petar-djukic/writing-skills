@@ -405,19 +405,11 @@ Read-only instruments over the chain's output, in this order:
 1. **reverse-outline** — annotate + rank; the markers ride in the text
    and survive the Substack paste (see step 8).
 2. **critic-panel** — the `article` roster is required (operator request,
-   2026-09-01). Apply the merged sheet by rule, not by taste: accept every
-   convergent target (2+ critics), skip split panels, the constitution
-   outranks the panel ([CHECK] spans declined with cause), a remedy
-   conflict inside a convergence prefers the omission, and cross-instrument
-   agreement (critic + reverse-outline rank) counts as convergence for
-   deletions. Application routes each accepted target through the rewrite
-   transport with a narrow one-sentence instruction and a mechanical gate;
-   strip the paragraph's rst marker before the model call and reattach it
-   after (the digits fail the number gate — measured). Record
-   applied/kept/declined-by-rule counts. This procedure becomes the
-   `critic-apply` skill when writing-skills#206 lands; invoke that skill
-   then and delete this paragraph. Commit the sheet beside the article
-   (`<stem>.critic-sheet.md`).
+   2026-09-01). Commit the sheet beside the article
+   (`<stem>.critic-sheet.md`), then apply it with the `critic-apply`
+   skill — pass the constitution's protected spans and the
+   reverse-outline cheap ranks; it owns the rules, the gate, and the
+   applied/kept/declined-by-rule counts the `generation:` block wants.
 3. **Cold review** — a fresh-context subagent, maker-is-not-checker, sees
    only baseline + candidate: meaning entailment paragraph-by-paragraph,
    verdicts limited to ship / listed verbatim-reverts / reject. Every
