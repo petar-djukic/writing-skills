@@ -707,6 +707,25 @@ paragraph is the worst judge of whether it still reads like a machine.
 
 Commit.
 
+#### 6f-bis-a. The brisk panel — critic-panel's `article` roster, required
+
+Run the `critic-panel` skill with its default `article` roster (Levine,
+Didion, Hemingway — all `suggest`-kind) on the candidate. These are the
+critics that make the writing brisk: Hemingway cuts the sentence that
+explains what the previous sentence already showed, Levine reads pace at
+the section openers and transitions, Didion reads the rhythm. They run as
+fresh-context agents in parallel and produce a merged sheet where
+cross-critic agreement is the headline signal (operator request,
+2026-09-01; the panel was listed in the read-only zone above but nothing
+required it, so it got skipped — this stage makes it required).
+
+Suggestions are read by the author, not auto-applied. Any edit taken from
+the sheet goes through the second model family like every other repair;
+the no-Claude-prose rule holds here too. Record accepted/declined counts
+in the `generation:` block as a `critic-panel` stage.
+
+Commit the sheet beside the article (`<stem>.critic-sheet.md`).
+
 #### 6f-quater. Where the candidate lands — one path, always
 
 The accepted rewrite goes to **`<article>.rewrite-candidate.md`**, next to the
