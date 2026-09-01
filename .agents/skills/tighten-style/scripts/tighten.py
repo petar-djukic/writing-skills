@@ -220,6 +220,9 @@ def main():
                     help="report per-paragraph rule findings; no model calls")
     ap.add_argument("--pangram", action="store_true",
                     help="run external detector before/after (requires key)")
+    ap.add_argument("--no-pangram", action="store_true",
+                    help="skip external scoring even under a standing "
+                         "consent grant (GH-210)")
     ap.add_argument("--sent-floor", nargs=2, type=float, metavar=("MEAN", "SD"),
                     help="minimum sentence_length_mean and stdev; logs an "
                          "advisory when candidates push below this floor")
@@ -247,6 +250,7 @@ def main():
     # past — and hedge_policy keys the TS-08 threshold (zero for the book
     # voice, calibrated for academic prose).
     hedge_stack = None
+    venue_gates = None
     if a.venue:
         if MATCH_STRUCTURE not in sys.path:
             sys.path.insert(0, MATCH_STRUCTURE)
@@ -267,6 +271,18 @@ def main():
               f"{a.sent_floor or 'unset'})")
         for w in prof.get("_warnings", []):
             print(f"venue profile warning: {w}", file=sys.stderr)
+        venue_gates = [g.get("name") for g in (prof.get("gates") or [])]
+    # GH-210: standing consent enables scoring by default; a venue whose
+    # gates omit pangram never uploads, even over an explicit --pangram.
+    sys.path.insert(0, SHARED)
+    import pangram as _pg
+    score, why = _pg.should_score(start_path=art, cli_pangram=a.pangram,
+                                  cli_no_pangram=a.no_pangram,
+                                  venue_gates=venue_gates)
+    if score != a.pangram:
+        print(f"pangram: {'scoring enabled' if score else 'scoring disabled'} — {why}")
+    a.pangram = score
+
     ext = os.path.splitext(art)[1].lower()
     out = a.out or re.sub(r"\.(md|yaml|yml)$", ".tight\\1", art)
     if out == art:

@@ -853,11 +853,24 @@ breaks that deliberately, so it asks first — every time.
 reachable through a `dashboard_link` on the vendor's site. Proceed only on a
 clear yes.
 
-**Per document, every time.** Not once per session, not implied by a key. A key
+**Per document, every time — unless the operator has granted standing
+consent (GH-210).** Not once per session, not implied by a key. A key
 in the environment says the user has an account with the vendor; it says
 nothing about whether *this* document may leave the machine. Sessions cover
-many files, and one blanket yes cannot be informed consent for a file the user
-had not thought about yet. An upload cannot be taken back.
+many files, and one blanket yes given in passing cannot be informed consent
+for a file the user had not thought about yet. An upload cannot be taken back.
+
+The one exception is a deliberate, recorded, revocable grant: the operator
+writes `consent: standing` into `writing-voice/pangram-consent.yaml` (or
+sets `PANGRAM_CONSENT=standing`; `PANGRAM_CONSENT=off` revokes for a
+session and wins over the file). Under the grant the drivers score by
+default — the GH-194 recipe needs every pass scored — and `--no-pangram`
+opts any single run out. The grant covers the repository the file sits in,
+never other repositories; the retention warning above is what the operator
+accepts at grant time; and a venue profile whose gates omit `pangram`
+never uploads regardless of the grant. The refuse-list below applies with
+the grant in force: embargoed or NDA material still gets raised, not
+uploaded.
 
 **Refuse some documents even with consent in hand.** Anything under embargo or
 NDA, and any unpublished claim where disclosure could bear on prior art, gets
