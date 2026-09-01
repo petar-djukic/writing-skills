@@ -441,13 +441,33 @@ def _would_replace(pdf_abs, new_abs, stem):
     return True
 
 
-def _reconcile_orphan(pdf_abs, entries, db_dir):
+def _reconcile_orphan(pdf_abs, entries, db_dir, live_md=None):
     """Import a PDF on disk that no db entry references.
 
     Returns one of 'imported', 'needs_review', 'unregistered', or 'collision'.
+    live_md, when given, is the set of absolute md paths live entries point
+    at; a derived markdown target landing on one of them refuses the import
+    (GH-234 — with renames opt-in, a live entry's markdown may be parked at
+    exactly the name an orphan derives, and overwriting it loses a paper).
     """
     fn = os.path.basename(pdf_abs)
     arxiv_id, _ver = _arxiv_id_from_name(fn)
+
+    def _md_guarded(stem, orphan_arxiv=None):
+        """Refuse only when the parked markdown belongs to a DIFFERENT
+        paper. The same paper reattaching its lost PDF (matching arxiv id)
+        rewrites its own markdown, which is the point, not a loss."""
+        target = os.path.abspath(os.path.join(db_dir, "papers", f"{stem}.md"))
+        owner = (live_md or {}).get(target)
+        if owner is None:
+            return False
+        owner_id = str(owner.get("arxiv_id") or "").split("v")[0]
+        if orphan_arxiv and owner_id and owner_id == str(orphan_arxiv).split("v")[0]:
+            return False
+        print(f"repair: import of {fn} refused — a live entry's markdown "
+              f"('{owner.get('id')}') is parked at papers/{stem}.md; run "
+              f"--rename to migrate it clear first.", file=sys.stderr)
+        return True
 
     if arxiv_id:
         try:
@@ -466,6 +486,8 @@ def _reconcile_orphan(pdf_abs, entries, db_dir):
             # new_abs would be the other paper's file, and converting it would
             # write that paper's text over the tracked entry's markdown too.
             if _would_replace(pdf_abs, new_abs, stem):
+                return "collision"
+            if _md_guarded(stem, orphan_arxiv=meta["id"]):
                 return "collision"
             if os.path.abspath(new_abs) != os.path.abspath(pdf_abs):
                 os.rename(pdf_abs, new_abs)
@@ -511,6 +533,8 @@ def _reconcile_orphan(pdf_abs, entries, db_dir):
         new_rel = os.path.join("pdfs", f"{stem}.pdf")
         new_abs = os.path.join(db_dir, new_rel)
         if _would_replace(pdf_abs, new_abs, stem):
+            return "collision"
+        if _md_guarded(stem):
             return "collision"
         if os.path.abspath(new_abs) != os.path.abspath(pdf_abs):
             os.rename(pdf_abs, new_abs)
@@ -587,7 +611,15 @@ def cmd_repair(args):
     # Migration: rename existing pdf/markdown/summary files to the
     # human-friendly stem and update the db path fields. Idempotent — a file
     # already at its target name is left alone. Citation ids are NOT rewritten.
-    renamed = collisions = 0
+    #
+    # GH-234: the corpus is additive, so this pass is OPT-IN (--rename).
+    # Without the flag it only reports what it would move. And a file living
+    # outside the skill's own subdirectory for its field — a curated
+    # fulltext/ tree organized by SDO, say — is never renamed even with the
+    # flag: the skill did not put it there and does not own its layout. The
+    # GH-499 ingest silently rewrote 183 path fields, moving 33 curated
+    # fulltext files, because neither guard existed.
+    renamed = collisions = rename_candidates = curated_skipped = 0
     for entry in entries:
         stem = _entry_stem(entry)
         for field, subdir, default_ext in (("pdf_path", "pdfs", ".pdf"),
@@ -603,6 +635,20 @@ def cmd_repair(args):
             new_rel = os.path.join(subdir, f"{stem}{ext}")
             new_abs = os.path.join(db_dir, new_rel)
             if os.path.abspath(old_abs) == os.path.abspath(new_abs):
+                continue
+            top = rel.replace(os.sep, "/").split("/")[0]
+            if top != subdir:
+                curated_skipped += 1
+                if getattr(args, "rename", False):
+                    print(f"repair: {rel} lives outside {subdir}/ — curated "
+                          f"location, not the skill's to move; left in place "
+                          f"('{entry.get('id')}').", file=sys.stderr)
+                continue
+            if not getattr(args, "rename", False):
+                rename_candidates += 1
+                print(f"repair: would rename {rel} -> {new_rel} "
+                      f"('{entry.get('id')}'); re-run with --rename to "
+                      f"migrate.", file=sys.stderr)
                 continue
             # os.rename replaces its destination without a word. Two entries
             # can resolve to one stem — a duplicated citation id in a
@@ -621,6 +667,7 @@ def cmd_repair(args):
                 continue
             os.makedirs(os.path.dirname(new_abs), exist_ok=True)
             os.rename(old_abs, new_abs)
+            print(f"repair: renamed {rel} -> {new_rel}", file=sys.stderr)
             entry[field] = new_rel
             renamed += 1
 
@@ -635,8 +682,16 @@ def cmd_repair(args):
     # to the same paper — where rewriting it from the recovered PDF is the
     # point. Swap these two loops and an import silently overwrites a
     # bystander's markdown (GH-31, whose cases in test_repair.py pin this).
+    #
+    # GH-234 made the migration opt-in, which revives the GH-31 hazard in
+    # the default mode: a live entry's markdown may still be parked at the
+    # very name an orphan derives. The live-md guard below refuses that
+    # import instead of overwriting — the file lands in the unregistered
+    # list with the reason, and a --rename pass clears the way.
     imported = needs_review = 0
     unregistered = []
+    live_md = {os.path.abspath(os.path.join(db_dir, e["md_path"])): e
+               for e in entries if e.get("md_path")}
     pdfs_dir = os.path.join(db_dir, "pdfs")
     if os.path.isdir(pdfs_dir):
         tracked = {os.path.abspath(os.path.join(db_dir, e["pdf_path"]))
@@ -647,7 +702,8 @@ def cmd_repair(args):
             pdf_abs = os.path.join(pdfs_dir, fn)
             if os.path.abspath(pdf_abs) in tracked:
                 continue
-            result = _reconcile_orphan(pdf_abs, entries, db_dir)
+            result = _reconcile_orphan(pdf_abs, entries, db_dir,
+                                       live_md=live_md)
             if result == "imported":
                 imported += 1
             elif result == "needs_review":
@@ -664,6 +720,8 @@ def cmd_repair(args):
     save_db(args.db, entries)
     print(json.dumps({"checked": checked, "converted": converted,
                       "renamed": renamed, "collisions": collisions,
+                      "rename_candidates": rename_candidates,
+                      "curated_skipped": curated_skipped,
                       "imported": imported, "needs_review": needs_review,
                       "unregistered": len(unregistered), "skipped": skipped},
                      indent=2))
@@ -703,10 +761,17 @@ def main():
     r.set_defaults(func=cmd_record)
 
     rp = sub.add_parser("repair",
-                        help="reconcile the db: convert, rename, and import orphan PDFs")
+                        help="reconcile the db: convert and import orphan PDFs; "
+                             "renames are opt-in via --rename (GH-234)")
+    rp.add_argument("--rename", action="store_true",
+                    help="migrate old-scheme file names to the canonical stem "
+                         "(off by default: the corpus is additive, GH-234)")
     rp.set_defaults(func=cmd_repair)
     rc = sub.add_parser("reconcile",
                         help="alias for repair — reconcile disk against the database")
+    rc.add_argument("--rename", action="store_true",
+                    help="migrate old-scheme file names to the canonical stem "
+                         "(off by default: the corpus is additive, GH-234)")
     rc.set_defaults(func=cmd_repair)
 
     l = sub.add_parser("list", help="print the db as JSON")
