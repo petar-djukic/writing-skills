@@ -323,16 +323,16 @@ Preventing the tells while drafting is cheaper than repairing them in step 6.
 
 **File location:**
 
-- Save to: `substack/[YEAR]/drafts/[YYYY-MM-DD]-[title-in-kebab-case].md`
+- Save to: `substack/[YEAR]/drafted/[YYYY-MM-DD]-[title-in-kebab-case].md`
 - Year is from the publication date
 - Date is the target publication date
 - Title uses kebab-case (lowercase with hyphens)
-- Articles go to **drafts/** first — they are published by the `/publish-article` skill
+- Articles go to **drafted/** first — they are published by the `/promote` skill
 
 **Example:**
 - Date: 2026-03-15
 - Title: "The Hidden Cost of AI-Assisted Refactoring"
-- File: `substack/2026/drafts/2026-03-15-the-hidden-cost-of-ai-assisted-refactoring.md`
+- File: `substack/2026/drafted/2026-03-15-the-hidden-cost-of-ai-assisted-refactoring.md`
 
 ### 6. Run the Quality Pipeline
 
@@ -532,7 +532,7 @@ After saving, provide this checklist:
 - [ ] Examples are concrete and from production experience
 - [ ] Illustration prompt added to YAML (black and white stick figure concept)
 - [ ] LinkedIn post added to YAML (35 words or less, pattern-focused)
-- [ ] Saved to substack/[YEAR]/drafts/ folder
+- [ ] Saved to substack/[YEAR]/drafted/ folder
 - [ ] Brainstorm file deleted
 - [ ] No TODO comments remaining
 
