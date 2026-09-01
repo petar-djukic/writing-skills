@@ -35,14 +35,16 @@ and prefix-monotone (edits applied at a lower dial stay applied at every
 higher one), every candidate lands in the edit log with its gate verdict
 and score, and unapplied paragraphs stay byte-identical to the input.
 
-## Pipeline position (GH-57 ordering)
+## Pipeline position (GH-57 ordering; a humanize stage since GH-208)
 
-PRE-terminal, beside match-voice: the candidates come from a generative
-model, so this stage runs before inject-vernacular (terminal) and the
-read-only zone. Locked spans never enter the candidate pool (the gate
-skips any paragraph carrying lock markers), but locks are excised and
-spliced by the calling pipeline as usual — the gate is a backstop, not
-the mechanism.
+This is a stage of the humanize chain — its Phase 4, after tighten-style
+and before inject-vernacular (terminal). The candidates come from a
+generative model, so the stage must precede the deterministic terminal
+stage and the caller's read-only review phase. Locked spans never enter
+the candidate pool (the gate skips any paragraph carrying lock markers),
+but locks are excised and spliced by the calling pipeline as usual — the
+gate is a backstop, not the mechanism. It also runs standalone when the
+author only wants the dial.
 
 ## Usage
 

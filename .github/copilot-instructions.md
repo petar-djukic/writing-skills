@@ -780,8 +780,11 @@ A profile with schema errors is refused, not partially applied.
 
 Field semantics for consumers:
 
-- `anchor_query` / `blueprint` / `structural_step` — resolve humanize Phase-0
-  choices (humanize `--venue`).
+- `anchor_query` — resolves humanize's seed anchor selection (humanize
+  `--venue`).
+- `blueprint` / `structural_step` — name the caller's pre-chain structural
+  step (GH-208): the workflow runs match-outline (or tighten-style, or
+  skips) before invoking humanize; humanize only reports whether it ran.
 - `tell_lexicon` — selects which venue lexicon filter-tells applies on top of
   its core tells; core tells are venue-independent.
 - `targets` + `hedge_policy` — tighten-style tightens toward these numbers

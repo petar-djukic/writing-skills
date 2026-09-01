@@ -560,8 +560,8 @@ pass wanted anyway.
 
 **Placement (GH-133, decided 2026-08-28):** a standalone pre-terminal pass in
 this skill, run inside the GH-57 cycle like every other generative stage —
-optional, author-in-the-loop, its regressions caught by the read-only zone and
-the author's picks downstream. The filter-tells-sub-check half of the question
+optional, author-in-the-loop, its regressions caught by the caller's review
+phase and the author's picks downstream (GH-208). The filter-tells-sub-check half of the question
 resolved by function: the *measurement* is a filter-tells/humanize report line
 and a match-structure subcommand (GH-130), and the *generation* cannot live in
 filter-tells at all, because filter-tells is Claude-side detection and prose
@@ -571,7 +571,7 @@ the written file is re-checked against the manifest before the run reports
 success. The author read arm B on both informative documents and signed it
 (GH-132) — with the note that the gate cannot see reattributed judgment
 ("He called the request very dumb" returning as "It was very dumb"), which is
-one more reason the read-only zone downstream is not optional.
+one more reason the caller's review phase downstream is not optional.
 
 Measure the effect with match-structure:
 

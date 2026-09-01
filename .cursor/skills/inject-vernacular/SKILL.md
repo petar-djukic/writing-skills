@@ -136,8 +136,9 @@ every mechanical edit stands, which is the normal offline mode.
 ## Pipeline position
 
 Terminal. Stage order: draft (with declared/locked spans) → humanize
-stages (lock-respecting) → **inject-vernacular** → read-only zone
-(Pangram, voice-critic, cold reads, author gate). Defects found after this
+chain (lock-respecting) → **inject-vernacular** → the caller's review
+phase (Pangram, reverse-outline, critic-panel, voice-critic, cold reads,
+author gate; GH-208). Defects found after this
 stage are fixed by the author's hand or by re-running from a pre-terminal
 checkpoint — never by a model repair on the final text. Snark and
 disproportion are born at drafting and locked; this stage never inserts

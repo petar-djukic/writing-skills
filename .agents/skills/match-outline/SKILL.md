@@ -28,6 +28,26 @@ The rewrite uses `cohere:command-a-03-2025` by default (GH-184;
 output is expected at this stage — `match-voice` handles paragraph-level
 diction cleanup downstream.
 
+## Pipeline role: the caller's structural step (GH-208)
+
+This skill is a **document rewriter, not a stage of the humanize chain**.
+A workflow command invokes it before humanize when the form needs
+changing — a venue profile's `structural_step` field names it for exactly
+that decision — and humanize's input contract assumes its work is already
+done. It rewrites at section level, which is a different operation with a
+different risk class than the chain's paragraph-level stages.
+
+**Verify content preservation after every rewrite, and include figure
+blocks.** The built-in check covers citations and numbers; it does not
+cover figures. A 2026-08-31 run on the COMST introduction dropped an
+entire `![...](fig/...)` figure block while reporting "all citations and
+numbers preserved." Until the check covers them, count `![` occurrences
+(and table and code-fence blocks) before and after, and diff the
+reference section verbatim. The rewrite also introduces typographic
+unicode (U+2011 non-breaking hyphens, curly quotes) that downstream
+gates normalize but this stage does not — normalize to ASCII before
+handing the output on.
+
 ## Where things live
 
 - **Quantitative profile:** `<db-dir>/voice-profile.json`, written by
