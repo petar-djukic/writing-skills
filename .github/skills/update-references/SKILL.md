@@ -177,19 +177,31 @@ $RUN <skill>/scripts/arxiv.py --db <db-path> reconcile
 ```
 
 `reconcile` (the same command as `repair`) walks the whole database and the
-`pdfs/` directory and makes disk and db agree:
+`pdfs/` directory and makes disk and db agree. **The corpus is additive
+(GH-234): reconcile never renames, moves, or deletes an existing file by
+default.** Its default duties:
 
 - an entry missing its markdown is converted;
-- pdf/markdown/summary files on the older naming scheme are renamed to the
-  human-friendly stem (paths updated in the db; citation ids left intact);
+- pdf/markdown/summary files on the older naming scheme are *reported* as
+  rename candidates; the migration itself runs only under `--rename`
+  (paths updated in the db; citation ids left intact), and even then a
+  file living outside the skill's own subdirectory for its field — a
+  curated `fulltext/` tree, say — is never touched: the skill did not put
+  it there and does not own its layout. Every executed rename prints its
+  old -> new pair;
 - a PDF in `pdfs/` that no entry references is imported — its metadata is
   recovered from an arXiv id in the filename (fetched from arXiv), or, failing
   that, from the PDF's embedded title/author (recorded `status: needs-review`
   with year `nd`). Anything unrecoverable is listed in
   `<db-dir>/unregistered-pdfs.md` with a ready-to-run `ingest` command.
 
-It is idempotent and prints counts (`converted`, `renamed`, `collisions`,
-`imported`, `needs_review`, `unregistered`). A non-zero `collisions` means two
+It is idempotent and prints counts (`converted`, `renamed`,
+`rename_candidates`, `curated_skipped`, `collisions`, `imported`,
+`needs_review`, `unregistered`). In the additive default an orphan whose
+derived name would land on a DIFFERENT live entry's parked markdown is
+refused with the reason (the GH-31 hazard, revived by opt-in renames and
+re-guarded); the same paper reattaching its lost PDF still rewrites its
+own markdown. A non-zero `collisions` means two
 entries resolved to the same filename — usually a duplicated citation id — so
 the rename was refused and those files were left on their old names rather than
 one overwriting the other. Fix the duplicate and re-run.

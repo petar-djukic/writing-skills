@@ -69,9 +69,9 @@ def build(tmp, entries, extra_pdfs=()):
     return db
 
 
-def repair(db):
+def repair(db, rename=False):
     """Run the real cmd_repair, returning its JSON summary."""
-    args = types.SimpleNamespace(db=db)
+    args = types.SimpleNamespace(db=db, rename=rename)
     out = io.StringIO()
     with redirect_stdout(out):
         arxiv.cmd_repair(args)
@@ -106,7 +106,15 @@ def main():
         db = build(tmp, [entry("lamport-1978", "Lamport", 1978,
                                "Time Clocks and the Ordering of Events",
                                "pdfs/legacy-name.pdf", "papers/legacy-name.md")])
+        # --- additive default (GH-234): no --rename, no move ---------------
         summary = repair(db)
+        check("default renames nothing (additive corpus)",
+              summary["renamed"] == 0, summary)
+        check("default reports the rename candidates",
+              summary["rename_candidates"] >= 1, summary)
+        check("default leaves the legacy file in place",
+              os.path.exists(os.path.join(tmp, "pdfs/legacy-name.pdf")))
+        summary = repair(db, rename=True)
         check("migration renames the legacy file", summary["renamed"] >= 1, summary)
         check("no path dangles after the rename", paths_resolve(db) == [],
               paths_resolve(db))
@@ -116,9 +124,28 @@ def main():
 
         # --- running it twice is a no-op -----------------------------------
         before = _refdb.load_db(db)
-        second = repair(db)
+        second = repair(db, rename=True)
         check("a second repair renames nothing", second["renamed"] == 0, second)
         check("a second repair changes no entry", _refdb.load_db(db) == before)
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+    # --- curated locations are never the skill's to move (GH-234) ----------
+    tmp = tempfile.mkdtemp(prefix="test-repair-")
+    try:
+        db = build(tmp, [entry("gsma-2025", "GSMA", 2025,
+                               "Agentic AI for Telco",
+                               "pdfs/legacy-gsma.pdf",
+                               "fulltext/GSMA/Agentic-AI-for-Telco.md")])
+        summary = repair(db, rename=True)
+        check("curated fulltext path untouched even with --rename",
+              os.path.exists(os.path.join(tmp, "fulltext/GSMA/Agentic-AI-for-Telco.md")))
+        check("curated skip is counted", summary["curated_skipped"] >= 1, summary)
+        e = _refdb.load_db(db)[0]
+        check("curated md_path field unchanged",
+              e["md_path"] == "fulltext/GSMA/Agentic-AI-for-Telco.md", e["md_path"])
+        check("in-tree pdf still migrates under --rename",
+              "GSMA-2025" in e["pdf_path"], e["pdf_path"])
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 
@@ -193,7 +220,7 @@ def main():
         with open(os.path.join(tmp, "pdfs", "second.pdf"), "w") as f:
             f.write("SECOND PAPER\n")
 
-        summary = repair(db)
+        summary = repair(db, rename=True)
         check("a stem collision leaves every path resolving",
               paths_resolve(db) == [], paths_resolve(db))
         # Refusing quietly would be its own failure: the curator has a
@@ -334,7 +361,16 @@ def main():
             "authors": ["Jane Doe"], "primary_category": "cs.SE",
             "categories": ["cs.SE"], "summary": "s", "pdf_url": "http://x/pdf",
         }]
+        # Default (additive) mode: the import is REFUSED rather than
+        # overwriting the bystander's parked markdown (GH-234 guard).
         repair(db)
+        other = [e for e in _refdb.load_db(db) if e["id"] == "other-1999"][0]
+        with open(os.path.join(tmp, other["md_path"])) as f:
+            check("default mode leaves the bystander's parked markdown intact",
+                  f.read().strip() == "A DIFFERENT PAPER'S MARKDOWN",
+                  other.get("md_path"))
+        # --rename migrates the bystander clear; the next repair imports.
+        repair(db, rename=True)
         got = _refdb.load_db(db)
         other = [e for e in got if e["id"] == "other-1999"][0]
         with open(os.path.join(tmp, other["md_path"])) as f:
