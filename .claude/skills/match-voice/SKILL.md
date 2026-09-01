@@ -378,6 +378,7 @@ stay verbatim in the draft, and are counted in the manifest.
 | Setting | Flag | Default |
 |---|---|---|
 | Endpoint | `--endpoint` / `OLLAMA_ENDPOINT` | `http://localhost:11434` |
+| `OLLAMA_WAIT_SERVER` | seconds to wait for a mid-run Ollama restart (default 0) | set 600 for unattended batches — a supervised local server can be reaped mid-run and the retry backoff alone cannot ride out its restart (GH-173) |
 | Model | `--model` / `MATCH_VOICE_MODEL` | `cohere:command-a-03-2025` (local fallback `gemma4:12b`) |
 | Temperature | `--temperature` | 0.7 |
 | Timeout (s) | `--timeout` / `MATCH_VOICE_TIMEOUT` | 300 (cold loads are slow) |
