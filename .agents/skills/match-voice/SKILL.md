@@ -458,6 +458,11 @@ recorded in the provenance YAML under `guard:`.
 
 ## Did it work? (the --pangram measurement)
 
+Who writes the words is the biggest single lever on the score — the
+2026-07-26 evidence is in
+[references/authorship-lever.md](./references/authorship-lever.md),
+re-homed from write-article (GH-214).
+
 The gate proves a candidate preserved citations, numbers, and meaning. It
 cannot tell you whether the prose stopped reading as machine-written, and
 filter-tells cannot settle that either — its detectors are the denylist the
