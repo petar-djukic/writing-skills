@@ -329,9 +329,34 @@ def test_first_person_introduced():
     print("  first_person_introduced: ok")
 
 
+def test_quoted_span_gate():
+    import verify as vf
+    # The live p11 alteration (the-qwerty-endpoint, both demo runs).
+    orig = ('Anthropic delivers content as "an array of content blocks, '
+            'each of which has a type that determines its shape," with '
+            'distinct objects [3].')
+    cand = ('Anthropic delivers content as "an array of content blocks, '
+            'each with a type determining its shape," with '
+            'distinct objects [3].')
+    fatals = lambda v: [f["check"] for f in v["findings"]
+                        if f["severity"] == "fatal"]
+    assert "quoted-span" in fatals(vf.verify(orig, cand))
+    # Unchanged quote passes.
+    assert "quoted-span" not in fatals(vf.verify(orig, orig))
+    # Invented quotation is fatal too.
+    v = vf.verify("The docs say it plainly.",
+                  'The docs say "determinism is not guaranteed" plainly.')
+    assert "quoted-span" in fatals(v)
+    # Short scare-quotes stay out of scope.
+    v = vf.verify('It was "ok" then.', "It was fine then.")
+    assert "quoted-span" not in fatals(v)
+    print("  quoted_span_gate: ok")
+
+
 def main():
     test_returns_shape()
     test_first_person_introduced()
+    test_quoted_span_gate()
     test_accepted_when_clean()
     test_rejected_after_retries()
     test_restore_full_bold()

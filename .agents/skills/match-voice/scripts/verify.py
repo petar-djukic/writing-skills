@@ -184,6 +184,18 @@ _FIRST_PERSON = re.compile(
 _URL = re.compile(r"https?://\S+")
 
 
+# GH-223: double-quoted spans are a contract — tighten paraphrased
+# documentation quotes inside quotation marks twice on the same
+# paragraphs (the-qwerty-endpoint, 2026-09-01/02) and the gate passed
+# both. >= 4 chars so scare-quoted single words stay out of scope.
+_QUOTED = re.compile(r'"([^"]{4,})"')
+
+
+def _quoted_spans(text):
+    from collections import Counter
+    return Counter(_QUOTED.findall(text))
+
+
 def _first_person(text):
     return _FIRST_PERSON.search(_URL.sub(" ", _strip_citations(text)))
 
@@ -354,6 +366,18 @@ def verify(original, rewritten, anchors_json=None, max_shared_run=8,
                                        "introduced into a paragraph whose "
                                        "original has none; the rewrite put "
                                        "words in the author's mouth"})
+
+    o_q, r_q = _quoted_spans(original), _quoted_spans(rewritten)
+    for span, n in o_q.items():
+        if r_q.get(span, 0) < n:
+            findings.append({"check": "quoted-span", "severity": "fatal",
+                             "detail": f"quoted span lost or altered: "
+                                       f"{span[:60]!r}"})
+    for span, n in r_q.items():
+        if o_q.get(span, 0) < n:
+            findings.append({"check": "quoted-span", "severity": "fatal",
+                             "detail": f"quoted span invented by the rewrite: "
+                                       f"{span[:60]!r}"})
 
     o_a, r_a = _acronyms(original), _acronyms(rewritten)
     for term, n in o_a.items():
