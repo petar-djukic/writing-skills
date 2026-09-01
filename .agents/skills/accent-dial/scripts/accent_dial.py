@@ -353,7 +353,13 @@ def main():
         sys.exit("--dial must be in [0, 1]")
 
     with open(args.article, encoding="utf-8") as f:
-        paras = split_paras(f.read())
+        raw = f.read()
+    front_matter = ""
+    if raw.startswith("---"):
+        fm_end = raw.index("---", 3)
+        front_matter = raw[: fm_end + 3]
+        raw = raw[fm_end + 3 :]
+    paras = split_paras(raw)
 
     rt_path = args.roundtrip or (
         os.path.splitext(args.article)[0] + ".roundtrip.txt")
@@ -444,6 +450,8 @@ def main():
     stem, ext = os.path.splitext(args.article)
     out_path = args.out or f"{stem}.dial{args.dial:g}{ext or '.txt'}"
     with open(out_path, "w", encoding="utf-8") as f:
+        if front_matter:
+            f.write(front_matter + "\n")
         f.write("\n\n".join(out_paras) + "\n")
 
     log = {"article": args.article, "roundtrip": rt_path, "model": args.model,
