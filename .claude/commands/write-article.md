@@ -715,10 +715,27 @@ cross-critic agreement is the headline signal (operator request,
 2026-09-01; the panel was listed in the read-only zone above but nothing
 required it, so it got skipped — this stage makes it required).
 
-Suggestions are read by the author, not auto-applied. Any edit taken from
-the sheet goes through the second model family like every other repair;
-the no-Claude-prose rule holds here too. Record accepted/declined counts
-in the `generation:` block as a `critic-panel` stage.
+The sheet is applied automatically, by rule, so the author never reads
+drivel (operator policy, 2026-09-01):
+
+- **Accept every convergent target** (2+ critics on the same sentence).
+- **Split panel = skip.** One critic proposing and another dissenting is
+  not a convergence; take neither side.
+- **The constitution outranks the panel.** A [CHECK]-protected span (the
+  bridge sentence, the skill box) is declined with cause however many
+  critics want it changed.
+- **Cross-instrument agreement counts as convergence** — a paragraph cut
+  nominated by a critic AND ranked cheap by the reverse-outline sheet is
+  accepted as a deletion.
+
+Application routes each accepted target through the second model family
+with a narrow one-sentence instruction and a mechanical gate (numbers,
+citations, budgets, size band); a gated rejection keeps the original.
+Strip the paragraph's rst marker before the model call and reattach it
+after — the marker's digits otherwise fail the number gate (measured on
+the first automated run). Deletions apply directly; omission is not
+authorship. Record applied/kept/declined-by-rule counts in the
+`generation:` block as a `critic-panel` stage.
 
 Commit the sheet beside the article (`<stem>.critic-sheet.md`).
 
