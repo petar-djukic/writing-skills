@@ -53,6 +53,49 @@ DEFAULT_MODEL = os.environ.get("MATCH_VOICE_MODEL", "cohere:command-a-03-2025")
 DEFAULT_TIMEOUT = int(os.environ.get("MATCH_VOICE_TIMEOUT", "300"))
 # Retries for transient Ollama transport failures (dropped connection, timeout).
 OLLAMA_MAX_RETRIES = int(os.environ.get("OLLAMA_MAX_RETRIES", "3"))
+# Wait budget for an Ollama server that goes DOWN mid-run, in seconds
+# (default 0 = off, today's behavior). On this machine an `ollama launch
+# opencode` supervisor reaps foreign `ollama serve` processes and cycles its
+# own; the 1-2-4s retry backoff cannot ride out a supervisor restart, and
+# three consecutive bake-off re-runs died to it before a polling wrapper held
+# (GH-173). With a budget set, a refused connection polls /api/tags every 5s
+# up to the budget before retrying, and a successful wait does not consume a
+# retry attempt. Set OLLAMA_WAIT_SERVER=600 for unattended batch runs.
+OLLAMA_WAIT_SERVER = int(os.environ.get("OLLAMA_WAIT_SERVER", "0"))
+# Whether this process has ever reached the server — distinguishes "vanished
+# mid-run" (supervisor reaping; waiting can help) from "never up" (start it).
+_OLLAMA_WAS_UP = False
+
+
+def _ollama_down_message(model, endpoint, cause):
+    """The two down states need opposite remediations (GH-173)."""
+    waited = (f" (waited {OLLAMA_WAIT_SERVER}s for it to return)"
+              if OLLAMA_WAIT_SERVER > 0 else
+              " (set OLLAMA_WAIT_SERVER=600 to ride out supervisor restarts)")
+    if _OLLAMA_WAS_UP:
+        return (f"Ollama at {endpoint} vanished mid-run on model '{model}' "
+                f"({cause}){waited}. A supervisor may be reaping the server; "
+                "see writing-skills#173. No Claude fallback, by design.")
+    return (f"Ollama never came up at {endpoint} for model '{model}' "
+            f"({cause}){waited}. Start it with `ollama serve` or point "
+            "OLLAMA_ENDPOINT elsewhere. No Claude fallback, by design.")
+
+
+def _wait_for_ollama(endpoint, budget=None):
+    """Poll /api/tags until the server answers or the budget expires.
+    Returns True when it came back. No-op (False) with a zero budget."""
+    budget = OLLAMA_WAIT_SERVER if budget is None else budget
+    if budget <= 0:
+        return False
+    deadline = time.time() + budget
+    while time.time() < deadline:
+        try:
+            req = urllib.request.Request(f"{endpoint}/api/tags")
+            with urllib.request.urlopen(req, timeout=4):
+                return True
+        except Exception:  # noqa: BLE001 — down is down, keep polling
+            time.sleep(5)
+    return False
 
 # Cohere is an opt-in cross-family backend, selected by a `cohere:` model-id
 # prefix (e.g. --model cohere:command-a-03-2025). It routes to Cohere's hosted
@@ -508,6 +551,8 @@ def generate(prompt, endpoint=DEFAULT_ENDPOINT, model=DEFAULT_MODEL,
         try:
             with urllib.request.urlopen(req, timeout=timeout) as r:
                 data = json.loads(r.read())
+            global _OLLAMA_WAS_UP
+            _OLLAMA_WAS_UP = True
             break
         except socket.timeout:
             last = "timeout"
@@ -522,13 +567,13 @@ def generate(prompt, endpoint=DEFAULT_ENDPOINT, model=DEFAULT_MODEL,
                 "fallback, by design.")
         except ConnectionError as e:
             last = f"connection ({e.__class__.__name__})"
+            if _wait_for_ollama(endpoint):
+                continue        # server came back; the attempt is not spent
             if attempt < OLLAMA_MAX_RETRIES - 1:
                 time.sleep(2 ** attempt)
                 continue
-            raise RuntimeError(
-                f"Ollama connection dropped on model '{model}' "
-                f"({OLLAMA_MAX_RETRIES} attempts, {e.__class__.__name__}). "
-                "No Claude fallback, by design.")
+            raise RuntimeError(_ollama_down_message(model, endpoint,
+                                                    e.__class__.__name__))
         except urllib.error.URLError as e:
             if isinstance(getattr(e, "reason", None), socket.timeout):
                 last = "timeout"
@@ -538,6 +583,14 @@ def generate(prompt, endpoint=DEFAULT_ENDPOINT, model=DEFAULT_MODEL,
                 raise RuntimeError(
                     f"Ollama timed out after {timeout}s on model '{model}'. "
                     "Raise the timeout or warm the model first.")
+            if isinstance(getattr(e, "reason", None), (ConnectionError, OSError)):
+                if _wait_for_ollama(endpoint):
+                    continue    # server came back; the attempt is not spent
+                if attempt < OLLAMA_MAX_RETRIES - 1:
+                    time.sleep(2 ** attempt)
+                    continue
+                raise RuntimeError(_ollama_down_message(model, endpoint,
+                                                        str(e.reason)))
             raise RuntimeError(f"Ollama request failed: {e.reason}. "
                                "No Claude fallback, by design.")
     else:  # pragma: no cover - loop always breaks or raises
