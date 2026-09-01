@@ -700,6 +700,11 @@ def write_manifest(path, a, voice_dir, results, pangram=None, guard=None):
                   counts.get("unselected", 0),
                   counts.get("excluded-key", 0),
                   counts.get("canonical", 0)))
+    # GH-209: the machine-readable changed-paragraph list a scoped
+    # filter-tells pass consumes. 1-based md_paragraphs prose numbers.
+    changed = sorted(r["n"] for r in results
+                     if r.get("status") == "accepted-mechanical")
+    out.append("  changed_paragraphs: [%s]" % ", ".join(map(str, changed)))
     pt = getattr(a, "_protected", None)
     if pt:
         out.append("  protected_terms:")
