@@ -219,6 +219,18 @@ def sentence_count(style_mod, text):
     return len(style_mod.split_sentences(style_mod.strip_markdown(text)))
 
 
+# Contractions the model pass tends to expand on rawer prose (GH-135: the
+# gemma arm took draft 1 from 6 to 3, and the control arm lost the same
+# three, so the damage is the model's, not the burstiness instruction's).
+# Apostrophe covers the typographic variant.
+_CONTRACTION = re.compile(
+    r"\b\w+(?:n['\u2019]t|['\u2019](?:re|ve|ll|d|m|s))\b", re.IGNORECASE)
+
+
+def contraction_count(text):
+    return len(_CONTRACTION.findall(text or ""))
+
+
 def judge(original, candidate, style_mod, span_locks, min_words=None):
     """Accept or reject one candidate. Returns (accepted, status).
 
@@ -238,6 +250,15 @@ def judge(original, candidate, style_mod, span_locks, min_words=None):
     fault = span_locks.check_tokens(original, candidate)
     if fault:
         status.update(verdict="rejected", reason="lock-token", detail=fault)
+        return False, status
+
+    # Delta, not level: prose that never contracted passes; losing even one
+    # existing contraction is the formalizing drift this pass must not add.
+    c_in, c_out = contraction_count(original), contraction_count(candidate)
+    status["contractions"] = {"before": c_in, "after": c_out}
+    if c_out < c_in:
+        status.update(verdict="rejected", reason="contraction-loss",
+                      detail=f"{c_in} -> {c_out}")
         return False, status
 
     added = added_defects(original, candidate)
