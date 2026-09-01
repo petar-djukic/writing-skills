@@ -462,7 +462,15 @@ def main():
                     help="sample pool to this size for comparability")
     sw.add_argument("-k", type=int, default=3,
                     help="anchors per paragraph (dry-run mode)")
-    sw.add_argument("--model", default=os.environ.get("MATCH_VOICE_MODEL", "gemma4:12b"))
+    # TUNE_ANCHORS_MODEL, not MATCH_VOICE_MODEL: the borrowed env var meant
+    # configuring match-voice silently reconfigured sweeps here — and sweep
+    # verdicts rank anchors under whatever model this resolves to, so it must
+    # follow the pipeline default (GH-198). Cohere is a hosted API: every
+    # sweep arm bills per token. gemma4:12b is the keyless/local fallback.
+    sw.add_argument("--model", default=os.environ.get(
+        "TUNE_ANCHORS_MODEL", "cohere:command-a-03-2025"),
+        help="rewrite model for sweep arms (env TUNE_ANCHORS_MODEL; hosted "
+             "Cohere default bills per arm — gemma4:12b for a free local sweep)")
     sw.add_argument("--out", help="ledger path (default: ledger.yaml)")
     sw.add_argument("--dry-run", action="store_true",
                     help="retrieval only — no model, no cost")

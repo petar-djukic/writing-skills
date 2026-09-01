@@ -215,7 +215,7 @@ def main():
     ap.add_argument("--min-words", type=int, default=12)
     ap.add_argument("--temperature", default="0.4")
     ap.add_argument("--timeout", type=int,
-                    default=int(os.environ.get("MATCH_VOICE_TIMEOUT", "300")))
+                    default=int(os.environ.get("TIGHTEN_STYLE_TIMEOUT", "300")))
     ap.add_argument("--check-only", action="store_true",
                     help="report per-paragraph rule findings; no model calls")
     ap.add_argument("--pangram", action="store_true",
