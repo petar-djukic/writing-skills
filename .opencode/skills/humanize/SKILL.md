@@ -342,6 +342,24 @@ baseline for 2.2. **Record seed reach** — paragraphs changed out of
 total, from the driver's accepted/kept table — it is the caller's cycle
 signal and a required line in the report.
 
+**A flat or slightly worse seed score does not discard the seed when its
+reach is healthy (GH-224).** The seed's contribution is divergence that
+Phase 3 exploits, and its own Pangram reading measures that poorly.
+Measured on the-qwerty-endpoint, same payload, one day apart:
+
+| run | seed (reach) | after tighten | final |
+|---|---|---|---|
+| 2026-09-01 | 0.930 (11/19) | **0.548** | **0.542** |
+| 2026-09-02 | 0.991 — flat-to-worse (9/19), seed discarded on score | 0.697 | 0.673 |
+
+Discarding the flat seed cost 0.13 mean window at the end of the chain.
+So: a seed with healthy reach (the measured healthy runs sat near 9–11
+of 19) **stays in the lineage** through Phase 3, and the floor decision
+compares post-tighten measurements when both lineages were run — or
+simply accepts the seeded composition when only one was. A seed with
+collapsed reach (the converged-article signal, strategy-theatre's 16/125
+with mass gate rejection) is still set aside on its score.
+
 #### 2.2 Iterate — only while the score still falls
 
 ```bash
@@ -366,8 +384,10 @@ Three rules, all load-bearing:
    count. Past the floor each pass concentrates the iterator's own
    signature and the score climbs back (the U-curve: 0.992 -> 0.579 ->
    0.432 -> 0.489 -> … -> 0.700 by pass 10, stay-on-track 2026-07-29).
-2. **The publish candidate is the floor pass, not the last pass.** Keep
-   every pass on disk with its provenance.
+2. **The publish candidate is the floor pass, not the last pass** — with
+   the GH-224 amendment above: between the seed and its input, the floor
+   is judged after Phase 3, not on the seed's own reading. Keep every
+   pass on disk with its provenance.
 3. **The floor pass's score is raw until the caller's cold review gates
    it.** Every stage measured this way lost most of its gain at review —
    the raw floor and the gated floor are different numbers, and only the
