@@ -100,7 +100,8 @@ without egress, `gemma4:31b-cloud` when the memory is not there. There is no
 silent fallback: a `cohere:` default with no key stops with remediation. Sizes,
 the full ranking, and the Cohere decision are in
 [model-choice.md](./references/model-choice.md) and
-[cohere-bakeoff.md](./references/cohere-bakeoff.md).
+[cohere-bakeoff.md](../bake-off/references/cohere-bakeoff.md)
+(the harness is the `bake-off` skill since GH-205).
 
 Check the endpoint before starting:
 

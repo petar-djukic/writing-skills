@@ -1,3 +1,7 @@
+<!-- Home: the bake-off skill (GH-205). The harness this records ran as
+match-voice/scripts/cohere_ab.py; it is now bake-off/scripts/bakeoff.py
+and the method contract lives in ../SKILL.md. -->
+
 # Cohere bake-off (GH-138)
 
 Cohere's command-a models against the incumbent cross-family rewriters

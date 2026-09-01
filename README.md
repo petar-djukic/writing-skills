@@ -19,15 +19,15 @@ flowchart LR
 
 ## Scope and Status
 
-The repository hosts 16 skills and 3 commands, canonical under `.claude/`. They fall into four categories (GH-208).
+The repository hosts 19 skills and 3 commands, canonical under `.claude/`. They fall into four categories (GH-208).
 
 **The humanize chain** — `humanize` orchestrates one generative pass: `filter-tells` (semantic cleanup), `match-voice` (seeded cross-model diction rewrite, plus the optional burstiness pass), `tighten-style` (word recovery toward the author's density floor), `accent-dial` (optional L2-accent stage), and `inject-vernacular` (the deterministic terminal stage). `match-structure` is the shared library underneath — metrics, anchor retrieval, venue profiles.
 
 **Structure, caller-run** — `match-outline` rewrites a whole document against a blueprint. It is invoked by a workflow before the chain, never by the chain: humanize's input contract assumes its work is done.
 
-**Review instruments, caller-run** — read-only, after the chain's terminal stage: `reverse-outline` labels the argument as RST markers and ranks every paragraph by what deletion costs, `critic-panel` reads a finished draft through named persona critics in parallel and merges them into one convergence-first sheet, and `voice-critic` gatekeeps against the author's voice constitution. None writes prose; author picks re-enter the chain as a new cycle.
+**Review instruments, caller-run** — after the chain's terminal stage: `reverse-outline` labels the argument as RST markers and ranks every paragraph by what deletion costs, `critic-panel` reads a finished draft through named persona critics in parallel and merges them into one convergence-first sheet, `critic-apply` applies that sheet by rule through the rewrite transport, `cold-review` runs the fresh-context entailment check whose only repairs are verbatim reverts, and `voice-critic` gatekeeps against the author's voice constitution. Applied picks re-enter the chain as a new cycle.
 
-**Data and corpus tools** — `update-references` and `audit-references` keep a CSL-YAML bibliography current and checked against retrieved sources; `tune-anchors` sweeps anchor queries; `patent-disclosure` populates an eleven-section invention-disclosure template; `pattern-language` extracts Alexandrian pattern languages from repositories. These maintain data, not prose — a different kind from the chain's stages.
+**Data and corpus tools** — `update-references` and `audit-references` keep a CSL-YAML bibliography current and checked against retrieved sources; `tune-anchors` sweeps anchor queries; `bake-off` compares models over multiple payloads so the chain's defaults can be pinned; `patent-disclosure` populates an eleven-section invention-disclosure template; `pattern-language` extracts Alexandrian pattern languages from repositories. These maintain data, not prose — a different kind from the chain's stages.
 
 The commands — `brainstorm-article`, `write-article`, `seo-pass` — drive an end-to-end article pipeline. History traces back to [coding-skills](https://github.com/petar-djukic/coding-skills), where these skills lived through August 2026; the coding commands remain there.
 
