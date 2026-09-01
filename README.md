@@ -53,6 +53,8 @@ scripts/             mirror sync
 
 ## Environment
 
+Run the test suite with `scripts/run-tests.sh` (or `mage test`); `mage tag` runs the same gate from a clean `main` and creates the next `v0.YYYYMMDD.N` release tag, counting revisions over local and remote tags.
+
 [pixi](https://pixi.sh/) manages Python dependencies. `pixi.toml` and `pixi.lock` ship in `.claude/`, and `.claude/scripts/ensure-env.sh` provisions the locked environment. Credentials (`pangram`, `serpapi`, `semantic_scholar`) resolve through a gitignored `.secrets/` directory per the contract in the skills' documentation; no credential is ever committed or printed.
 
 ## License
