@@ -464,6 +464,12 @@ Who writes the words is the biggest single lever on the score — the
 [references/authorship-lever.md](./references/authorship-lever.md),
 re-homed from write-article (GH-214).
 
+The gate holds **double-quoted spans verbatim** (GH-223): a span lost,
+altered, or invented is fatal — tighten paraphrased documentation quotes
+inside quotation marks on the same paragraphs two runs straight before
+this check existed. Scare-quoted single words (under 4 chars) stay out
+of scope.
+
 The gate also rejects **introduced first person** (GH-221): a candidate
 carrying I/we/my/our where the original paragraph has none is refused —
 an anchored seed imports the anchor author's register, and the measured
