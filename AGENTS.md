@@ -12,7 +12,6 @@ Codex discovers both from `.agents/skills/`.
 
 Reusable skills (19): accent-dial, audit-references, bake-off, cold-review, critic-apply, critic-panel, filter-tells, humanize, inject-vernacular, match-outline, match-structure, match-voice, patent-disclosure, pattern-language, reverse-outline, tighten-style, tune-anchors, update-references, voice-critic.
 
-Command workflows (3), each carrying its full workflow inline: brainstorm-article, seo-pass, write-article.
 
 Python-backed skills run in a pixi environment that ships beside them:
 run `.agents/scripts/ensure-env.sh` once per machine, then invoke scripts
