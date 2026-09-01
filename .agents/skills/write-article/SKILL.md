@@ -419,11 +419,11 @@ Read-only instruments over the chain's output, in this order:
    skill — pass the constitution's protected spans and the
    reverse-outline cheap ranks; it owns the rules, the gate, and the
    applied/kept/declined-by-rule counts the `generation:` block wants.
-3. **Cold review** — a fresh-context subagent, maker-is-not-checker, sees
-   only baseline + candidate: meaning entailment paragraph-by-paragraph,
-   verdicts limited to ship / listed verbatim-reverts / reject. Every
-   accepted fix is a revert to the baseline span — no authored prose. The
-   contract becomes the `cold-review` skill when writing-skills#207 lands.
+3. **Cold review** — invoke the `cold-review` skill: run its mechanical
+   `screen` for the reviewer's recall aid, spawn the fresh-context
+   reviewer with its prompt template (name the high-value targets), and
+   apply accepted verdicts with its `apply` — every accepted fix is a
+   verbatim revert to the baseline span, no authored prose.
 4. **voice-critic** — stance, marker profile, snark governance; flags to
    the author gate.
 
