@@ -135,6 +135,35 @@ def test_yaml_short_values_excluded():
     print("  yaml_short_values_excluded: ok")
 
 
+def test_yaml_metrics_excluded_by_default():
+    # GH-227: metrics fields are contract values; the default exclusion
+    # list must keep them from the rewriter (a pasted model refusal once
+    # shipped inside a metrics.*.computed value).
+    import tempfile, os
+    doc_text = (
+        "meta:\n  id: exp99\n"
+        "metrics:\n"
+        "- name: generation success rate by completeness level\n"
+        "  definition: differential-harness pass rate per specification completeness arm\n"
+        "  computed: not yet computed because the dataset is a header-only schema today\n"
+        "results:\n"
+        "  summary: |\n"
+        "    A long enough prose paragraph that the extractor would offer to a rewrite model without hesitation.\n")
+    with tempfile.TemporaryDirectory() as tmp:
+        f = os.path.join(tmp, "exp.yaml")
+        open(f, "w").write(doc_text)
+        doc = pd.ProseDocument.open(f)
+        paras = doc.paragraphs
+        excluded = pd.excluded_indices(paras, pd.YAML_EXCLUDE_KEYS_DEFAULT)
+        metric_ns = [p_.index + 1 for p_ in paras if "metrics" in p_.context]
+        assert metric_ns, [p_.context for p_ in paras]
+        for n in metric_ns:
+            assert n in excluded, (n, excluded, "metrics not excluded")
+        kept = [p_.context for p_ in paras if p_.index + 1 not in excluded]
+        assert any("results" in c for c in kept), kept
+    print("  yaml_metrics_excluded_by_default: ok")
+
+
 def test_yaml_round_trip():
     with tempfile.TemporaryDirectory() as tmp:
         copy = os.path.join(tmp, "copy.yaml")
@@ -338,6 +367,7 @@ def main():
     test_md_paragraph_dict()
     test_yaml_extraction()
     test_yaml_short_values_excluded()
+    test_yaml_metrics_excluded_by_default()
     test_yaml_round_trip()
     test_yaml_replace()
     test_yaml_comment_preserved()

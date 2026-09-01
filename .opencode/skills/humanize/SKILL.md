@@ -180,7 +180,9 @@ audit tools grep for. The chain protects them in two layers:
 
 **Exclude keys.** Both tighten.py and drive.py accept `--exclude-keys` with
 dot-separated key-path globs. For YAML files, the default exclusion list is
-`section_goal`, `goals.*.goal`, `acceptance.*`, `meta.*`. These paragraphs
+`section_goal`, `goals.*.goal`, `acceptance.*`, `meta.*`, `metrics.*`
+(GH-227: a rewrite pass once replaced a `metrics.*.computed` value with
+a pasted model refusal that shipped unnoticed). These paragraphs
 get status `excluded-key` and never reach the rewriter. Pass `--exclude-keys`
 with no arguments to disable the default.
 
