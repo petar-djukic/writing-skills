@@ -49,6 +49,33 @@ REFRAIN_MIN_WORDS = 6
 REFRAIN_MIN_PARAGRAPHS = 2
 CANONICAL_FILE = "canonical-blocks.txt"
 
+# GH-239. Recurrence alone cannot tell a term of art from a common verb: on a
+# 48-paragraph article the old rule derived 142 terms, 128 of them ordinary
+# words (means, read, record, name, leave, look, wrong), and since a lost
+# protected term is a fatal finding, paraphrase could not pass the gate at all.
+# Distinctiveness can tell them apart. A term earns protection when this
+# article leans on it harder than ordinary prose does, measured against the
+# voice corpus the caller already has open: keep it when its paragraph share
+# here is at least MIN_OVERREP times its document share there. Terms absent
+# from the background are kept outright. Measured on that article, 142 -> 44,
+# every common-word false positive gone and no real term of art lost
+# (touchpoint 17.5x, constitution 13.1x, validator 13.1x, against find 0.1x,
+# look 0.1x, means 0.0x). Without a background the rule cannot run, and
+# derive() falls back to recurrence alone.
+MIN_OVERREP = 0.7
+
+# Spelled numbers are never terms of art, and verify.py already runs a
+# dedicated `numbers` check over them — protecting them too meant a rewrite
+# that rendered a count differently took a protected-term fatal on top of the
+# check that exists for it.
+NUMBER_WORDS = set("""
+one two three four five six seven eight nine ten eleven twelve thirteen
+fourteen fifteen sixteen seventeen eighteen nineteen twenty thirty forty
+fifty sixty seventy eighty ninety hundred thousand million billion trillion
+dozen half quarter third fourth fifth sixth seventh eighth ninth tenth
+first second once twice
+""".split())
+
 STOPWORDS = set("""
 a about above after again against all almost along already also although
 always among an and another any anyone anything are around as at away back
@@ -113,13 +140,47 @@ def _content(tok):
     return len(tok) >= MIN_TERM_LEN and tok not in STOPWORDS
 
 
-def derive(texts):
+def is_number_term(term):
+    """A term made only of spelled numbers ('five', 'twenty-five')."""
+    words = [w for chunk in term.lower().split() for w in chunk.split("-")]
+    return bool(words) and all(w in NUMBER_WORDS for w in words)
+
+
+def _document_share(term, background):
+    """Fraction of background documents the term appears in."""
+    if not background:
+        return None
+    pat = _pattern(term)
+    return sum(1 for d in background if pat.search(d)) / len(background)
+
+
+def _distinctive(term, paragraph_share, background, min_overrep):
+    """Does this article lean on the term harder than ordinary prose does?
+
+    A term the background never uses is distinctive by definition. Otherwise
+    compare shares: paragraph share here against document share there.
+    """
+    share = _document_share(term, background)
+    if share is None:          # no background: the test cannot run
+        return True
+    if share == 0.0:
+        return True
+    return paragraph_share / share >= min_overrep
+
+
+def derive(texts, background=None, min_overrep=MIN_OVERREP):
     """Protected terms for an article given its paragraph texts.
 
     Unigrams and bigrams of content words that occur in MIN_PARAGRAPHS or
     more distinct paragraphs, plus any sentence of REFRAIN_MIN_WORDS or more
     words repeated verbatim in REFRAIN_MIN_PARAGRAPHS or more paragraphs.
     Sorted, lowercase for terms, original casing for refrains.
+
+    Spelled numbers are dropped (verify.py checks numbers separately). Given
+    `background` — the voice corpus documents — a term also has to be
+    distinctive: its paragraph share here at least `min_overrep` times its
+    document share there. Refrains skip the test; a sentence repeated verbatim
+    is a chain whatever its words are.
     """
     uni, bi = defaultdict(set), defaultdict(set)
     refrains = defaultdict(set)
@@ -136,8 +197,12 @@ def derive(texts):
             if len(s.split()) >= REFRAIN_MIN_WORDS:
                 refrains[s].add(i)
     uni, bi = _merge_plurals(uni), _merge_plurals(bi)
-    terms = {t for t, ps in uni.items() if len(ps) >= MIN_PARAGRAPHS}
-    terms |= {t for t, ps in bi.items() if len(ps) >= MIN_PARAGRAPHS}
+    n = len(texts) or 1
+    candidates = {t: ps for t, ps in uni.items() if len(ps) >= MIN_PARAGRAPHS}
+    candidates.update({t: ps for t, ps in bi.items() if len(ps) >= MIN_PARAGRAPHS})
+    terms = {t for t, ps in candidates.items()
+             if not is_number_term(t)
+             and _distinctive(t, len(ps) / n, background, min_overrep)}
     terms |= {s for s, ps in refrains.items() if len(ps) >= REFRAIN_MIN_PARAGRAPHS}
     return sorted(terms, key=lambda s: (s.lower(), s))
 
@@ -160,20 +225,23 @@ def write_terms(path, terms, article=None):
     with open(path, "w", encoding="utf-8") as f:
         f.write("# Protected terms for " + (os.path.basename(article) if article else "this article") + "\n")
         f.write("# Derived by match-voice/scripts/protected_terms.py: words and phrases in "
-                f"{MIN_PARAGRAPHS}+ paragraphs, refrains in {REFRAIN_MIN_PARAGRAPHS}+.\n")
+                f"{MIN_PARAGRAPHS}+ paragraphs that this article leans on at least "
+                f"{MIN_OVERREP}x harder than the voice corpus does, refrains in "
+                f"{REFRAIN_MIN_PARAGRAPHS}+. Spelled numbers excluded (verify.py checks "
+                "numbers separately).\n")
         f.write("# Hand-editable: one term per line; this file is never overwritten once "
                 "it exists.\n")
         for t in terms:
             f.write(t + "\n")
 
 
-def load_or_derive(article, texts, path=None):
+def load_or_derive(article, texts, path=None, background=None):
     """(terms, path, derived). An existing file is read and never overwritten —
     it is the hand-edited list. Absent, derive from the texts and write it."""
     path = path or path_for(article)
     if os.path.exists(path):
         return read_terms(path), path, False
-    terms = derive(texts)
+    terms = derive(texts, background=background)
     write_terms(path, terms, article)
     return terms, path, True
 
