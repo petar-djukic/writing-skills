@@ -663,10 +663,13 @@ def background_corpus(a, article):
     with --no-anchors still wants the baseline, since it is statistics and not
     steering. Returns [] when no corpus is reachable, and the derivation says
     so rather than silently falling back."""
-    try:
-        d = a.voice_dir or va.discover(article)
-    except Exception:
-        return []
+    va = _voice_anchors_module()
+    d = a.voice_dir
+    if not d and va is not None:
+        try:
+            d = va.discover(article)
+        except Exception:
+            d = None
     if not d:
         return []
     docs = []

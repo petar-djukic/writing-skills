@@ -435,6 +435,33 @@ def test_original_emphasis_preserved():
     print("  original_emphasis_preserved: ok")
 
 
+def test_background_corpus_finds_the_voice_dir():
+    """GH-242. background_corpus() referenced `va` as if it were a module
+    global; it is loaded lazily by _voice_anchors_module(). The NameError was
+    swallowed by a bare except, so the first live run derived on recurrence
+    alone and said so — which is the only reason it was caught."""
+    import tempfile, os as _os
+    import drive
+    d = tempfile.mkdtemp()
+    voice = _os.path.join(d, "writing-voice")
+    _os.makedirs(voice)
+    with open(_os.path.join(voice, "one.md"), "w") as f:
+        f.write("an exemplar document")
+    art = _os.path.join(d, "draft.md")
+    open(art, "w").write("# draft\n")
+
+    class A:
+        voice_dir = voice
+    assert drive.background_corpus(A(), art) == ["an exemplar document"]
+
+    class B:
+        voice_dir = _os.path.join(d, "no-such-corpus")
+    # Nothing to read: an empty list, never an exception. (Discovery walks up
+    # from the article, so an absent voice_dir would find the one above.)
+    assert drive.background_corpus(B(), art) == []
+    print("  background_corpus_finds_the_voice_dir: ok")
+
+
 def main():
     test_returns_shape()
     test_first_person_introduced()
@@ -456,6 +483,7 @@ def main():
     test_no_background_falls_back_to_recurrence()
     test_added_emphasis_stripped()
     test_original_emphasis_preserved()
+    test_background_corpus_finds_the_voice_dir()
     print("test_match_voice: all assertions passed")
 
 
