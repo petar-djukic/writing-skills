@@ -128,9 +128,19 @@ class OllamaJudge:
                      "judge; there is no silent fallback.")
         data = _parse_model(raw)
         if data is None:
+            # snark() and unhedged() ask for a JSON list and legitimately
+            # get "[]" for a clean paragraph; the object extractor returns
+            # None for a bare array, so try the array shape before failing.
+            m = re.search(r"\[.*\]", raw, re.S)
+            if m:
+                try:
+                    data = json.loads(m.group(0))
+                except ValueError:
+                    data = None
+        if data is None:
             sys.exit("voice-critic: judge answered without a parseable JSON "
-                     f"object (model {self.model}); head: {raw[:120]!r}. "
-                     "There is no silent fallback.")
+                     f"object or array (model {self.model}); head: "
+                     f"{raw[:120]!r}. There is no silent fallback.")
         return data
 
     def stance(self, text):
@@ -157,27 +167,38 @@ class OllamaJudge:
             "quotes (the model statement, a prediction, a test) or the "
             "missing parts named in the note}.\n\nTEXT:\n" + text)
 
+    @staticmethod
+    def _as_list(data):
+        """List-shaped judge answers: the object extractor can return the
+        first dict out of a fenced JSON list (measured: gemma4's ```json
+        list parsed to one instance dict, and iterating the dict yielded
+        its keys as 'malformed instances'). A dict here means one
+        instance, not a shape error."""
+        if isinstance(data, dict):
+            return [data]
+        return data if isinstance(data, list) else []
+
     def snark(self, paragraph):
         """-> [{"quote": str, "level": 0-5, "target": category}]"""
-        return self._ask(
+        return self._as_list(self._ask(
             "Identify every instance of snark, irony, mockery, or contempt "
             "in this paragraph. Level scale: 1 dry aside, 2 pointed irony "
             "with receipt, 3 open mockery of an artifact, 4 contempt for a "
             "class, 5 ridicule of a person. Target categories: artifact, "
             "institution, category, dead, past-self, person. Return a JSON "
             "list [{\"quote\": exact text, \"level\": int, \"target\": "
-            "category}]; [] if none.\n\nPARAGRAPH:\n" + paragraph)
+            "category}]; [] if none.\n\nPARAGRAPH:\n" + paragraph))
 
     def unhedged(self, paragraph):
         """-> [{"quote": str}] — unhedged predictions for the i-think
         RESTORE operator (GH-64)."""
-        return self._ask(
+        return self._as_list(self._ask(
             "Identify sentences in this paragraph that state a prediction "
             "or claim about a mind — a person's or an agent's beliefs, "
             "motives, or future behaviour — with no hedge (no 'I think', "
             "'maybe', 'probably') and no evidence in the sentence. Return "
             "a JSON list [{\"quote\": the exact sentence}]; [] if none."
-            "\n\nPARAGRAPH:\n" + paragraph)
+            "\n\nPARAGRAPH:\n" + paragraph))
 
 
 # --- the critic --------------------------------------------------------------
@@ -309,9 +330,20 @@ class Critic:
                     "note": "instance identification needs a judge; hard "
                             "rules run over judge-identified instances"}
         instances, violations = [], []
+        malformed = 0
         for i, p in enumerate(self.paras):
             for inst in self.judge.snark(p.text):
-                level = int(inst.get("level", 0))
+                # A judge sometimes returns bare strings or scalars instead
+                # of instance dicts; one bad paragraph must not abandon the
+                # audit. Count and skip, and disclose in the note.
+                if not isinstance(inst, dict):
+                    malformed += 1
+                    continue
+                try:
+                    level = int(inst.get("level", 0))
+                except (TypeError, ValueError):
+                    malformed += 1
+                    continue
                 quote = inst.get("quote", "")
                 target = inst.get("target", "")
                 entry = {"paragraph": i, "start_line": p.start_line,
@@ -335,11 +367,14 @@ class Critic:
             violations.append(
                 f"density {dens:.2f}/1000 exceeds the {self.form} cap {cap}")
         verdict = "FAIL" if violations else "PASS"
+        note = ("; ".join(violations) or
+                f"{len(instances)} instance(s), all within rules")
+        if malformed:
+            note += f"; {malformed} malformed judge instance(s) skipped"
         return {"verdict": verdict, "instances": instances,
                 "density_per_1000": round(dens, 2), "cap": cap,
                 "spans": [x for x in instances if x["violations"]],
-                "note": "; ".join(violations) or
-                        f"{len(instances)} instance(s), all within rules"}
+                "note": note}
 
     def _receipt_before(self, para_idx, quote):
         """Evidence before the joke: a receipt earlier in the same
@@ -398,6 +433,13 @@ class Critic:
         out = []
         for i, p in enumerate(self.paras):
             for inst in judge_fn(p.text):
+                # Same tolerance as dim_snark: a judge may return bare
+                # strings; treat a string as the quote itself, skip other
+                # non-dict shapes rather than crashing the report.
+                if isinstance(inst, str):
+                    inst = {"quote": inst}
+                elif not isinstance(inst, dict):
+                    continue
                 quote = inst.get("quote", "")
                 if not quote or quote not in p.text:
                     continue

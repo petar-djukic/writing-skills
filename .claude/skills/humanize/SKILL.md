@@ -151,6 +151,9 @@ default. Whether Cohere arms beat the pins was GH-194 (2026-08-31, two
 published payloads, seed+iterator isolated on raw articles, prose-only
 Pangram):
 
+(Dated 2026-08-31; superseded by the 2026-09-02 drift event — see the
+Calibration data note. The authorship findings stand; the numbers do not.)
+
 | arm (seed -> iterator) | loop (base 1.000) | prompts (base 0.913) | mean |
 |---|--:|--:|--:|
 | pinned: gemma-anchored -> gpt-oss | 1.000 (never moved) | 0.734 (3 passes) | 0.867 |
@@ -666,6 +669,17 @@ skipped (short), mean distance, **seed reach**.
   Check the stylometrics section of the report.
 
 ## Calibration data
+
+**Drift event, 2026-09-02.** Pangram retrained and the July/August
+floors below are no longer current: a published-pipeline article that
+passed at 0.2061 mean window on 2026-08-23 scanned 0.9955 UNTOUCHED on
+2026-09-02 (same prose-only framing, payload verified — substack#323).
+The decay this section always warned about arrived at detector scale;
+the laundering fingerprints of the July/August model families appear to
+have entered the mirror set. Every score below is a dated record of a
+dead detector version. Reuse of any recipe re-measures first, and the
+newsletter venue retired its pangram gate in response (paper-stash#85)
+— its posture is the process disclosure, not the race.
 
 The historical runs below were measured under the pre-GH-208 layout, with
 match-outline as the chain's own first phase; its role is unchanged — it
