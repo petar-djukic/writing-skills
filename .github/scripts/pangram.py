@@ -50,6 +50,14 @@ import urllib.error
 import urllib.request
 
 BASE = os.environ.get("PANGRAM_ENDPOINT", "https://text.external-api.pangram.com")
+# Which classifier scores the text. An omitted model resolves server-side to
+# "default", which is NOT the most capable detector: measured 2026-09-01 on
+# one published article, default read 15.7% AI where pangram-4 read 64.1% on
+# identical text (pangram-4 matches Substack's built-in detector). Every
+# score this pipeline recorded before 2026-09-01 was measured on "default";
+# numbers across the two models are not comparable. GET /models lists what a
+# key can use.
+MODEL = os.environ.get("PANGRAM_MODEL", "pangram-4")
 DEFAULT_TIMEOUT = 300
 POLL_START = 0.5
 POLL_MAX = 5.0
@@ -205,7 +213,8 @@ def submit(text, key, timeout=30):
     """
     if not text.strip():
         raise PangramError("refusing to submit empty text")
-    body = _request("/task", key, {"text": text, "public_dashboard_link": False},
+    body = _request("/task", key, {"text": text, "model": MODEL,
+                                   "public_dashboard_link": False},
                     timeout=timeout)
     task_id = body.get("task_id")
     if not task_id:
@@ -328,7 +337,8 @@ class WordBudgetBatcher:
         for batch in batcher.batches():
             # batch is {"id": "bag-0", "text": "...", "sources": [...],
             #           "offsets": [...]}
-            submit_bulk([{"id": batch["id"], "text": batch["text"]}], key)
+            submit_bulk([{"id": batch["id"], "text": batch["text"],
+                          "model": MODEL}], key)
     """
 
     def __init__(self, word_limit=1000, sep="\n\n"):
@@ -388,6 +398,7 @@ def summarize(body):
         f"human:        {pct(body.get('fraction_human'))}"
         f"   ({body.get('num_human_segments', 0)} segments)",
         f"windows:      {len(body.get('windows') or [])}",
+        f"model:        {MODEL} (v{body.get('version', '?')})",
     ]
     if body.get("dashboard_link"):
         lines.append(f"stored at:    {body['dashboard_link']}")

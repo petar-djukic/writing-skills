@@ -287,6 +287,11 @@ def check(outline):
             continue
         nuclei = [u for u in paras if u.relation == "nucleus"]
         where = paras[0].line
+        # A section whose every paragraph is `joint` (subscribe lines, the
+        # AI-disclosure block, reference boilerplate) carries no argument
+        # and has no nucleus by design; demanding one forces a lie.
+        if all(u.relation == "joint" for u in paras):
+            continue
         if not nuclei:
             problems.append(Problem(
                 "no-nucleus", where,
