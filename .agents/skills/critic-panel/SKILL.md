@@ -93,6 +93,7 @@ them.
 |---|---|---|
 | `article` (default) | Levine, Didion, Hemingway | `suggest` |
 | `book` | Fowler, Yegge, Deitel, Miller, Cook, Kreischer | `verdict` |
+| `line` | Ross | `verdict` |
 | ad-hoc | any mix by name, e.g. `--roster levine,yegge,cook` | per persona |
 
 Roster order is sheet order, never execution order. A chapter with a fuzzy
