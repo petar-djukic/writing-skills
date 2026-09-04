@@ -313,7 +313,7 @@ python3 <skill>/scripts/verify.py --original <paragraph-file> --rewrite <candida
 |---|---|---|
 | Citations, numbers, terms | `verify.py` | a key or figure lost, altered, or invented |
 | Citation syntax family | `verify.py` | `[@key]` silently rewritten as `\citep{key}` — the key survives but the build breaks |
-| Inline markup | `verify.py` | a `**bold**`, `*italic*`, `` `code` ``, or `[link](url)` span count that moves in either direction, or a bold lead-in returned as plain prose — same class as citation syntax. Dropped spans cost a section of lead-ins three of six; added spans were the largest single class of harness reverts (7 of 34), and a link flattened to a bare parenthetical URL was another |
+| Inline markup | `verify.py` | a `**bold**`, `*italic*`, `` `code` ``, or `[link](url)` span count that moves in either direction, or a bold lead-in returned as plain prose — same class as citation syntax. Dropped spans cost a section of lead-ins three of six; added spans were the largest single class of harness reverts (7 of 34), and a link flattened to a bare parenthetical URL was another. Added emphasis is now unwrapped before the gate sees it (GH-240), so this row fires on markup the strip cannot undo |
 | Em-dashes | `verify.py` | a dash the original did not have — manufactured punch, measured at 7 → 10 and 7 → 15 across two articles against a house limit of 2.0 per 500 words |
 | Anchor similarity | `verify.py` (match-structure shingles) | a long verbatim run copied from an exemplar |
 | Meaning entailment | **Claude**, per references/prompts.md | any claim weakened, added, or re-scoped |
@@ -346,8 +346,9 @@ Two guards the per-paragraph gate cannot express on its own, because both
 are properties of the article (GH-77).
 
 **Protected terms** are the article's referent chain: words and phrases that
-recur in three or more paragraphs, plus any sentence repeated verbatim across
-paragraphs (a refrain). The largest failure class in the GH-189 measured run
+recur in three or more paragraphs **and that this article leans on harder than
+ordinary prose does**, plus any sentence repeated verbatim across paragraphs
+(a refrain). The largest failure class in the GH-189 measured run
 was a term-of-art swap — exposure → justification, decision plane →
 decision, detector → tool — that passed every per-paragraph check because
 the chain it broke ran across paragraphs. On the first run the driver derives
@@ -364,6 +365,59 @@ the count, and whether this run derived it.
 python3 <skill>/scripts/protected_terms.py draft.md          # show what would be derived
 python3 <skill>/scripts/protected_terms.py draft.md --write  # write it if absent
 ```
+
+### Added emphasis is unwrapped, not rejected (GH-240)
+
+Rule 3 of the rewrite prompt used to state the markup contract in the preserve
+direction only — keep every bold span, and if the paragraph opens on a bold
+lead-in your rewrite does too — without ever forbidding the model from adding
+one. It described the pattern and omitted the prohibition. Over 16 measured
+candidates on paragraphs carrying no bold at all, **9 came back with exactly
+one bold span wrapping the opening sentence**, and `verify.py` killed every one
+as fatal. The same defect is on record for a different model family (GH-156,
+gemma), which puts it in the prompt rather than any one model.
+
+Two halves to the fix. Rule 3 now states the negative, in the shape rule 7
+already used for em-dashes. And `rewrite.strip_added_emphasis(original,
+candidate)` unwraps emphasis the original did not have, before the gate runs:
+a candidate whose only defect is a wrapper around its first sentence is
+otherwise shippable. The strip runs one way only — a paragraph that already
+carries bold or italic keeps it, nothing removes a span the original had, and
+code spans are never touched.
+
+### Distinctiveness, and why recurrence alone was not enough (GH-239)
+
+Recurrence cannot tell a term of art from a common verb. On a 48-paragraph
+article the recurrence rule derived 142 terms, **128 of them ordinary words**
+— `means`, `read`, `record`, `name`, `leave`, `look`, `wrong` — and since a
+lost protected term is fatal, no paraphrase could pass the gate at all. Two
+passes over eleven paragraphs accepted three candidates between them; the
+gate was defending the word "means" while the backticked identifiers it was
+supposed to be guarding came back untouched every time.
+
+So a candidate term now also has to be *distinctive*: its paragraph share in
+this article at least `MIN_OVERREP` (0.7) times its document share across the
+voice corpus, which the driver already has open. A term the corpus has never
+seen is kept outright. Spelled numbers are dropped, since `verify.py` runs a
+`numbers` check over them and protecting them too meant a rewrite that
+rendered a count differently took two fatals for one thing. Refrains skip the
+test — a sentence repeated verbatim is a chain whatever its words are.
+
+Measured on that article: 142 terms → 44, every common-word false positive
+gone and no real term of art lost (`touchpoint` 17.5x, `constitution` 13.1x,
+`validator` 13.1x, against `find` 0.1x, `look` 0.1x, `means` 0.0x). Over the
+16 saved candidates from those two passes, this fix plus GH-240 took the gate
+from 4 candidates passing to 10, and every remaining rejection is a real
+defect — a manufactured em-dash, an invented quoted span, six lost citation
+numbers.
+
+Residue worth knowing: rare inflected verbs (`lacking`, `enumerates`,
+`validates`) still clear the test, because the corpus happens not to use them
+much. Three of 44 is a list a person can read, which is the point — the file
+stays hand-editable.
+
+Without a corpus the test cannot run and derivation falls back to recurrence
+alone. The run says which happened.
 
 **Canonical blocks** are pasted, not written — an AI-disclosure line, a
 subscribe line, a "Start Here" pointer — and are never sent to the model.

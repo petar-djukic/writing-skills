@@ -353,6 +353,115 @@ def test_quoted_span_gate():
     print("  quoted_span_gate: ok")
 
 
+def test_number_terms_never_protected():
+    """GH-239. Spelled numbers are not terms of art, and verify.py already
+    runs a numbers check over them."""
+    import protected_terms as pt
+    for term in ("five", "twenty-five", "hundred", "eleven", "first"):
+        assert pt.is_number_term(term), term
+    for term in ("five paths", "touchpoint", "loader", "requirements document"):
+        assert not pt.is_number_term(term), term
+    texts = ["The five paths were enough, five of them.",
+             "Five paths again, and five more.",
+             "Five paths a third time, five once more."]
+    assert "five" not in pt.derive(texts)
+    print("  number_terms_never_protected: ok")
+
+
+def test_distinctiveness_drops_common_words():
+    """GH-239. The article's own recurrence cannot tell a term of art from a
+    common verb; over-representation against the corpus can."""
+    import protected_terms as pt
+    # Both words recur in the same three paragraphs out of twelve, so
+    # recurrence alone cannot separate them. The corpus can: ordinary prose
+    # uses 'means' constantly and has never heard of a 'loader'.
+    carrier = ["The loader means the record is read."] * 3
+    filler = ["An unrelated sentence about something else entirely."] * 9
+    texts = carrier + filler
+    background = ["what that means for the record we read"] * 10
+    plain = pt.derive(texts)
+    assert "loader" in plain and "means" in plain, plain
+    filtered = pt.derive(texts, background=background)
+    assert "loader" in filtered, filtered
+    for common in ("means", "read", "record"):
+        assert common not in filtered, (common, filtered)
+    print("  distinctiveness_drops_common_words: ok")
+
+
+def test_refrains_skip_the_distinctiveness_test():
+    """A sentence repeated verbatim is a chain whatever its words are."""
+    import protected_terms as pt
+    line = "We read the record and it means what it means."
+    texts = [line, line, "Something else entirely here."]
+    terms = pt.derive(texts, background=[line] * 10)
+    assert any(t.startswith("We read the record") for t in terms), terms
+    print("  refrains_skip_the_distinctiveness_test: ok")
+
+
+def test_no_background_falls_back_to_recurrence():
+    """Without a corpus the distinctiveness test cannot run, and derive()
+    must not silently drop everything."""
+    import protected_terms as pt
+    texts = ["The loader reads the record.",
+             "A loader and a record again.",
+             "Loader, record, once more."]
+    assert "loader" in pt.derive(texts, background=None)
+    assert "loader" in pt.derive(texts, background=[])
+    print("  no_background_falls_back_to_recurrence: ok")
+
+
+def test_added_emphasis_stripped():
+    """GH-240. 9 of 16 measured candidates came back with a bold lead-in on a
+    paragraph whose original had none; verify.py killed every one as fatal."""
+    import rewrite as rw
+    orig = "The tree is a directory in the repository."
+    cand = "**The tree sits in the repository.** It holds one kind per decision."
+    out = rw.strip_added_emphasis(orig, cand)
+    assert "**" not in out, out
+    assert out.startswith("The tree sits"), out
+    print("  added_emphasis_stripped: ok")
+
+
+def test_original_emphasis_preserved():
+    """The strip runs one way only: a paragraph that already carries emphasis
+    keeps it, and nothing here ever removes a span the original had."""
+    import rewrite as rw
+    orig = "**A real lead-in.** Then the body, with *stress* on one word."
+    cand = "**A rewritten lead-in.** Then other body, with *weight* on one word."
+    assert rw.strip_added_emphasis(orig, cand) == cand
+    # Code spans are never touched, in either direction.
+    assert rw.strip_added_emphasis("Plain `code` here.",
+                                   "Plain `code` there.") == "Plain `code` there."
+    print("  original_emphasis_preserved: ok")
+
+
+def test_background_corpus_finds_the_voice_dir():
+    """GH-242. background_corpus() referenced `va` as if it were a module
+    global; it is loaded lazily by _voice_anchors_module(). The NameError was
+    swallowed by a bare except, so the first live run derived on recurrence
+    alone and said so — which is the only reason it was caught."""
+    import tempfile, os as _os
+    import drive
+    d = tempfile.mkdtemp()
+    voice = _os.path.join(d, "writing-voice")
+    _os.makedirs(voice)
+    with open(_os.path.join(voice, "one.md"), "w") as f:
+        f.write("an exemplar document")
+    art = _os.path.join(d, "draft.md")
+    open(art, "w").write("# draft\n")
+
+    class A:
+        voice_dir = voice
+    assert drive.background_corpus(A(), art) == ["an exemplar document"]
+
+    class B:
+        voice_dir = _os.path.join(d, "no-such-corpus")
+    # Nothing to read: an empty list, never an exception. (Discovery walks up
+    # from the article, so an absent voice_dir would find the one above.)
+    assert drive.background_corpus(B(), art) == []
+    print("  background_corpus_finds_the_voice_dir: ok")
+
+
 def main():
     test_returns_shape()
     test_first_person_introduced()
@@ -368,6 +477,13 @@ def main():
     test_parse_paragraph_selection()
     test_compress_ranges()
     test_readability_guard()
+    test_number_terms_never_protected()
+    test_distinctiveness_drops_common_words()
+    test_refrains_skip_the_distinctiveness_test()
+    test_no_background_falls_back_to_recurrence()
+    test_added_emphasis_stripped()
+    test_original_emphasis_preserved()
+    test_background_corpus_finds_the_voice_dir()
     print("test_match_voice: all assertions passed")
 
 
