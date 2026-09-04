@@ -741,6 +741,69 @@ def _content_terms(text: str) -> set:
     return out
 
 
+# --------------------------------------------------------------------------- #
+# Consequence-echo: subordinate clause restating its main clause (GH-244)
+# --------------------------------------------------------------------------- #
+# "so/which/turning/making" clause whose content words overlap with the
+# preceding main clause — the model narrating its own chain of thought.
+# Advisory (like tail-echo): noise audit needed before graduating.
+#
+# GH-244 specified Jaccard with threshold 0.4, but calibration against its
+# own evidence showed Jaccard never reaches 0.4 on real echoes (max 0.22).
+# The overlap coefficient (|shared| / min(|A|, |B|)) separates the classes:
+# evidence echo 0.25, clear echo 0.40, genuine consequences 0.0.
+
+_CONSEQUENCE_SPLIT = re.compile(
+    r",\s+(?:so\b|which\b|turning\b|making\b)", re.IGNORECASE)
+
+# Minimum content words on each side to bother scoring.  Clauses shorter than
+# this have too few terms for the overlap coefficient to be meaningful.
+_CONSEQUENCE_MIN_TERMS = 2
+
+
+def detect_consequence_echo(sentences: list,
+                            threshold: float = 0.25) -> list:
+    """Flag sentences whose subordinate clause echoes the main clause (GH-244).
+
+    Splits at ", so/which/turning/making" and computes the overlap coefficient
+    (|shared| / min(|main|, |sub|)) on content words.  Fires when the
+    coefficient >= threshold.
+
+    Advisory: candidates go to the semantic pass, not the hard-issue list.
+    Purely conceptual echoes (no lexical overlap) need the critic, not this
+    detector — see the Ross recap-ballast question (GH-244 sub-issue 3).
+    """
+    issues = []
+    for i, sent in enumerate(sentences):
+        flat = " ".join(sent.split())
+        m = _CONSEQUENCE_SPLIT.search(flat)
+        if not m:
+            continue
+        main_clause = flat[:m.start()]
+        sub_clause = flat[m.end():]
+        main_terms = _content_terms(main_clause)
+        sub_terms = _content_terms(sub_clause)
+        if (len(main_terms) < _CONSEQUENCE_MIN_TERMS
+                or len(sub_terms) < _CONSEQUENCE_MIN_TERMS):
+            continue
+        shared = main_terms & sub_terms
+        if not shared:
+            continue
+        smaller = min(len(main_terms), len(sub_terms))
+        overlap = len(shared) / smaller
+        if overlap >= threshold:
+            snippet = flat[:110] + ("..." if len(flat) > 110 else "")
+            issues.append({
+                "type": "consequence-echo",
+                "detail": (f'Subordinate clause echoes its main clause '
+                           f'(overlap {overlap:.2f}, shared: {sorted(shared)}): '
+                           f'"{snippet}"'),
+                "severity": "medium",
+                "position": f"sentence {i + 1}",
+            })
+    return issues
+
+
 _LINK_PRONOUNS = {"it", "this", "that", "these", "those", "they", "such",
                   "he", "she", "its", "their", "both", "each", "here"}
 
@@ -1321,6 +1384,12 @@ def filter_tells_paragraph(para_text: str, threshold_name: str = "medium",
             m["paragraph"] = para_index + 1
         issues.extend(meta_issues)
 
+    # --- Consequence-echo (GH-244, advisory) ---
+    conseq_issues = detect_consequence_echo(sentences_all)
+    metrics["consequence_echo_count"] = len(conseq_issues)
+    # Advisory: candidates go to the semantic pass, not the hard-issue list.
+    # Recorded in metrics either way for visibility.
+
     # --- Tricolon density ---
     tricolon_count = len(re.findall(
         r"[^,.;:\n]{3,60},\s+[^,.;:\n]{3,60},\s+and\s+[^,.;:\n]{3,60}", prose_no_lists))
@@ -1614,6 +1683,14 @@ def analyze(text: str, threshold_name: str = "medium",
     # Zero tolerance: these are never legitimate body prose. No density gate.
     if meta_narration_issues:
         issues.extend(meta_narration_issues)
+
+    # --- Consequence-echo (subordinate clause restating its main; GH-244) ---
+    consequence_echo_candidates = detect_consequence_echo(sentences_all)
+    metrics["consequence_echo_count"] = len(consequence_echo_candidates)
+    # Advisory: noise audit needed before graduating to a hard issue. Same
+    # treatment as tail-echo — candidates go to the semantic pass.
+    if consequence_echo_candidates:
+        advisory.extend(consequence_echo_candidates)
 
     # --- Opening diversity ---
     if len(openings) >= 5:

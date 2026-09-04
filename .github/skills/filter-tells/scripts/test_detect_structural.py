@@ -336,6 +336,115 @@ def test_meta_narration_wired_into_analyze():
     print("  meta_narration_wired_into_analyze: ok")
 
 
+# --- detect_consequence_echo (GH-244) -------------------------------------- #
+
+def test_consequence_echo_positive_so_judges():
+    """Evidence from GH-244: 'so a criterion can explicitly name what it judges'.
+
+    Overlap coefficient = 1/4 = 0.25 (shared: {judge}). Right at threshold —
+    the calibration target for the weakest case that should still fire.
+    """
+    sents = ds.split_sentences_all(
+        "The SRS enumerates numbered items and the acceptance criteria that "
+        "judge them, so a criterion can explicitly name what it judges.")
+    issues = ds.detect_consequence_echo(sents)
+    assert len(issues) == 1, f"expected 1, got {issues}"
+    assert issues[0]["type"] == "consequence-echo"
+    assert "judge" in str(issues[0]["detail"]).lower()
+    print("  consequence_echo_positive_so_judges: ok")
+
+
+def test_consequence_echo_positive_clear_echo():
+    """Clear echo: the consequence restates the premise with heavy overlap."""
+    sents = ds.split_sentences_all(
+        "The validator checks the schema and rejects invalid constraints, "
+        "so the schema constraints are checked and validated before deployment.")
+    issues = ds.detect_consequence_echo(sents)
+    assert len(issues) == 1, f"expected 1, got {issues}"
+    assert issues[0]["type"] == "consequence-echo"
+    print("  consequence_echo_positive_clear_echo: ok")
+
+
+def test_consequence_echo_conceptual_only():
+    """Evidence #2 from GH-244: purely conceptual overlap, no shared words.
+
+    'coupling' and 'component' are related concepts but different stems.
+    This class needs the Ross critic, not the lexical detector.
+    """
+    sents = ds.split_sentences_all(
+        "The imports field lists symbols from another component, turning "
+        "hidden coupling into a searchable line in the dependency graph.")
+    issues = ds.detect_consequence_echo(sents)
+    assert issues == [], (
+        f"conceptual-only echo should not fire on lexical overlap: {issues}")
+    print("  consequence_echo_conceptual_only: ok")
+
+
+def test_consequence_echo_negative_genuine_consequence():
+    """Genuine consequence with distinct vocabulary should not fire."""
+    sents = ds.split_sentences_all(
+        "The scheduler assigns each job to the least-loaded worker, so "
+        "latency stays below the SLA threshold during peak hours.")
+    issues = ds.detect_consequence_echo(sents)
+    assert issues == [], f"false positive: {issues}"
+    print("  consequence_echo_negative_genuine_consequence: ok")
+
+
+def test_consequence_echo_negative_short_clause():
+    """Clauses too short for meaningful overlap should not fire."""
+    sents = ds.split_sentences_all(
+        "The test passed, so we shipped it.")
+    issues = ds.detect_consequence_echo(sents)
+    assert issues == [], f"false positive on short clause: {issues}"
+    print("  consequence_echo_negative_short_clause: ok")
+
+
+def test_consequence_echo_negative_low_overlap():
+    """Low overlap from shared domain noun should not fire."""
+    sents = ds.split_sentences_all(
+        "The orchestrator batches incoming requests by region and priority, "
+        "which lets the downstream handler apply rate limiting per tenant.")
+    issues = ds.detect_consequence_echo(sents)
+    assert issues == [], f"false positive below threshold: {issues}"
+    print("  consequence_echo_negative_low_overlap: ok")
+
+
+def test_consequence_echo_wired_into_paragraph():
+    """Consequence-echo should appear in paragraph metrics."""
+    text = (
+        "The SRS enumerates numbered items and the acceptance criteria that "
+        "judge them, so a criterion can explicitly name what it judges. "
+        "Each criterion traces back to a requirement through its identifier. "
+        "The traceability matrix is the artifact that captures the mapping. "
+        "Validators check the matrix for completeness on every build.")
+    result = ds.filter_tells_paragraph(text)
+    assert result["metrics"].get("consequence_echo_count", 0) >= 1
+    print("  consequence_echo_wired_into_paragraph: ok")
+
+
+def test_consequence_echo_advisory_in_analyze():
+    """Consequence-echo should be advisory, not a hard issue, in analyze."""
+    text = (
+        "The validator checks the schema and rejects invalid constraints, "
+        "so the schema constraints are checked and validated before deployment. "
+        "Each criterion traces back to a requirement through its identifier. "
+        "The traceability matrix is the artifact that captures the mapping. "
+        "Validators check the matrix for completeness on every build. "
+        "The build fails if any requirement lacks a corresponding criterion. "
+        "Teams that skip this step discover gaps in acceptance testing. "
+        "The cost of late discovery exceeds the cost of early validation.")
+    result = ds.analyze(text)
+    assert result["metrics"].get("consequence_echo_count", 0) >= 1
+    # Should be advisory, not in the hard issues list
+    hard_types = [i["type"] for i in result["issues"]]
+    advisory_types = [a["type"] for a in result.get("advisory", [])]
+    assert "consequence-echo" not in hard_types, (
+        f"consequence-echo should be advisory, not hard issue: {hard_types}")
+    assert "consequence-echo" in advisory_types, (
+        f"expected consequence-echo in advisory, got {advisory_types}")
+    print("  consequence_echo_advisory_in_analyze: ok")
+
+
 def main():
     test_filter_tells_paragraph_returns_shape()
     test_detect_paragraph_alias()
@@ -359,6 +468,14 @@ def main():
     test_meta_narration_negative_physical_section()
     test_meta_narration_wired_into_paragraph()
     test_meta_narration_wired_into_analyze()
+    test_consequence_echo_positive_so_judges()
+    test_consequence_echo_positive_clear_echo()
+    test_consequence_echo_conceptual_only()
+    test_consequence_echo_negative_genuine_consequence()
+    test_consequence_echo_negative_short_clause()
+    test_consequence_echo_negative_low_overlap()
+    test_consequence_echo_wired_into_paragraph()
+    test_consequence_echo_advisory_in_analyze()
     print("test_detect_structural: all assertions passed")
 
 
