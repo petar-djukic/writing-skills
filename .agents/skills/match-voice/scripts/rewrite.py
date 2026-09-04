@@ -421,7 +421,7 @@ VOICE ANCHORS (match this register — sentence rhythm, vocabulary, directness):
 RULES:
 1. Preserve every fact, number, unit, and citation key EXACTLY as written. Citation markers are the bracketed @-keys and \\citep/\\citet commands already in the paragraph — copy each one verbatim, never reword or drop one, and never write a key that is not already there. (A rewrite once replaced a real key with the example key from this very rule, which is why this rule no longer shows one — GH-159.)
 2. Preserve the meaning completely. Do not add claims, do not remove claims.
-3. Preserve the markdown formatting: every **bold** span, *italic* span, and `code` span stays, in the same place. If the paragraph opens with a bold sentence, your rewrite opens with a bold sentence — it is a lead-in, not ordinary prose.
+3. Preserve the markdown formatting: every bold span, italic span, and `code` span stays, in the same place. If the paragraph opens with a bold sentence, your rewrite opens with a bold sentence — it is a lead-in, not ordinary prose. If the paragraph has no bold or italic span, your rewrite has none. Do NOT add emphasis the original did not have, and never open an ordinary paragraph with a bolded first sentence.
 4. Rewrite only this one paragraph. Do not merge it with others, do not split the topic, do not add a heading.
 5. Match the anchors' voice, but do NOT copy phrases from them — write the same content in that register.
 6. Do NOT manufacture antithesis. Never turn a plain statement into "X is not Y, it is Z" or "not X, but Y" unless the original already contrasts them. Stating the thing is stronger than staging a contrast.
@@ -605,15 +605,44 @@ def generate(prompt, endpoint=DEFAULT_ENDPOINT, model=DEFAULT_MODEL,
     return out
 
 
+_BOLD = re.compile(r"\*\*(.+?)\*\*", re.S)
+_ITALIC = re.compile(r"(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)", re.S)
+
+
+def strip_added_emphasis(original, candidate):
+    """Unwrap emphasis the model added to a paragraph that had none (GH-240).
+
+    Measured over 16 candidates from two passes: 9 came back with exactly one
+    bold span, always wrapping the opening sentence, on paragraphs whose
+    originals had none. The same defect is on record for a different model
+    family (GH-156, gemma), which puts it in the prompt rather than the model.
+    Rule 3 now forbids it; this is the mechanical half, because a candidate
+    whose only defect is a wrapper around its first sentence is otherwise
+    shippable and verify.py would kill it as fatal markup.
+
+    Emphasis is only unwrapped in the direction the original allows: a
+    paragraph that already carries bold keeps its bold untouched, and nothing
+    here ever removes a span the original had. Code spans are never touched.
+    """
+    if "**" in original:
+        pass
+    else:
+        candidate = _BOLD.sub(r"\1", candidate)
+    if not _ITALIC.search(original):
+        candidate = _ITALIC.sub(r"\1", candidate)
+    return candidate
+
+
 def rewrite(paragraph, anchors, endpoint=DEFAULT_ENDPOINT, model=DEFAULT_MODEL,
             temperature=0.7, retry_note="", timeout=DEFAULT_TIMEOUT,
             protected_terms=None):
     prompt = build_prompt(paragraph, anchors, retry_note, protected_terms)
     try:
-        return generate(prompt, endpoint=endpoint, model=model,
-                        temperature=temperature, timeout=timeout)
+        out = generate(prompt, endpoint=endpoint, model=model,
+                       temperature=temperature, timeout=timeout)
     except RuntimeError as e:
         sys.exit(str(e))
+    return strip_added_emphasis(paragraph, out)
 
 
 

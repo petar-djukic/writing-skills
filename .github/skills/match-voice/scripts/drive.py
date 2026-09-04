@@ -43,7 +43,7 @@ Usage:
                    [--canonical-blocks <file>]
                    [--critic-model MODEL | --no-critique]
 """
-import argparse, json, os, re, subprocess, sys, tempfile
+import argparse, glob, json, os, re, subprocess, sys, tempfile
 from collections import Counter
 
 SK = os.path.dirname(os.path.realpath(__file__))
@@ -657,6 +657,31 @@ def _pangram_summary(response_path):
     }
 
 
+def background_corpus(a, article):
+    """Voice-corpus documents, the baseline the protected-terms derivation
+    measures distinctiveness against (GH-239). Independent of anchors: a run
+    with --no-anchors still wants the baseline, since it is statistics and not
+    steering. Returns [] when no corpus is reachable, and the derivation says
+    so rather than silently falling back."""
+    va = _voice_anchors_module()
+    d = a.voice_dir
+    if not d and va is not None:
+        try:
+            d = va.discover(article)
+        except Exception:
+            d = None
+    if not d:
+        return []
+    docs = []
+    for path in sorted(glob.glob(os.path.join(d, "*.md"))):
+        try:
+            with open(path, encoding="utf-8", errors="ignore") as f:
+                docs.append(f.read())
+        except OSError:
+            continue
+    return docs
+
+
 def write_manifest(path, a, voice_dir, results, pangram=None, guard=None):
     """Run provenance beside the draft, in the shape a front-matter block wants.
 
@@ -965,10 +990,17 @@ def main():
     protected_path = None
     a._protected = None
     if not a.no_protected_terms:
-        terms, protected_path, derived = pt.load_or_derive(art, texts, a.protected_terms)
+        background = background_corpus(a, art)
+        terms, protected_path, derived = pt.load_or_derive(
+            art, texts, a.protected_terms, background=background)
         a._protected = {"path": protected_path, "count": len(terms), "derived": derived}
+        note = ""
+        if derived:
+            note = (f", distinctiveness against {len(background)} corpus documents"
+                    if background else
+                    ", recurrence only — no corpus found for the distinctiveness test")
         print(f"protected terms: {len(terms)} "
-              f"({'derived, written to' if derived else 'loaded from'} {protected_path})")
+              f"({'derived, written to' if derived else 'loaded from'} {protected_path}{note})")
 
     # Validated before any scan or model call: an invalid selection must cost
     # nothing.
