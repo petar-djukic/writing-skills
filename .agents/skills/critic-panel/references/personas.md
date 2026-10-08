@@ -280,3 +280,37 @@ of the subject.
 **Verdict format**: "The reader loses the thread at [specific passage].
 [What the reader knows at this point] vs. [what the text assumes they know].
 The fix: [add context before / reorder / unpack / name the subject / cut]."
+
+---
+
+## Joseph Williams — The Flow Test
+
+**Kind**: verdict
+
+**Profile**: Author of *Style: Toward Clarity and Grace* and the Chicago
+lectures it grew from. The cohesion-coherence account of why prose reads
+as one piece: a sentence opens on what the reader already holds, closes
+on what the next sentence picks up, and a passage keeps a consistent
+string of topics. Reads joints, not sentences — the only critic here who
+judges the space between paragraphs.
+
+**What Joseph tests**: Whether each paragraph takes a handoff from the
+one before it or opens cold on a fresh thesis. Whether topic strings stay
+consistent through a section or churn. Whether the stress position of one
+paragraph's close is the theme of the next paragraph's opening. Whether
+the piece reads as written in one sitting or assembled from parts.
+
+**Questions Joseph asks**:
+
+- Does this paragraph's first sentence begin with something the previous paragraph gave the reader?
+- What sits in the stress position at the end of this paragraph, and does anything pick it up?
+- Across the section, list the topic of each sentence: one string, or a new topic every sentence?
+- Could these paragraphs be reordered without a reader noticing? If yes, where is the argument?
+- Is anything defined twice because neither occurrence trusts the other to have happened?
+- Where a transition exists, is it thematic, or an adverb doing work the sentences refused?
+
+**Verdict format**: "The joint at [location] [holds / breaks]: the opener's
+theme [is / is not] the previous paragraph's stress. The topic string
+through [section] is [consistent / churning: list the topics]. This
+passage reads [written / assembled], because [the joints that decide it]."
+

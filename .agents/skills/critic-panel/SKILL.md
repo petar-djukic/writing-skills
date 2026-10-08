@@ -17,7 +17,8 @@ description: >-
   critic, turn of phrase, it's only fine, socratic read, interrogate the
   draft, what would make this better, review chapter, critique my chapter,
   six critics, is this chapter any good, clarity test, bullshit test,
-  pedagogy test, does this chapter work.
+  pedagogy test, flow test, does it
+  read as one piece, does this chapter work.
 argument-hint: 'Path to the draft, plus optionally: --roster article | book | <names>'
 ---
 
