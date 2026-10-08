@@ -10,7 +10,7 @@ surface with `scripts/sync-mirrors.sh`; verify with `--check`.
 
 Codex discovers both from `.agents/skills/`.
 
-Reusable skills (19): accent-dial, audit-references, bake-off, cold-review, critic-apply, critic-panel, filter-tells, humanize, inject-vernacular, match-outline, match-structure, match-voice, patent-disclosure, pattern-language, reverse-outline, tighten-style, tune-anchors, update-references, voice-critic.
+Reusable skills (20): accent-dial, audit-references, bake-off, cold-review, critic-apply, critic-panel, filter-tells, humanize, inject-vernacular, match-outline, match-structure, match-voice, patent-disclosure, pattern-language, reverse-outline, stitch-flow, tighten-style, tune-anchors, update-references, voice-critic.
 
 
 Python-backed skills run in a pixi environment that ships beside them:
