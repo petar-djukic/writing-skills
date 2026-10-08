@@ -204,6 +204,10 @@ AI_PHRASES=(
   "earns its keep"
   "earn its keep"
   "earns their keep"
+  "earns its place"
+  "earn its place"
+  "earned its place"
+  "earn their place"
   # worth-tic family (substack-writing rules; bare forms subsume "it's worth noting")
   "worth noting"
   "worth noticing"

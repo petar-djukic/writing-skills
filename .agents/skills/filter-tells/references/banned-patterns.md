@@ -145,6 +145,7 @@ These multi-word patterns are strong AI signals:
 "at its core"
 "stands as"
 "earns its keep"  (metaphor for "is worth the cost" — name the cost instead)
+"earns its place"  (same family: a verdict in place of the reason — state what it does instead)
 "remains to be seen"
 "it is worth emphasizing"
 "it is no coincidence that"
