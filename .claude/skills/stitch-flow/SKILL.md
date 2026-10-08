@@ -63,6 +63,11 @@ The script locates; the reader decides. A hard cut at a genuine turn is
 legitimate, and a section's first paragraph owes nothing to the heading.
 Read the flagged joints in the full section before touching any of them.
 
+For a judgment layer beyond your own read, run **critic-panel** with
+`--roster williams`: the Flow Test persona (Joseph Williams,
+cohesion-coherence) verdicts each flagged joint and the section's topic
+strings, from a fresh context, before you touch the text.
+
 ## The stitch pass
 
 Work one section at a time, with the whole section in view. For each weak
@@ -115,6 +120,7 @@ the residue should be the deliberate cuts.
 | reverse-outline | nuclearity: what each paragraph does for the argument | whether N+1 picks up where N left off |
 | match-voice / humanize | register and diction per passage | discourse structure |
 | cold-review | entailment between baseline and candidate | authoring any prose |
+| critic-panel (Williams) | verdicts on joints and topic strings | applying anything |
 
 match-structure's paragraph_cohesion cannot gate or measure this skill;
 see above. The only trustworthy detector is openers.py plus a human read
