@@ -455,6 +455,11 @@ MECHANICAL_TRANSITIONS=(
   "(^|[.!?] )turning to"
   "(^|[.!?] )building on"
   "(^|[.!?] )to begin with"
+  # Back-reference bridges (GH-259): a past participle plus 'that/this way,'
+  # pointing at the previous sentence instead of stating anything ('Written
+  # that way, a role defines a workflow'). 1 of 185 human-corpus documents.
+  "(^|[.!?] )(written|seen|put|read|viewed|framed|done|built|configured|understood|taken|stated|described|defined|expressed|organi[sz]ed|structured|approached|set up) (that|this) way,"
+  "(^|[.!?] )(seen |viewed |read )?in (this|that) light,"
 )
 
 # --- Category: Narrative pivot / stage-setting frames ---
