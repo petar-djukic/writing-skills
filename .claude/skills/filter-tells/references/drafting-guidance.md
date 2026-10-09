@@ -58,6 +58,10 @@ banned-patterns.md section (or prompt) that documents the WHY.
   every section that serves them", "throughout this article", "as each section
   shows". State the content; a one-line roadmap is fine, plumbing narration is
   not. [Self-Referential Meta-Narration; Prompt 8b]
+- Do not open a sentence by pointing back at the last one: cut "Written that
+  way,", "Seen this way,", "Put that way,", "In this light,". State the claim;
+  if it only holds given the previous sentence, say what that sentence
+  established. [Mechanical Transitions, back-reference bridges; GH-259]
 - Do not say what the article does; do it. Cut "and this article shows what
   that takes", "this paper presents", "this section explains". Never promise a
   payoff ("what that takes", "what it means") without stating it in the same

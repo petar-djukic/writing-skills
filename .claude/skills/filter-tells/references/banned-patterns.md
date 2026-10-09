@@ -365,6 +365,17 @@ statements, captions) that fall under `detect-structural.py`'s too-short floor,
 so lexical owns them — structural now says so explicitly instead of passing
 silently.
 
+### Back-reference bridges (GH-259)
+
+A sentence that opens by pointing back at the one before it: "Written that
+way, a role defines a workflow" (author: "AI artifact"). The participle plus
+"that/this way," ("Written that way", "Seen this way", "Put that way",
+"Framed this way") and "In this light," carry no content; the claim after the
+comma stands without them, and usually holds whatever the earlier sentence
+said. Delete the bridge and state the claim. Caught as a mechanical
+transition. Rare in human prose: 1 of 185 writing-voice documents for the
+participle form, 2 for "in this light".
+
 ### Self-description and the empty promise (GH-256)
 
 The artifact announcing its own job instead of doing it: "Once roles are
