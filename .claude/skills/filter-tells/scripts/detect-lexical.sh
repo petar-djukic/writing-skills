@@ -743,6 +743,15 @@ META_NARRATION=(
   # about the system ("a human approves it before it exists"), not the author.
   'here (we|i|they) (deal|turn|cover|matter)'
   'this (article|piece|section) (covers|delivers|provides|is about)'
+  # Self-description of the document's job (GH-256, roles-and-teams GH-808):
+  # 'and this article shows what that takes' -- the artifact narrating what
+  # it does instead of doing it. Paper venues treat it as CoT. The newsletter
+  # bridge sentence ('...and this article introduces it') stays a sanctioned
+  # exception for the semantic pass, which is why this is a candidate, not a gate.
+  'this (article|paper|piece|essay|section|chapter) (shows|presents|explains|describes|argues|demonstrates|examines|explores|sets out|walks through|lays out)'
+  # Empty promise: names a payoff without stating it ('shows what that takes').
+  # The reader is told an answer exists and is never given it.
+  '(shows?|explains?|describes?|sets out|spells out) what (that|it|this) (takes|means|requires|looks like|involves|entails)'
   'to be clear about'
   'what matters here'
   '(waiting )?for my (approval|review|sign-off)'

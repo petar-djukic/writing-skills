@@ -58,6 +58,11 @@ banned-patterns.md section (or prompt) that documents the WHY.
   every section that serves them", "throughout this article", "as each section
   shows". State the content; a one-line roadmap is fine, plumbing narration is
   not. [Self-Referential Meta-Narration; Prompt 8b]
+- Do not say what the article does; do it. Cut "and this article shows what
+  that takes", "this paper presents", "this section explains". Never promise a
+  payoff ("what that takes", "what it means") without stating it in the same
+  breath; the sentences that follow should carry it. [Self-Referential
+  Meta-Narration, self-description; GH-256]
 - Never restate the brief. What you were told to write ("keep it
   technology-neutral", "this is a roadmap, not a spec") is not a finding: cut
   "prescribes no implementation technology", "the scope is deliberately

@@ -365,6 +365,21 @@ statements, captions) that fall under `detect-structural.py`'s too-short floor,
 so lexical owns them — structural now says so explicitly instead of passing
 silently.
 
+### Self-description and the empty promise (GH-256)
+
+The artifact announcing its own job instead of doing it: "Once roles are
+configuration, an IT group can manage them the way it manages any other
+configuration, and this article shows what that takes." (author: "CoT", cut).
+Two tells stack in that clause. "This article shows" narrates the document;
+"what that takes" promises a payoff and never states it. Delete the clause and
+let the next sentences show what it takes; if they don't, the clause was
+hiding the gap. Caught as `meta-narration` candidates: "this
+(article|paper|section) shows / presents / explains / argues / demonstrates…"
+and "shows / explains what that takes / means / requires / looks like". The
+newsletter bridge sentence ("...and this article introduces it") remains a
+sanctioned exception, which is why these are candidates for the semantic pass
+and not a gate.
+
 ## Quoted Examples (false-positive handling)
 
 Documents that deliberately quote banned phrases as examples (e.g. an essay
