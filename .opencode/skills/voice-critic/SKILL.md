@@ -70,7 +70,11 @@ quotes — its text is never spliced anywhere. `--judge` wires an Ollama
 model (`--model`, `--endpoint`; unreachable-when-requested is a hard
 error, no silent fallback). Without a judge, judged dimensions report
 `UNJUDGED` with their screen evidence, and the author gate adjudicates —
-which is the normal offline mode, not a degraded one.
+which is the normal offline mode, not a degraded one. The verdict says
+which mode produced it: a non-FAIL offline verdict reads `PASS (computed
+dimensions only; N unjudged)`, never a bare `PASS` — the same text can
+pass offline and fail judged (GH-266), so a reader of the verdict must
+be able to tell the two apart.
 
 ## The unhedged-prediction work list (for inject-vernacular)
 

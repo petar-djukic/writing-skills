@@ -40,7 +40,9 @@ Usage:
   voice_critic.py <file.md|file.yaml> [--voice-dir DIR]
       [--form how-to|essay|polemic] [--report PATH] [--json]
       [--judge] [--model MODEL] [--endpoint URL]
-Exit: 0 all PASS/UNJUDGED, 1 any FAIL, 2 usage.
+Exit: 0 all PASS/UNJUDGED, 1 any FAIL, 2 usage. A non-FAIL verdict with
+UNJUDGED dimensions prints as "PASS (computed dimensions only; N
+unjudged)" so no reader mistakes an offline run for a judged one.
 """
 
 import argparse
@@ -411,9 +413,20 @@ class Critic:
             },
             "unhedged_predictions": self.unhedged_predictions(),
         }
-        report["verdict"] = (
-            "FAIL" if any(d["verdict"] == "FAIL"
-                          for d in report["dimensions"].values()) else "PASS")
+        report["unjudged"] = sum(
+            1 for d in report["dimensions"].values()
+            if d["verdict"] == "UNJUDGED")
+        if any(d["verdict"] == "FAIL"
+               for d in report["dimensions"].values()):
+            report["verdict"] = "FAIL"
+        elif report["unjudged"]:
+            # An offline PASS scored only the computed dimensions; the
+            # verdict must say so wherever it is read (GH-266: the same
+            # article recorded PASS offline and FAIL judged).
+            report["verdict"] = (f"PASS (computed dimensions only; "
+                                 f"{report['unjudged']} unjudged)")
+        else:
+            report["verdict"] = "PASS"
         return report
 
     # Bank rule: never hedge a claim carrying a number or citation, so a
@@ -466,6 +479,10 @@ def render(report):
         for s in flags:
             lines.append(f"    L{s['start_line']}-{s['end_line']}   "
                          f"{s['quote'][:60]}")
+    if report.get("unjudged"):
+        lines.append(f"  {report['unjudged']} judged dimension(s) skipped — "
+                     "run with --judge (cohere default) or "
+                     "VOICE_CRITIC_MODEL=gemma4:12b to score them")
     return "\n".join(lines)
 
 
