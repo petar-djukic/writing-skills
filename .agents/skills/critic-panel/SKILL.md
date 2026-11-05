@@ -2,12 +2,15 @@
 ---
 name: critic-panel
 description: >-
-  Read-only critics for a finished draft, run before voice-critic. Two
+  Read-only critics for a finished draft, run before voice-critic. Three
   modes: panel — named persona critics read in parallel from fresh
   contexts and merge into one sheet with cross-critic convergence first;
   socratic — one critic interrogates the article with genuine questions
   anchored to sentences, and the author's written answers become the edit
-  plan. Two critic kinds: suggest critics return line-level
+  plan; ross — the standing cold-reader comprehension read, one
+  fresh-context session agent plus two cross-family Ollama models running
+  a forward-only protocol, convergence across model families the
+  actionable signal. Two critic kinds: suggest critics return line-level
   original/replacement edits, verdict critics quote the passage and state
   the finding without rewriting it. Named rosters: article (Levine,
   Didion, Hemingway) for essays, book (Fowler, Yegge, Deitel, Miller,
@@ -17,7 +20,8 @@ description: >-
   critic, turn of phrase, it's only fine, socratic read, interrogate the
   draft, what would make this better, review chapter, critique my chapter,
   six critics, is this chapter any good, clarity test, bullshit test,
-  pedagogy test, flow test, does it
+  pedagogy test, flow test, ross read, comprehension read, cold reader
+  test, can a stranger follow this, does it
   read as one piece, does this chapter work.
 argument-hint: 'Path to the draft, plus optionally: --roster article | book | <names>'
 ---
@@ -233,6 +237,54 @@ The author answers in writing. The answers are the edit plan; the critic
 never supplies one. Maieutic by design — maximize author output, minimize
 system output — and the right mode when the author can feel a draft is
 only fine but cannot yet say where.
+
+## Mode C: ross (the cold-reader comprehension read)
+
+The failure this mode exists for: a model reading normally resolves a
+referent forty words back, fills a skipped step, and supplies a coined
+phrase's meaning from pattern, all without noticing — so every other
+critic reads straight past the places a person stops. The instrument is a
+protocol, not the persona: read strictly forward with one sentence of
+lookback, and report every inference you had to make even when confident
+of it, because your confidence is not evidence the reader followed. The
+protocol text lives in `scripts/ross_read.py` and is the same for every
+leg; the persona is Harold Ross from
+[references/personas.md](./references/personas.md).
+
+**The roster is model families, not personas.** One fresh-context session
+agent plus two Ollama models from different families per round, because a
+single model's taste is unreliable in both directions — on the run that
+built this mode, one model praised the exact sentence the author called
+stupid and another flagged. Only findings convergent ACROSS FAMILIES get
+fixed on the author's say-so; single-model findings, the author's own
+sentences, locked spans, and rule tensions go to the author gate. The
+cross-family rule for prose diction does not apply: this is a read, no
+model writes a word, and different families are the point.
+
+```bash
+# the reading copy for the session-agent leg (figures carry their alt text)
+python3 scripts/ross_read.py article.md --copy-only
+
+# one Ollama leg; writes <stem>.critic-ross-<model>.md (verdict format)
+python3 scripts/ross_read.py article.md --model mistral-large-4:cloud
+```
+
+The reading copy injects each figure's alt text as `[CHART THE READER
+SEES: ...]` — critics judge what a reader actually sees, and a bare
+`[figure]` hides exactly the numbers the surrounding prose refers to. A
+thinking model that spends its whole budget before the report is a hard
+error naming `--num-predict`, not an empty file. Reports are verdict-kind,
+so `converge.py` merges them with any other roster's.
+
+**Position and stopping rule.** After cold-review, and again after ANY
+post-pipeline hand-edit round — metric refreshes, author edits, applied
+fixes — because accumulated edits are exactly where unreviewed referents
+come from, and a read-only mode may run after the terminal stage as often
+as the text changes. Stop when a fresh family yields no new convergent
+finding on non-reserved prose; measured on the article that built this
+mode, that took four author-directed fix rounds (48 findings to 7 across
+six families), with every fix holding on re-read. Fixes are the author's
+cycle, never this mode's: it writes reports and nothing else.
 
 ## Why classes are not merged
 
