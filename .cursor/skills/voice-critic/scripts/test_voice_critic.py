@@ -206,6 +206,34 @@ def test_unjudged_without_judge():
     print("  unjudged_without_judge: ok")
 
 
+def test_offline_pass_is_qualified():
+    """GH-266: an offline non-FAIL verdict names its unjudged dimensions;
+    a fully judged PASS stays bare; FAIL is FAIL in both modes."""
+    with tempfile.TemporaryDirectory() as tmp:
+        path = make_repo(tmp, FILLER + "\n")
+        rep = vc.Critic(path).run()
+        assert rep["unjudged"] == 2, rep["unjudged"]
+        assert rep["verdict"] == ("PASS (computed dimensions only; "
+                                  "2 unjudged)"), rep["verdict"]
+        rendered = vc.render(rep)
+        assert "computed dimensions only" in rendered.splitlines()[0]
+        assert "--judge" in rendered, rendered
+    with tempfile.TemporaryDirectory() as tmp:
+        path = make_repo(tmp, FILLER + "\n")
+        rep = vc.Critic(path, judge=StubJudge()).run()
+        assert rep["unjudged"] == 0
+        assert rep["verdict"] == "PASS", rep["verdict"]
+        assert "--judge" not in vc.render(rep)
+    with tempfile.TemporaryDirectory() as tmp:
+        path = make_repo(tmp, FILLER + "An unreceipted dry aside.\n")
+        judge = StubJudge(snark_by_para={
+            0: [{"quote": "An unreceipted dry aside.", "level": 5,
+                 "target": "person"}]})
+        rep = vc.Critic(path, judge=judge).run()
+        assert rep["verdict"] == "FAIL"
+    print("  offline_pass_is_qualified: ok")
+
+
 def test_snark_hard_rules():
     # Para 0: receipt-free filler. Para 1: receipt-free L1 (its
     # predecessor carries no receipt either — a receipt in the preceding
@@ -324,7 +352,11 @@ def test_all_five_reported_and_cli():
         assert r.returncode == 0, r.stderr
         with open(out) as f:
             j = json.load(f)
-        assert j["verdict"] in ("PASS", "FAIL")
+        # Offline CLI run: two judged dimensions are UNJUDGED, so a
+        # non-FAIL verdict must carry the qualification (GH-266).
+        assert j["verdict"] == ("PASS (computed dimensions only; "
+                                "2 unjudged)") or j["verdict"] == "FAIL", j
+        assert j["unjudged"] == 2, j
         assert len(j["dimensions"]) == 5
     print("  all_five_reported_and_cli: ok")
 
@@ -337,6 +369,7 @@ def main():
     test_disproportion_needs_a_lock()
     test_tom_screen()
     test_unjudged_without_judge()
+    test_offline_pass_is_qualified()
     test_snark_hard_rules()
     test_snark_density_cap()
     test_stance_judge_spans_located()
