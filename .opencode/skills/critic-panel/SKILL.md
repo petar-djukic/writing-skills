@@ -2,7 +2,7 @@
 ---
 name: critic-panel
 description: >-
-  Read-only critics for a finished draft, run before voice-critic. Three
+  Read-only critics for a finished draft, run before voice-critic. Four
   modes: panel — named persona critics read in parallel from fresh
   contexts and merge into one sheet with cross-critic convergence first;
   socratic — one critic interrogates the article with genuine questions
@@ -10,7 +10,9 @@ description: >-
   plan; ross — the standing cold-reader comprehension read, one
   fresh-context session agent plus two cross-family Ollama models running
   a forward-only protocol, convergence across model families the
-  actionable signal. Two critic kinds: suggest critics return line-level
+  actionable signal. title desk — Evans and Kilgore judge
+  front-matter title+subtitle pairs against the article's claim from a
+  per-article digest, retitles always routed to the author gate. Two critic kinds: suggest critics return line-level
   original/replacement edits, verdict critics quote the passage and state
   the finding without rewriting it. Named rosters: article (Levine,
   Didion, Hemingway) for essays, book (Fowler, Yegge, Deitel, Miller,
@@ -21,7 +23,8 @@ description: >-
   draft, what would make this better, review chapter, critique my chapter,
   six critics, is this chapter any good, clarity test, bullshit test,
   pedagogy test, flow test, ross read, comprehension read, cold reader
-  test, can a stranger follow this, does it
+  test, can a stranger follow this, title desk, title critic, retitle,
+  are my titles any good, fix the headline, does it
   read as one piece, does this chapter work.
 argument-hint: 'Path to the draft, plus optionally: --roster article | book | <names>'
 ---
@@ -99,6 +102,7 @@ them.
 | `article` (default) | Levine, Didion, Hemingway | `suggest` |
 | `book` | Fowler, Yegge, Deitel, Miller, Cook, Kreischer | `verdict` |
 | `line` | Ross | `verdict` |
+| `titles` | Evans, Kilgore | `suggest` (Mode D: front-matter unit) |
 | ad-hoc | any mix by name, e.g. `--roster levine,yegge,cook` | per persona |
 
 Roster order is sheet order, never execution order. A chapter with a fuzzy
@@ -285,6 +289,46 @@ finding on non-reserved prose; measured on the article that built this
 mode, that took four author-directed fix rounds (48 findings to 7 across
 six families), with every fix holding on re-read. Fixes are the author's
 cycle, never this mode's: it writes reports and nothing else.
+
+## Mode D: title desk
+
+The unit is the front-matter title+subtitle pair, judged against the
+article's claim — so the reading copy is a per-article digest, not
+`prepare_copy`. For each article the digest carries: filename, the FULL
+YAML `title:` and `subtitle:` values (full values, not first lines — a
+wrapped multi-line subtitle read as its first line produced a convergent
+"subtitle breaks off mid-sentence" phantom on the desk's first run,
+2026-11-06), the headings, the first two prose paragraphs, and the closing
+paragraph. A batch of articles goes in one digest; the desk judges each
+title against the claim its own lede and closer make.
+
+The two desks (Evans, Kilgore — personas in
+[references/personas.md](./references/personas.md)) read the same digest in
+parallel from fresh contexts, each with the publication's title rules in
+the prompt (banned shapes, banned words, plain-claim title, subtitle =
+mechanism + receipts). Titles the author has locked in a titles workshop
+are passed in as LOCKED: the desk may flag that article's subtitle but
+proposes no retitle.
+
+Per-article report block, both desks:
+
+```
+### <filename>
+Verdict: KEEP | RETITLE | SUBTITLE ONLY | LOCKED
+Why: <one sentence naming the defect, or what the title does right>
+Candidates: <up to 2 proposed titles, pipe-separated; omitted for KEEP/LOCKED>
+Subtitle: <one sentence only if the subtitle fails as mechanism+receipts>
+```
+
+Each report ends with a worst-ten ranking. `converge.py` is not used — the
+unit is the article, not a quoted passage, so convergence is read directly:
+both desks RETITLE (or both flag the subtitle) is the convergent signal,
+one desk alone is a single-critic finding. Either way **every retitle is
+the author's gate**: the titles-workshop precedent is that retitles are
+proposed on a sheet and locked by author decision, never applied by the
+desk. Candidate titles are checked against the article before the sheet
+ships — a candidate that states a claim the piece does not make is the
+defect Evans exists to catch, not a suggestion.
 
 ## Artifact hygiene (all modes)
 
