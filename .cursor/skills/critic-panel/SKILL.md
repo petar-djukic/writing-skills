@@ -336,13 +336,17 @@ Every file a round writes beside the article — the reading copy, each
 leg's report, the merged sheet — is a working file, not a record. The
 round's durable trace is wherever its outcome landed: the fix issue, the
 article's `generation:` note, or the author's verdict in conversation.
-Once that trace exists, delete the sidecars in the same step, without
+Once that trace exists, delete every sidecar in the same step, without
 being asked — a published article's directory holding six `.critic-*.md`
-files is the operator's mess, not the author's to notice. Two exceptions:
-a sheet whose findings the author has not yet adjudicated stays until
-they rule (say so when reporting), and sidecars under an `experiments/`
-directory are frozen measurements and stay forever. Consuming repos
-gitignore `*.critic-*.md`, so the deletion is `rm`, never a commit.
+files is the operator's mess, not the author's to notice. That includes
+sheets with findings the author has not adjudicated: those findings live
+in the report the operator gives in conversation and in the fix issue or
+`generation:` note, never as files waiting on disk (a sheet left "for the
+author gate" is a decision queue, which this publication's author has
+banned). One exception: sidecars under an `experiments/` directory are
+frozen measurements and stay forever. A sheet the author explicitly asks
+to keep on disk is kept by that instruction, not by default. Consuming
+repos gitignore `*.critic-*.md`, so the deletion is `rm`, never a commit.
 
 ## Why classes are not merged
 
