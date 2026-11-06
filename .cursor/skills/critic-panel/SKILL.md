@@ -286,6 +286,20 @@ mode, that took four author-directed fix rounds (48 findings to 7 across
 six families), with every fix holding on re-read. Fixes are the author's
 cycle, never this mode's: it writes reports and nothing else.
 
+## Artifact hygiene (all modes)
+
+Every file a round writes beside the article — the reading copy, each
+leg's report, the merged sheet — is a working file, not a record. The
+round's durable trace is wherever its outcome landed: the fix issue, the
+article's `generation:` note, or the author's verdict in conversation.
+Once that trace exists, delete the sidecars in the same step, without
+being asked — a published article's directory holding six `.critic-*.md`
+files is the operator's mess, not the author's to notice. Two exceptions:
+a sheet whose findings the author has not yet adjudicated stays until
+they rule (say so when reporting), and sidecars under an `experiments/`
+directory are frozen measurements and stay forever. Consuming repos
+gitignore `*.critic-*.md`, so the deletion is `rm`, never a commit.
+
 ## Why classes are not merged
 
 `converge.py` lists classes as declared and never merges them, which is a
