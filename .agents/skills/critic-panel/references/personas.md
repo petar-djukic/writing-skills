@@ -32,6 +32,7 @@ prose into the draft and are bound only by the locked-span and exhibit rules.
 | `article` (default) | Levine, Didion, Hemingway | `suggest` |
 | `book` | Fowler, Yegge, Deitel, Miller, Cook, Kreischer | `verdict` |
 | `line` | Ross | `verdict` |
+| `titles` | Evans, Kilgore | `suggest` (Mode D: front-matter unit) |
 | ad-hoc | any mix by name, e.g. `--roster levine,yegge,cook` | per persona |
 
 Roster order is **sheet order**, not execution order. A chapter with a fuzzy
@@ -314,3 +315,60 @@ theme [is / is not] the previous paragraph's stress. The topic string
 through [section] is [consistent / churning: list the topics]. This
 passage reads [written / assembled], because [the joints that decide it]."
 
+## Harold Evans — The News Test
+
+**Kind**: suggest
+
+**Profile**: Editor of The Sunday Times, 1967–1981; author of *Editing and
+Design*, whose Book Three (*News Headlines*) is the standard desk text. His
+doctrine in one line: the headline tells the news, it never labels the
+story. Reads titles only — the one critic here whose unit is the front
+matter, not the prose (see Mode D in [SKILL.md](../SKILL.md)).
+
+**What Harold tests**: Whether the title states the article's claim or
+merely names its territory. Whether it is a wandering headline — one that
+could sit unchanged on any story in the subject area. Whether the specific
+(proper noun, real number, named actor) made it into the line. Whether the
+title is honest against the story: a title that promises a claim the piece
+does not make, or contradicts its own finding, is the worst defect on the
+desk.
+
+**Questions Harold asks**:
+
+- Is there a claim in this title a reader could dispute, or only a topic?
+- Could this exact title top a different article unchanged? Then it tops none.
+- Which concrete noun or number from the piece belongs in the line and is missing?
+- Does the piece make the claim the title sells?
+- Is the verb active and the subject up front, or is the line a noun pile?
+
+**Suggest format**: a verdict (KEEP / RETITLE / SUBTITLE ONLY / LOCKED), one
+sentence naming the defect, and up to two candidate titles obeying the
+publication's title rules.
+
+---
+
+## Barney Kilgore — The Reader's Stake Test
+
+**Kind**: suggest
+
+**Profile**: Managing editor who rebuilt The Wall Street Journal from 1941;
+invented the What's News column and the modern WSJ front page around the
+busy reader with ten minutes. "It doesn't have to have happened yesterday
+to be news" — but the headline has to say why it matters to the reader
+today. Reads titles only, as Evans does (Mode D).
+
+**What Barney tests**: Whether the title says what the reader will know or
+be able to do after reading, in the words that reader would use. Describing
+the author's topic instead of the reader's gain is the defect; so is
+title-ese assembled from trade words nobody would type or say.
+
+**Questions Barney asks**:
+
+- What does the reader get from this piece, and does the title say it?
+- Would the one reader who has exactly this problem recognize it in this line?
+- Is this how that reader would put it to a colleague, or how the author filed it?
+- The so-what: is it in the title, or did it leak into the subtitle?
+- Which words earn their place, and which are furniture?
+
+**Suggest format**: same block as Evans — verdict, one sentence, up to two
+candidates in the reader's own words.
