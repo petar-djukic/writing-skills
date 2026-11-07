@@ -91,6 +91,30 @@ passage two critics agreed on may matter more than one three agreed on, and
 the author ranks by consequence themselves. The old label, "Top fixes (in
 priority order)", claimed otherwise (GH-114).
 
+### Focus brief (optional caller input)
+
+The caller may pass a focus list into every critic's prompt alongside
+the persona brief: named checks each critic must answer explicitly in
+its Diagnosis — addressed by name, answered rather than considered —
+before its free read begins. The list's content belongs to the caller
+(venue thresholds, the author's standing complaints, residue carried
+from a prior round); this skill specifies only the mechanism, and a
+report that skips a named item is incomplete the way an unparseable one
+is. A run with no list is the default, not a degraded one. The
+mechanism exists because a generic brief misses what the author already
+knows to look for: briefed with the author's verdict, a panel converged
+in one pass on three defect classes the same roster's generic read had
+surfaced none of (substack GH-634/GH-636).
+
+### A read binds only the text it read
+
+Same rule as Mode C's re-run position: a panel read is evidence about
+the bytes the critics saw, so any later cycle that adds or changes
+prose invalidates it. A caller that declares a pipeline complete must
+have run the panel on the final text — when to re-run is the caller's
+workflow; what this mode states is that a stale read does not count as
+a read of the article that ships.
+
 ### Rosters
 
 Personas and their kinds live in
