@@ -272,6 +272,19 @@ If ${ART} changed, commit it as "critic-apply: <slug> (round ${round}, cold-revi
     if (!cold) return { status: 'failed', stage: `round ${round} cold review`, rounds }
   }
 
+  phase('Review')
+  const icebergLegs = await parallel(['a', 'b'].map((leg) => () => agent(`You are the Iceberg critic, leg ${leg}, in a critic-panel read of ${ART}. Fresh context by design: do not look for any other critic's report.
+
+Read your persona brief, the "## Iceberg — The Inference Test" entry in ${SK}/critic-panel/references/personas.md, and "## Category 16: Warrant Tails" in ${SK}/filter-tells/references/cot-leakage-patterns.md; from ${SK}/critic-panel/SKILL.md read "The two report formats" (suggest format, literal headings) and "Constraints". Build your own reading copy of ${ART} as it stands now with ${SK}/critic-panel/scripts/prepare_copy.py, and sweep all of it: return every warrant tail that passes the removal test, with no cap. Replacement is CUT or the quoted span with words removed and none added.
+
+Write the report to ${STEM}.critic-iceberg-${leg}.md, delete your reading copy, and return only: done, N suggestions.`,
+    { label: `r${round}: iceberg ${leg}`, phase: 'Review' })))
+  const iceberg = await agent(`Apply the Iceberg pass to ${ART}. Merge ${STEM}.critic-iceberg-a.md and ${STEM}.critic-iceberg-b.md with ${SK}/critic-panel/scripts/converge.py --roster iceberg-a,iceberg-b --out ${STEM}.iceberg-sheet.md, then run the critic-apply skill (${SK}/critic-apply/SKILL.md) on that sheet with these protected spans:
+${list(pre.protected_spans)}
+Convergent cuts and deletion-only trims apply directly with no model call; report any target that could not be placed (for example a span inside a list item, which critic-apply does not locate) instead of placing it by hand. Write the result over ${ART}, commit it as "iceberg: <slug> (round ${round})" if it changed, and return the applied/kept/declined counts and every convergent target left unapplied. ${HYGIENE}`,
+    { label: `r${round}: iceberg apply`, phase: 'Review', schema: APPLY, effort: 'low' })
+  log(`round ${round}: iceberg legs ${icebergLegs.filter(Boolean).length}/2, ${iceberg ? iceberg.applied : 0} warrant tails removed`)
+
   const fixRoss = round <= ROSS_FIX_ROUNDS
   const ross = await agent(`ross read (critic-panel Mode C) on ${ART}, round ${round}. Read the Mode C section of ${SK}/critic-panel/SKILL.md and follow its protocol exactly.
 
@@ -307,6 +320,7 @@ Return the legs you ran (model names), every cross-family convergent finding as 
     declined: applied.declined,
     cold: cold.verdict,
     reverts: cold.reverts.length,
+    iceberg: iceberg ? { applied: iceberg.applied, unapplied: iceberg.unapplied_convergent } : 'failed',
     ross: ross ? { legs: ross.legs, convergent: ross.convergent, reserved: ross.reserved } : 'failed',
     voice: voice || 'failed',
     prose_changed: diff ? diff.prose_changed : true,

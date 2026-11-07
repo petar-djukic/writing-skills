@@ -99,6 +99,7 @@ Every skip is named in the report, never silent.
 | | merge | critic-panel `converge.py` | sheet |
 | | rule-based application | critic-apply | candidate |
 | | fresh-context entailment, reverts only | cold-review | yes |
+| | CoT warrant tails removed by deletion only, two fresh legs | critic-panel `iceberg` roster + critic-apply | yes |
 | | cross-family comprehension read | critic-panel Mode C | rounds 1–2 only |
 | | voice audit | voice-critic | no |
 | Final read | read-only panel on the shipping text, when the round cap stopped the loop | critic-panel Mode A | no |

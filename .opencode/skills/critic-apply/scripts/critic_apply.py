@@ -140,6 +140,34 @@ def delete_quote(par_text, quote):
     return "\n".join(markers + [new]) if markers else new
 
 
+WORD = re.compile(r"[\w'’-]+")
+
+
+def deletion_only(quote, body):
+    """True when body is quote with words removed and none added: its
+    words, case aside, are a strict subsequence of the quote's. Only
+    punctuation and capitalization may differ, so applying it authors
+    no prose."""
+    if CUT.match(body) or DISSENT.match(body):
+        return False
+    q = [w.lower() for w in WORD.findall(quote)]
+    b = [w.lower() for w in WORD.findall(body)]
+    if not b or len(b) >= len(q):
+        return False
+    it = iter(q)
+    return all(w in it for w in b)
+
+
+def apply_deletion(par_text, quote, body):
+    """Swap the quoted span for its trimmed form; None if not found."""
+    clean, markers = strip_rst(par_text)
+    new = re.sub(_flexible_pattern(quote), lambda _m: body, clean, count=1)
+    if norm(new) == norm(clean):
+        return None
+    new = normalize_punct(new)
+    return "\n".join(markers + [new]) if markers else new
+
+
 def gate(orig_clean, cand):
     """Mechanical gate. Returns (ok, reason)."""
     if sorted(NUM.findall(CITE.sub(" ", cand))) != \
@@ -210,6 +238,25 @@ def decide_and_apply(article_text, targets, generate=None,
             new = delete_quote(par_text, t["quote"])
             if new is None:
                 rec["status"] = "kept-quote-not-in-paragraph"
+                continue
+            edits[n] = new
+            rec["status"] = "applied-deletion"
+            continue
+
+        trims = [b for b in bodies if deletion_only(t["quote"], b)]
+        if trims and len(trims) == len(bodies):
+            body = max(trims, key=lambda b: len(WORD.findall(b)))
+            new = apply_deletion(par_text, t["quote"], body)
+            if new is None:
+                rec["status"] = "kept-quote-not-in-paragraph"
+                continue
+            clean = strip_rst(par_text)[0]
+            cand = strip_rst(new)[0]
+            if sorted(NUM.findall(CITE.sub(" ", cand))) != \
+                    sorted(NUM.findall(CITE.sub(" ", clean))) or \
+                    sorted(CITE.findall(cand)) != sorted(CITE.findall(clean)):
+                rec["status"] = "kept-gate"
+                rec["cause"] = "deletion removed a number or citation"
                 continue
             edits[n] = new
             rec["status"] = "applied-deletion"

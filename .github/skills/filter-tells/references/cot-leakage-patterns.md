@@ -381,6 +381,44 @@ The strongest evidence is invisible to a sentence-level detector. In the documen
 
 So the second rule, for anything that recurs: **one canonical home**. A genuine convention — scope, notation, navigation — is stated once in the front matter, and every later occurrence is deleted rather than rephrased. Catching this needs a detector that sees the whole corpus at once, since no single file contains the evidence.
 
+## Category 16: Warrant Tails (Model Justifying Each Step)
+
+The clause-level form of Category 2. The model justifies every claim to
+itself as it writes, and the justification ships attached to the claim.
+The words are ordinary (`so`, `because`, `every`, `never`), which is why
+Category 2's stock phrases miss it, and the result reads as pseudo-logic:
+prose in the grammar of a proof with none of a proof's work.
+
+```
+"..., so tools fire in a correct sequence by construction"
+"the contract cannot drift from the topology because it is the topology"
+"checking without a running system falls out of the split"
+"so the theorem holds whatever the model outputs"
+"declared signals contain the LAM, budgets contain the machine, tool selections contain the agent"
+```
+
+**Why it's CoT leakage:** people assert and let the reader infer; the
+proof is almost never on the page. A tail that re-derives its own claim,
+a "by construction" with no construction, a reason that is the claim
+restated, a certainty stamp on a scope already given — each is the
+model's internal step left in the output.
+
+**Fix:** the removal test. Delete the tail and keep the claim. If the
+claim still stands and a reader would infer the reason, the deletion is
+the fix: no rewording, no added proof. If the deletion loses something
+the reader cannot infer (a number, a citation, a named rule, the only
+statement of a scope condition), it is content in reasoning's grammar and
+stays.
+
+**Detection ownership (GH-283):** not in Prompt 4 and not lexical — the
+vocabulary is too common for a word list to separate leaked from needed,
+and the verdict is the removal test, a judgment per instance. Owned by
+critic-panel's `iceberg` roster (the Iceberg persona, two fresh legs,
+deletions only), whose convergent cuts critic-apply takes directly as
+deletion-only replacements.
+
+---
+
 ## Detection Strategy
 
 When scanning for CoT leakage, look for:
