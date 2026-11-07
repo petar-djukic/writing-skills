@@ -127,6 +127,7 @@ them.
 | `book` | Fowler, Yegge, Deitel, Miller, Cook, Kreischer | `verdict` |
 | `line` | Ross | `verdict` |
 | `titles` | Evans, Kilgore | `suggest` (Mode D: front-matter unit) |
+| `iceberg` | Iceberg ×2 legs | `suggest`, deletions only: CoT warrant tails |
 | ad-hoc | any mix by name, e.g. `--roster levine,yegge,cook` | per persona |
 
 Roster order is sheet order, never execution order. A chapter with a fuzzy

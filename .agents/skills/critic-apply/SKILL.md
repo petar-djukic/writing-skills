@@ -33,6 +33,7 @@ rules decide, and the rules are arguable because they are deterministic.
 | constitution-protected span (`--protected` verbatim spans) | declined with cause, however many critics want it — the constitution outranks the panel |
 | remedy conflict inside a convergence, one remedy a CUT | the omission wins — a deletion authors no prose |
 | single-critic CUT on a paragraph reverse-outline ranked cheap (`--cheap-paragraphs`) | accepted — cross-instrument agreement counts as convergence for deletions |
+| replacement that only removes words (its words a subsequence of the original's, case and punctuation aside) | applied directly, no model call, under the number and citation gate; conflicting trims keep the most text |
 | any other single-critic finding | skipped; the author picks those by hand |
 
 ## The mechanics (learned the hard way)

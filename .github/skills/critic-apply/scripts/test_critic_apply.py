@@ -132,6 +132,37 @@ def test_cross_instrument_deletion():
     print("  cross_instrument_deletion: ok")
 
 
+def test_deletion_only_replacement():
+    q = ("Trying to size a business that does not exist reveals nothing "
+         "about whether it will ever exist.")
+    trimmed = "Trying to size a business that does not exist reveals nothing."
+    calls = []
+
+    def must_not_run(prompt):
+        calls.append(prompt)
+        return "x"
+
+    sh = sheet(conv(q, [("iceberg-a", trimmed, "warrant tail"),
+                        ("iceberg-b", trimmed, "reader infers it")]))
+    new, recs = ca.decide_and_apply(ARTICLE, ca.parse_sheet(sh),
+                                    generate=must_not_run)
+    assert recs[0]["status"] == "applied-deletion", recs
+    assert not calls, "a deletion-only replacement must not call the model"
+    assert trimmed in new and "ever exist" not in new
+    # one added word disqualifies the path: it goes to the transport
+    added = "Trying to size a business that does not exist reveals little."
+    sh = sheet(conv(q, [("iceberg-a", added, "x"), ("iceberg-b", added, "y")]))
+    _new, recs = ca.decide_and_apply(ARTICLE, ca.parse_sheet(sh))
+    assert recs[0]["status"] == "kept-no-model", recs
+    # a trim that drops a number is gated
+    q2 = "The system costs 42 dollars per run and the price is stated once [3]."
+    t2 = "The system costs dollars per run and the price is stated once [3]."
+    sh = sheet(conv(q2, [("iceberg-a", t2, "x"), ("iceberg-b", t2, "y")]))
+    _new, recs = ca.decide_and_apply(ARTICLE, ca.parse_sheet(sh))
+    assert recs[0]["status"] == "kept-gate", recs
+    print("  deletion_only_replacement: ok")
+
+
 def test_counts():
     q = ("Trying to size a business that does not exist reveals nothing "
          "about whether it will ever exist.")
@@ -148,6 +179,7 @@ if __name__ == "__main__":
     test_constitution_declined()
     test_remedy_conflict_prefers_omission()
     test_gate_rejection()
+    test_deletion_only_replacement()
     test_cross_instrument_deletion()
     test_counts()
     print("all critic-apply tests passed")
