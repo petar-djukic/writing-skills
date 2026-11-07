@@ -1,8 +1,8 @@
 // Copyright (c) 2026 Petar Djukic. All rights reserved. SPDX-License-Identifier: MIT
 export const meta = {
-  name: 'rewrite-pipeline',
-  description: 'Humanize one markdown article, then loop the review phase until a panel read of the final text changes nothing',
-  whenToUse: 'Rewrite an existing article end to end: the humanize chain once, then reverse-outline, length pre-check, a three-critic panel answering a focus brief, critic-apply, cold review, ross read and voice-critic, re-reading until the text stops changing',
+  name: 'polish-prose',
+  description: 'Polish one prose file: humanize it, then loop critics, rule-based fixes and cold review until a panel read of the final text changes nothing',
+  whenToUse: 'Improve, polish, tighten or make better any prose a person reads end to end (essay, post, paper section, README, chapter): the humanize chain once, then reverse-outline, length pre-check, a critic panel answering the focus brief, critic-apply, cold review, ross read and voice-critic, re-reading until the text stops changing',
   phases: [
     { title: 'Preflight', detail: 'worktree branch, skill paths, focus file, baseline commit' },
     { title: 'Humanize', detail: 'the humanize chain, once' },
@@ -13,13 +13,13 @@ export const meta = {
 }
 
 const A = args || {}
-if (!A.article) throw new Error('rewrite-pipeline: args.article (path to the markdown file) is required')
-const ART = A.article
-const SK = A.skills_dir || 'skills'
+const ART = A.article || A.file
+if (!ART) throw new Error('polish-prose: args.article (path to the markdown file) is required')
+const SK = A.skills_dir || '.claude/skills'
 const MAX = A.max_rounds || 3
 const ROSS_FIX_ROUNDS = 2
 const STEM = ART.replace(/\.md$/, '')
-const CRITICS = ['Levine', 'Didion', 'Hemingway']
+const DEFAULT_ROSTER = ['Levine', 'Didion', 'Hemingway']
 const REQUIRED_SKILLS = ['humanize', 'reverse-outline', 'critic-panel', 'critic-apply', 'cold-review', 'voice-critic']
 
 const NO_PROSE = 'You never write article prose yourself. Text changes only through the owning skill: rewrites go through the rewrite transport, deletions and verbatim reverts apply mechanically.'
@@ -37,9 +37,16 @@ const PREFLIGHT = {
     precheck_command: { type: 'string' },
     form: { type: 'string' },
     protected_spans: { type: 'array', items: { type: 'string' } },
+    roster_name: { type: 'string' },
+    roster: { type: 'array', items: { type: 'string' } },
+    draft_rules: { type: 'array', items: { type: 'string' } },
+    has_front_matter: { type: 'boolean' },
+    has_voice_corpus: { type: 'boolean' },
+    has_voice_constitution: { type: 'boolean' },
     baseline_sha: { type: 'string' },
   },
-  required: ['ok', 'reason', 'branch', 'missing', 'focus_file', 'focus_items', 'precheck_command', 'form', 'protected_spans', 'baseline_sha'],
+  required: ['ok', 'reason', 'branch', 'missing', 'focus_file', 'focus_items', 'precheck_command', 'form', 'protected_spans',
+    'roster_name', 'roster', 'draft_rules', 'has_front_matter', 'has_voice_corpus', 'has_voice_constitution', 'baseline_sha'],
 }
 
 const HUMANIZE = {
@@ -144,27 +151,35 @@ const list = (xs) => (xs && xs.length ? xs.map((x) => `- ${x}`).join('\n') : '(n
 
 // ---------------------------------------------------------------- Preflight
 phase('Preflight')
-const pre = await agent(`Preflight for a rewrite-pipeline run on ${ART}. ${A.validate_only ? 'VALIDATE ONLY: change nothing, commit nothing.' : ''}
+const pre = await agent(`Preflight for a polish-prose run on ${ART}. The file can be any prose a person reads end to end: an essay, post, paper section, README, or book chapter. ${A.validate_only ? 'VALIDATE ONLY: change nothing, commit nothing.' : ''}
 
 1. Report the current git branch. ${A.validate_only ? 'This is a validate-only run, so any branch is acceptable.' : 'If it is main or master, set ok=false: this pipeline commits, and changes land only on worktree branches (loop workflow).'}
 2. Check that ${ART} exists and that each of these skill files exists: ${REQUIRED_SKILLS.map((s) => `${SK}/${s}/SKILL.md`).join(', ')}. List any missing path in "missing" and set ok=false if any are missing.
 3. Focus file: ${A.focus_file ? `use ${A.focus_file}.` : `walk up from the article's directory to the repository root looking for critic-focus.md; use the nearest one.`} If found, return its path, each named check as one string in focus_items (verbatim, one per check), and the deterministic pre-check command it names in precheck_command with {article} left as a placeholder. If none exists, return empty values: the panel then reads without a focus list, which is allowed.
-4. Form: read the article's front matter and body to decide its form (how-to, essay, polemic, or the name of a constitution under constitutions/articles/ that matches). ${A.form ? `The caller says the form is ${A.form}; use that.` : ''} If a constitution file exists for the form, return in protected_spans every span it requires verbatim in the article (for a how-to: the bridge sentence, the learning-objectives paragraph, the "The steps" transition), quoted exactly as they appear in the article.
-5. ${A.validate_only ? 'Do not commit. Return baseline_sha as the current HEAD.' : `If ${ART} has uncommitted changes, commit them alone as "draft: <slug> (pre-pipeline baseline)". Return baseline_sha as HEAD after that.`}`,
+4. Form: read the file to decide its form (how-to, essay, polemic, post, paper section, README, chapter, or the name of a constitution under .claude/constitutions/ that matches). ${A.form ? `The caller says the form is ${A.form}; use that.` : ''} If a constitution file exists for the form, return in protected_spans every span it requires that appears verbatim in the file (for a how-to: the bridge sentence, the learning-objectives paragraph, the "The steps" transition), quoted exactly. If a required span is missing from the file, say so in reason.
+5. Roster: read the roster table in ${SK}/critic-panel/references/personas.md. ${A.roster ? `The caller asks for roster ${JSON.stringify(A.roster)}; use it (a roster name or a list of persona names).` : 'Use "book" for a book chapter, "article" for everything else.'} Return roster_name and the persona names in roster order.
+6. The draft's own rules: per the "The draft's own rules" section of ${SK}/critic-panel/SKILL.md, list every rules file found beside or above the file (docs/constitutions/voice.yaml, docs/constitutions/argument.yaml, the chapter's SRD under docs/srd/, or a matching constitution under .claude/constitutions/) in draft_rules.
+7. Optional stages: has_front_matter = the file starts with a YAML front-matter block; has_voice_corpus = a writing-voice/ directory with exemplars is found walking up from the file (humanize needs it); has_voice_constitution = writing-voice/voice-constitution.md is found the same way (voice-critic needs it).
+8. ${A.validate_only ? 'Do not commit. Return baseline_sha as the current HEAD.' : `If ${ART} has uncommitted changes, commit them alone as "draft: <slug> (pre-pipeline baseline)". Return baseline_sha as HEAD after that.`}`,
   { label: 'preflight', schema: PREFLIGHT, effort: 'low' })
 
 if (!pre || !pre.ok) {
   return { status: 'refused', reason: pre ? pre.reason : 'preflight agent failed', preflight: pre }
 }
-log(`branch ${pre.branch}; form ${pre.form || 'unknown'}; focus file ${pre.focus_file || 'none (generic read)'}; ${pre.protected_spans.length} protected spans`)
+const CRITICS = pre.roster && pre.roster.length ? pre.roster : DEFAULT_ROSTER
+const skipped = []
+if (!pre.has_voice_corpus) skipped.push('humanize (no writing-voice/ corpus found)')
+if (!pre.has_voice_constitution) skipped.push('voice-critic (no voice constitution found)')
+if (!pre.has_front_matter) skipped.push('generation note (no front matter; the report is the record)')
+log(`branch ${pre.branch}; form ${pre.form || 'unknown'}; roster ${pre.roster_name || 'article'} (${CRITICS.join(', ')}); focus file ${pre.focus_file || 'none (generic read)'}; ${pre.protected_spans.length} protected spans${skipped.length ? `; skipping: ${skipped.join('; ')}` : ''}`)
 if (A.validate_only) {
-  return { status: 'validated', preflight: pre }
+  return { status: 'validated', roster: CRITICS, skipped, preflight: pre }
 }
 
 // ---------------------------------------------------------------- Humanize
 phase('Humanize')
-let hum = { ran: false, seed_reach: 'skipped', stages: [], notes: 'skip_humanize set by caller' }
-if (!A.skip_humanize) {
+let hum = { ran: false, seed_reach: 'skipped', stages: [], notes: A.skip_humanize ? 'skip_humanize set by caller' : 'no writing-voice/ corpus found; humanize needs its exemplars' }
+if (!A.skip_humanize && pre.has_voice_corpus) {
   hum = await agent(`Run the humanize skill on ${ART}: read ${SK}/humanize/SKILL.md and follow it end to end, exactly as written, including its stage order, its measurements, and its report. ${A.venue ? `Use venue mode with --venue ${A.venue}.` : ''}
 
 Commit each stage's output as it lands, one commit per stage, with the stage name in the subject ("filter-tells: <slug>", "match-voice: <slug>", "tighten: <slug>", ...). Do not squash.
@@ -185,9 +200,10 @@ const focusBlock = pre.focus_items.length
   : 'No focus list was supplied for this repository: give your free read.'
 
 async function panel(o, residue, round, tag) {
-  const criticReports = await parallel(CRITICS.map((name) => () => agent(`You are the ${name} critic on a critic-panel Mode A read (suggest kind). Fresh context by design: you have not seen any other critic's report and must not look for one.
+  const criticReports = await parallel(CRITICS.map((name) => () => agent(`You are the ${name} critic on a critic-panel Mode A read. Fresh context by design: you have not seen any other critic's report and must not look for one.
 
-Read your persona brief (the ${name} entry) in ${SK}/critic-panel/references/personas.md, and from ${SK}/critic-panel/SKILL.md the sections "The two report formats" (use the suggest format with its literal headings) and "Constraints" (all of them). Then read the reading copy at ${o.copy_path}.
+Read your persona brief (the ${name} entry) in ${SK}/critic-panel/references/personas.md; it states your kind (suggest or verdict). From ${SK}/critic-panel/SKILL.md read "The two report formats" (use your kind's format with its literal headings) and "Constraints" (the shared ones and your kind's). Then read the reading copy at ${o.copy_path}.
+${pre.draft_rules.length ? `Judge against the draft's own rules, which outrank a generic standard:\n${list(pre.draft_rules)}` : ''}
 
 ${focusBlock}
 
@@ -270,8 +286,10 @@ ${list(pre.protected_spans)}
 Return the legs you ran (model names), every cross-family convergent finding as one line saying whether it was fixed, and the reserved items. ${NO_PROSE} ${HYGIENE}`,
     { label: `r${round}: ross read`, phase: 'Review', schema: ROSS })
 
-  const voice = await agent(`voice-critic on ${ART}: read ${SK}/voice-critic/SKILL.md and run its script read-only with the judge enabled and --form ${pre.form || 'essay'} --json. Return the dimensions that FAIL and each flagged span as one line (dimension, quoted span, line range). Never edit anything. ${HYGIENE}`,
-    { label: `r${round}: voice-critic`, phase: 'Review', schema: VOICE, effort: 'low' })
+  const voice = pre.has_voice_constitution
+    ? await agent(`voice-critic on ${ART}: read ${SK}/voice-critic/SKILL.md and run its script read-only with the judge enabled and --form ${pre.form || 'essay'} --json. Return the dimensions that FAIL and each flagged span as one line (dimension, quoted span, line range). Never edit anything. ${HYGIENE}`,
+      { label: `r${round}: voice-critic`, phase: 'Review', schema: VOICE, effort: 'low' })
+    : { failed: [], flags: ['skipped: no voice constitution found'] }
 
   const diff = await agent(`Did round ${round} change the prose of ${ART}? Run git diff ${outline.round_start_sha} -- ${ART} and count added or removed lines, ignoring lines that are only rst: marker comments or whitespace. Return prose_changed and the count.`,
     { label: `r${round}: diff`, phase: 'Review', schema: DIFF, effort: 'low' })
@@ -314,17 +332,19 @@ if (!stable) {
 
 // ---------------------------------------------------------------- Record
 phase('Record')
-const record = await agent(`Record this rewrite-pipeline run in ${ART}'s front matter generation: block, following the provenance conventions the repository already uses there (append an entry; never rewrite earlier ones). The entry names the pipeline (rewrite-pipeline), humanize seed reach (${hum.seed_reach}), the number of review rounds (${rounds.length}), whether the loop ended on a stable read (${stable}), per-round applied/kept/declined counts and cold-review verdicts:
+const record = await agent(`${pre.has_front_matter ? `Record this polish-prose run in ${ART}'s front matter generation: block, following the provenance conventions the repository already uses there (append an entry, or start the block if there is none; never rewrite earlier entries).` : `${ART} has no front matter, so write no generation note: skip straight to the sidecar sweep below, and commit only if a sidecar was tracked.`} The entry names the pipeline (polish-prose), humanize seed reach (${hum.seed_reach}), the number of review rounds (${rounds.length}), whether the loop ended on a stable read (${stable}), per-round applied/kept/declined counts and cold-review verdicts:
 ${rounds.map((r) => `round ${r.round}: applied ${r.applied}, kept ${r.kept}, declined ${r.declined}, cold ${r.cold}, convergent ${r.convergent}`).join('\n')}
 and the residue still open:
 ${list(residue)}
 
-Then delete every remaining sidecar whose name starts with ${STEM} other than the article itself (critic copies, reports, sheets, *.applied.md, *.outline.md, JSON reports), list any you could not delete, and commit the article as "rewrite-pipeline: <slug> (generation note)". Return HEAD and the leftover list.`,
+Then delete every remaining sidecar whose name starts with ${STEM} other than the article itself (critic copies, reports, sheets, *.applied.md, *.outline.md, JSON reports), list any you could not delete, and commit the file as "polish-prose: <slug> (generation note)" if it changed. Return HEAD and the leftover list.`,
   { label: 'record', phase: 'Record', schema: RECORD, effort: 'low' })
 
 return {
   status: stable ? 'stable' : 'round-cap',
   article: ART,
+  roster: CRITICS,
+  skipped,
   branch: pre.branch,
   baseline_sha: pre.baseline_sha,
   focus_file: pre.focus_file || null,
