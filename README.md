@@ -1,5 +1,7 @@
 # writing-skills
 
+> **Archived.** These skills now live in [agent-skills](https://github.com/petar-djukic/agent-skills), which joined coding-skills and writing-skills in November 2026 with both histories ([autogenic-systems#929](https://github.com/petar-djukic/autogenic-systems/issues/929)). Clone agent-skills; a link named `writing-skills` beside it keeps existing `.claude/skills` links working.
+
 Claude Code skills that rewrite AI-drafted prose until it reads as human, measured against the Pangram detector, with reference management and citation auditing alongside.
 
 An AI-generated draft reveals itself in three ways — rhetorical scaffolding, semantic tells, and the drafting model's lexical fingerprint — and fixing one leaves the other two untouched. The pipeline attacks all three in sequence — a structural pass reshapes the prose away from its source, a semantic pass erases the tells, and a cross-model diction pass strips the model's imprint — with a detector score recorded before and after each step. Verified on a published article: 100% AI to mixed, mean window score 0.993 to 0.576.
